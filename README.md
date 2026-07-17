@@ -1,6 +1,6 @@
-# OpenSWMM6 3D
+# SWMM6 Web Visualizer
 
-Web-based 3D GIS visualization, planning, and simulation platform for SWMM hydraulic models and GeoJSON networks.
+Web-based GIS visualization, planning, and simulation platform for SWMM hydraulic models and GeoJSON networks.
 
 ## Overview
 
