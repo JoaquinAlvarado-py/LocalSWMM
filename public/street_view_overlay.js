@@ -91,9 +91,11 @@
             CONDUIT: '#455a64', PUMP: '#c62828', WEIR: '#ad1457', ORIFICE: '#4527a0'
         };
 
+        const net = (window.App && window.App.network) || window.Net;
+
         // Nodes
-        if (window.App && window.App.network && typeof window.App.network.nodesGeoJSON === 'function') {
-            const nodesGeoJSON = window.App.network.nodesGeoJSON();
+        if (net && typeof net.nodesGeoJSON === 'function') {
+            const nodesGeoJSON = net.nodesGeoJSON();
             if (nodesGeoJSON && nodesGeoJSON.features) {
                 nodesGeoJSON.features.forEach(f => {
                     const color = nodeColors[f.properties && f.properties.type] || '#1565c0';
@@ -104,8 +106,8 @@
         }
 
         // Links
-        if (window.App && window.App.network && typeof window.App.network.linksGeoJSON === 'function') {
-            const linksGeoJSON = window.App.network.linksGeoJSON();
+        if (net && typeof net.linksGeoJSON === 'function') {
+            const linksGeoJSON = net.linksGeoJSON();
             if (linksGeoJSON && linksGeoJSON.features) {
                 linksGeoJSON.features.forEach(f => {
                     const color = linkColors[f.properties && f.properties.type] || '#455a64';
