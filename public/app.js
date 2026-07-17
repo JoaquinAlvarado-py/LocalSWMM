@@ -568,18 +568,33 @@
 
             Module.FS.writeFile('/in.inp', inpText);
             try {
-                if (Module.ccall && typeof Module._swmm_run === 'function') {
-                    Module.ccall('swmm_run', 'number', ['string', 'string', 'string'], ['/in.inp', '/rpt.rpt', '']);
-                } else if (Module.callMain) {
+                let ran = false;
+                
+                // Try callMain first since it's the standard Emscripten way now
+                if (typeof Module.callMain === 'function') {
                     console.log('Running via callMain');
                     Module.callMain(['/in.inp', '/rpt.rpt', '']);
-                } else if (Module.run) {
-                    console.log('Running via run (fallback)');
-                    // Some older Emscripten versions accept args in run()
-                    Module.run(['/in.inp', '/rpt.rpt', '']);
+                    ran = true;
                 } else {
+                    // Safely check for ccall to avoid getter aborts in newer Emscripten
+                    let hasCCall = false;
+                    try { hasCCall = typeof Module.ccall === 'function'; } catch(e) {}
+                    
+                    if (hasCCall && typeof Module._swmm_run === 'function') {
+                        console.log('Running via ccall(swmm_run)');
+                        Module.ccall('swmm_run', 'number', ['string', 'string', 'string'], ['/in.inp', '/rpt.rpt', '']);
+                        ran = true;
+                    } else if (typeof Module.run === 'function') {
+                        console.log('Running via run (fallback)');
+                        Module.run(['/in.inp', '/rpt.rpt', '']);
+                        ran = true;
+                    }
+                }
+                
+                if (!ran) {
                     throw new Error('No entry point found in SWMM WebAssembly module.');
                 }
+
             } catch (e) {
                 // Emscripten's exit() throws — a report may still exist
                 console.warn('SWMM engine exit:', e);
