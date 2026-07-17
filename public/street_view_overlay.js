@@ -78,21 +78,43 @@
         return result;
     }
 
-    // Extract Mapbox Features
+    // Extract network features directly from the SWMM network model
     function extractMapboxFeatures() {
-        if (!window.mapLayers) return [];
-        
         const features = [];
-        Object.values(window.mapLayers).forEach(layer => {
-            if (layer.visible && layer.geojson && layer.geojson.features) {
-                layer.geojson.features.forEach(feature => {
-                    // Inject the layer color so extractMapboxStyle can use it
-                    feature._svColor = layer.color;
-                    features.push(feature);
+
+        // Helper: get SWMM element colors
+        const nodeColors = (window.SWMM_COLORS && window.SWMM_COLORS.NODE_COLORS) || {
+            JUNCTION: '#1565c0', OUTFALL: '#2e7d32', STORAGE: '#6a1b9a',
+            DIVIDER: '#ef6c00', RAINGAGE: '#00838f'
+        };
+        const linkColors = (window.SWMM_COLORS && window.SWMM_COLORS.LINK_COLORS) || {
+            CONDUIT: '#455a64', PUMP: '#c62828', WEIR: '#ad1457', ORIFICE: '#4527a0'
+        };
+
+        // Nodes
+        if (window.Net && typeof Net.nodesGeoJSON === 'function') {
+            const nodesGeoJSON = Net.nodesGeoJSON();
+            if (nodesGeoJSON && nodesGeoJSON.features) {
+                nodesGeoJSON.features.forEach(f => {
+                    const color = nodeColors[f.properties && f.properties.type] || '#1565c0';
+                    f._svColor = color;
+                    features.push(f);
                 });
             }
-        });
-        
+        }
+
+        // Links
+        if (window.Net && typeof Net.linksGeoJSON === 'function') {
+            const linksGeoJSON = Net.linksGeoJSON();
+            if (linksGeoJSON && linksGeoJSON.features) {
+                linksGeoJSON.features.forEach(f => {
+                    const color = linkColors[f.properties && f.properties.type] || '#455a64';
+                    f._svColor = color;
+                    features.push(f);
+                });
+            }
+        }
+
         return features;
     }
 

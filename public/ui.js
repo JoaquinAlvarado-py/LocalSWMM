@@ -310,6 +310,36 @@
         setTimeout(() => map.resize(), 50);
     });
 
+    // Street view resizing
+    const svResizeHandle = document.getElementById('sv-resize-handle');
+    let isResizingSV = false;
+    
+    if (svResizeHandle) {
+        svResizeHandle.addEventListener('mousedown', (e) => {
+            isResizingSV = true;
+            document.body.style.cursor = 'ns-resize';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizingSV) return;
+            // Calculate height as percentage of window height
+            let newHeightPct = (e.clientY / window.innerHeight) * 100;
+            // Clamp between 20% and 80%
+            newHeightPct = Math.max(20, Math.min(80, newHeightPct));
+            document.documentElement.style.setProperty('--sv-height', newHeightPct + '%');
+            if (map) map.resize();
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isResizingSV) {
+                isResizingSV = false;
+                document.body.style.cursor = '';
+                if (map) map.resize();
+            }
+        });
+    }
+
     // Properties panel
     const propsBody = document.getElementById('props-body');
 
