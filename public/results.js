@@ -509,14 +509,18 @@
         let ts = null;
         if (outData && outData.parsed && outData.numPeriods > 0) {
             ts = { times: [], nodes: {}, links: {}, nodeMax: {}, linkMax: {} };
-            const startDate = new Date(1899, 11, 30); // SWMM epoch
+            // SWMM epoch (1899-12-30); use UTC so historical timezone
+            // offsets don't skew the wall-clock times stored in the file
+            const epochUTC = Date.UTC(1899, 11, 30);
             for (let i = 0; i < outData.numPeriods; i++) {
                 const t = outData.results.times[i];
-                const d = new Date(startDate.getTime() + Math.round(t * 86400000));
-                const hrs = String(d.getHours()).padStart(2, '0');
-                const mins = String(d.getMinutes()).padStart(2, '0');
-                const secs = String(d.getSeconds()).padStart(2, '0');
-                ts.times.push(`${d.toLocaleDateString()} ${hrs}:${mins}:${secs}`);
+                const d = new Date(epochUTC + Math.round(t * 86400000));
+                const day = String(d.getUTCDate()).padStart(2, '0');
+                const mon = String(d.getUTCMonth() + 1).padStart(2, '0');
+                const hrs = String(d.getUTCHours()).padStart(2, '0');
+                const mins = String(d.getUTCMinutes()).padStart(2, '0');
+                const secs = String(d.getUTCSeconds()).padStart(2, '0');
+                ts.times.push(`${mon}/${day}/${d.getUTCFullYear()} ${hrs}:${mins}:${secs}`);
             }
             outData.names.nodes.forEach((id, i) => {
                 ts.nodes[id] = {
