@@ -10,6 +10,10 @@ class SWMMOutParser {
         this.errCode = 0;
         
         this.names = { subcatchments: [], nodes: [], links: [], pollutants: [] };
+
+        // Per-object variable counts (read from the file; engines differ,
+        // e.g. 14 vs 15 system variables)
+        this.vars = { subcatchments: 8, nodes: 6, links: 5, system: 14 };
         
         // Data arrays: [period_index][object_index][variable_index]
         this.results = {
@@ -51,6 +55,7 @@ class SWMMOutParser {
         this.counts.pollutants = this.view.getInt32(24, true);
 
         this.readIDNames();
+        this.readVarCounts();
         this.readResults();
 
         this.parsed = true;
@@ -76,13 +81,61 @@ class SWMMOutParser {
         for (let i = 0; i < this.counts.pollutants; i++) this.names.pollutants.push(readString());
     }
 
+    readVarCounts() {
+        // The objProps section stores, per object type: numProps (INT4),
+        // prop codes (INT4 each), prop values (REAL4 per object). After that
+        // come the reported-variable counts and codes for each object type.
+        try {
+            let pos = this.offsets.objProps;
+            const skipProps = (numObjects) => {
+                const n = this.view.getInt32(pos, true);
+                pos += 4 + 4 * n + 4 * numObjects * n;
+            };
+            skipProps(this.counts.subcatchments);
+            skipProps(this.counts.nodes);
+            skipProps(this.counts.links);
+
+            const readVarCount = () => {
+                const n = this.view.getInt32(pos, true);
+                pos += 4 + 4 * n; // count + variable codes
+                return n;
+            };
+            const sub = readVarCount();
+            const node = readVarCount();
+            const link = readVarCount();
+            const sys = readVarCount();
+
+            // Sanity check against the actual bytes per reporting period
+            const bytesPerPeriod = 8 + 4 * (this.counts.subcatchments * sub +
+                this.counts.nodes * node + this.counts.links * link + sys);
+            const available = (this.buffer.byteLength - 24) - this.offsets.results;
+            if (this.numPeriods > 0 && bytesPerPeriod * this.numPeriods <= available) {
+                this.vars = { subcatchments: sub, nodes: node, links: link, system: sys };
+                return;
+            }
+        } catch (e) {
+            console.warn('SWMMOutParser: failed to read variable counts, deriving from record size', e);
+        }
+
+        // Fallback: derive system var count from the period record size
+        if (this.numPeriods > 0) {
+            const recordSize = ((this.buffer.byteLength - 24) - this.offsets.results) / this.numPeriods;
+            const sub = 8 + this.counts.pollutants;
+            const node = 6 + this.counts.pollutants;
+            const link = 5 + this.counts.pollutants;
+            const sys = Math.floor((recordSize - 8 - 4 * (this.counts.subcatchments * sub +
+                this.counts.nodes * node + this.counts.links * link)) / 4);
+            this.vars = { subcatchments: sub, nodes: node, links: link, system: sys > 0 ? sys : 14 };
+        }
+    }
+
     readResults() {
         let pos = this.offsets.results;
-        
-        const subcatchVars = 8 + this.counts.pollutants;
-        const nodeVars = 6 + this.counts.pollutants;
-        const linkVars = 5 + this.counts.pollutants;
-        const sysVars = 14;
+
+        const subcatchVars = this.vars.subcatchments;
+        const nodeVars = this.vars.nodes;
+        const linkVars = this.vars.links;
+        const sysVars = this.vars.system;
 
         for (let p = 0; p < this.numPeriods; p++) {
             if (pos + 8 > this.buffer.byteLength - 24) break;
@@ -120,9 +173,9 @@ class SWMMOutParser {
         let dataArray = null;
         let numVars = 0;
 
-        if (type === 'SUBCATCHMENT') { dataArray = this.results.subcatchments; numVars = 8 + this.counts.pollutants; }
-        else if (type === 'NODE') { dataArray = this.results.nodes; numVars = 6 + this.counts.pollutants; }
-        else if (type === 'LINK') { dataArray = this.results.links; numVars = 5 + this.counts.pollutants; }
+        if (type === 'SUBCATCHMENT') { dataArray = this.results.subcatchments; numVars = this.vars.subcatchments; }
+        else if (type === 'NODE') { dataArray = this.results.nodes; numVars = this.vars.nodes; }
+        else if (type === 'LINK') { dataArray = this.results.links; numVars = this.vars.links; }
         else return [];
 
         const series = new Float32Array(this.numPeriods);
@@ -143,9 +196,9 @@ class SWMMOutParser {
         let count = 0;
         let numVars = 0;
 
-        if (type === 'SUBCATCHMENT') { dataArray = this.results.subcatchments; count = this.counts.subcatchments; numVars = 8 + this.counts.pollutants; }
-        else if (type === 'NODE') { dataArray = this.results.nodes; count = this.counts.nodes; numVars = 6 + this.counts.pollutants; }
-        else if (type === 'LINK') { dataArray = this.results.links; count = this.counts.links; numVars = 5 + this.counts.pollutants; }
+        if (type === 'SUBCATCHMENT') { dataArray = this.results.subcatchments; count = this.counts.subcatchments; numVars = this.vars.subcatchments; }
+        else if (type === 'NODE') { dataArray = this.results.nodes; count = this.counts.nodes; numVars = this.vars.nodes; }
+        else if (type === 'LINK') { dataArray = this.results.links; count = this.counts.links; numVars = this.vars.links; }
         else return [];
 
         if (stepIndex < 0 || stepIndex >= this.numPeriods || !dataArray[stepIndex]) return new Float32Array(count);
