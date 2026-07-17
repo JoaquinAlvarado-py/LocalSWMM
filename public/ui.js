@@ -331,6 +331,7 @@
             newHeightPct = Math.max(20, Math.min(80, newHeightPct));
             document.documentElement.style.setProperty('--sv-height', newHeightPct + '%');
             if (map) map.resize();
+            if (window.StreetViewOverlay) window.StreetViewOverlay.resize();
         });
 
         document.addEventListener('mouseup', () => {
@@ -340,6 +341,7 @@
                 const svContainer = document.getElementById('street-view-container');
                 if (svContainer) svContainer.style.pointerEvents = 'auto';
                 if (map) map.resize();
+                if (window.StreetViewOverlay) window.StreetViewOverlay.resize();
             }
         });
     }

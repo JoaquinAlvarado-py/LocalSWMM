@@ -92,8 +92,8 @@
         };
 
         // Nodes
-        if (window.Net && typeof Net.nodesGeoJSON === 'function') {
-            const nodesGeoJSON = Net.nodesGeoJSON();
+        if (window.App && window.App.network && typeof window.App.network.nodesGeoJSON === 'function') {
+            const nodesGeoJSON = window.App.network.nodesGeoJSON();
             if (nodesGeoJSON && nodesGeoJSON.features) {
                 nodesGeoJSON.features.forEach(f => {
                     const color = nodeColors[f.properties && f.properties.type] || '#1565c0';
@@ -104,8 +104,8 @@
         }
 
         // Links
-        if (window.Net && typeof Net.linksGeoJSON === 'function') {
-            const linksGeoJSON = Net.linksGeoJSON();
+        if (window.App && window.App.network && typeof window.App.network.linksGeoJSON === 'function') {
+            const linksGeoJSON = window.App.network.linksGeoJSON();
             if (linksGeoJSON && linksGeoJSON.features) {
                 linksGeoJSON.features.forEach(f => {
                     const color = linkColors[f.properties && f.properties.type] || '#455a64';
@@ -590,6 +590,11 @@
         init: initStreetView,
         destroy: destroyStreetView,
         scheduleRedraw: scheduleRedraw,
+        resize: function() {
+            if (panorama && window.google && google.maps.event) {
+                google.maps.event.trigger(panorama, 'resize');
+            }
+        },
         updatePosition: function(lngLat) {
             if (panorama) {
                 panorama.setPosition({ lat: lngLat.lat, lng: lngLat.lng });
