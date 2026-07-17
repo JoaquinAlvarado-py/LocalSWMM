@@ -270,9 +270,22 @@
                     continue;
                 }
                 const parts = line.split(/\s+/);
-                // The time column is usually at parts[1] (HH:MM:SS) 
-                if (parts.length >= 4 && parts[1] && parts[1].includes(':')) {
-                    const dt = parts[0] + ' ' + parts[1];
+                
+                let dateStr, timeStr, dataStartIdx;
+                if (parts[0] && parts[0].includes(':')) {
+                    dateStr = '0';
+                    timeStr = parts[0];
+                    dataStartIdx = 1;
+                } else if (parts[1] && parts[1].includes(':')) {
+                    dateStr = parts[0];
+                    timeStr = parts[1];
+                    dataStartIdx = 2;
+                } else {
+                    continue;
+                }
+
+                if (parts.length >= dataStartIdx + 1) {
+                    const dt = dateStr + ' ' + timeStr;
                     let tIdx = timeIndexMap[dt];
                     if (tIdx === undefined) {
                         tIdx = nextTimeIndex++;
@@ -280,35 +293,31 @@
                         out.times.push(dt);
                     }
                     
-                    // SWMM Node results: Date/Days Time Inflow Flooding Depth Head
-                    // SWMM Cell results: Date/Days Time Depth Head ...
-                    // SWMM Link results: Date/Days Time Flow Velocity Depth Capacity/Setting
                     let depthVal = 0;
-                    let flowVal = 0;
                     if (currentType === 'node') {
-                        out.nodes[currentId].inflow[tIdx] = parseFloat(parts[2]) || 0;
-                        out.nodes[currentId].flooding[tIdx] = parseFloat(parts[3]) || 0;
-                        depthVal = parseFloat(parts[4]) || 0;
+                        out.nodes[currentId].inflow[tIdx] = parseFloat(parts[dataStartIdx]) || 0;
+                        out.nodes[currentId].flooding[tIdx] = parseFloat(parts[dataStartIdx + 1]) || 0;
+                        depthVal = parseFloat(parts[dataStartIdx + 2]) || 0;
                         out.nodes[currentId].depth[tIdx] = depthVal;
-                        out.nodes[currentId].head[tIdx] = parseFloat(parts[5]) || 0;
+                        out.nodes[currentId].head[tIdx] = parseFloat(parts[dataStartIdx + 3]) || 0;
                         
                         if (!out.nodeMax[currentId] || depthVal > out.nodeMax[currentId]) {
                             out.nodeMax[currentId] = depthVal;
                         }
                     } else if (currentType === 'cell') {
-                        depthVal = parseFloat(parts[2]) || 0;
+                        depthVal = parseFloat(parts[dataStartIdx]) || 0;
                         out.nodes[currentId].depth[tIdx] = depthVal;
-                        out.nodes[currentId].head[tIdx] = parseFloat(parts[3]) || 0;
+                        out.nodes[currentId].head[tIdx] = parseFloat(parts[dataStartIdx + 1]) || 0;
                         
                         if (!out.nodeMax[currentId] || depthVal > out.nodeMax[currentId]) {
                             out.nodeMax[currentId] = depthVal;
                         }
                     } else if (currentType === 'link') {
-                        flowVal = parseFloat(parts[2]) || 0;
+                        let flowVal = parseFloat(parts[dataStartIdx]) || 0;
                         out.links[currentId].flow[tIdx] = flowVal;
-                        out.links[currentId].velocity[tIdx] = parseFloat(parts[3]) || 0;
-                        out.links[currentId].depth[tIdx] = parseFloat(parts[4]) || 0;
-                        out.links[currentId].capacity[tIdx] = parseFloat(parts[5]) || 0;
+                        out.links[currentId].velocity[tIdx] = parseFloat(parts[dataStartIdx + 1]) || 0;
+                        out.links[currentId].depth[tIdx] = parseFloat(parts[dataStartIdx + 2]) || 0;
+                        out.links[currentId].capacity[tIdx] = parseFloat(parts[dataStartIdx + 3]) || 0;
                         
                         if (!out.linkMax[currentId] || Math.abs(flowVal) > out.linkMax[currentId]) {
                             out.linkMax[currentId] = Math.abs(flowVal);
