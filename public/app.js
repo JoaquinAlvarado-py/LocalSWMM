@@ -416,7 +416,9 @@
     window.fitToNetwork = function () {
         const coords = Net.bounds();
         if (!coords || !coords.length) return;
-        const bounds = coords.reduce((b, c) => b.extend(c), new mapboxgl.LngLatBounds(coords[0], coords[0]));
+        const validCoords = coords.filter(c => c && c.length >= 2 && !isNaN(c[0]) && !isNaN(c[1]));
+        if (!validCoords.length) return;
+        const bounds = validCoords.reduce((b, c) => b.extend(c), new mapboxgl.LngLatBounds(validCoords[0], validCoords[0]));
         map.fitBounds(bounds, { padding: 80, duration: 1200, maxZoom: 17 });
     };
 
