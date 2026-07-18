@@ -63,8 +63,18 @@ class InpParser {
                 case 'WET_STEP': model.options.wetStep = val; break;
                 case 'DRY_STEP': model.options.dryStep = val; break;
                 case 'ROUTING_STEP': model.options.routingStep = val; break;
+                case 'NODE_CONTINUITY': model.options.nodeContinuity = val; break;
+                case 'ANDERSON_ACCEL': model.options.andersonAccel = val; break;
             }
         });
+
+        // --- RDII_DECAY ---
+        if (S['RDII_DECAY'] && S['RDII_DECAY'].length > 0) {
+            const row = S['RDII_DECAY'][0];
+            if (row.length >= 3) {
+                model.options.rdiiDecay = { k0: row[0], kT: row[1], tRef: row[2] };
+            }
+        }
 
         // --- Coordinates lookup ---
         const coords = {};
