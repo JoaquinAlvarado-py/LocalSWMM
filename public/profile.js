@@ -12,6 +12,10 @@
     let ctx         = null;
     let currentStep = 0;
 
+    let isViewModified = false;
+    let viewMinD = 0, viewMaxD = 100;
+    let viewMinEl = 0, viewMaxEl = 10;
+
     const PAD = { top: 40, right: 24, bottom: 52, left: 68 };
 
     // 1. HAVERSINE (inline — no dependency on Net internals)
@@ -181,13 +185,30 @@
         if (!isFinite(minEl)) { minEl = 0; maxEl = 10; }
         const pad   = Math.max((maxEl - minEl) * 0.12, 0.5);
         minEl -= pad * 0.3;
-        maxEl += pad;
-        const elevRange = maxEl - minEl;
+        maxEl += Math.max(pad * 2.5, 1.0); // Increased top padding for labels
+
+        let minD = 0;
+        let maxD = geo.totalDist || 1;
+
+        if (isViewModified) {
+            minD = viewMinD;
+            maxD = viewMaxD;
+            minEl = viewMinEl;
+            maxEl = viewMaxEl;
+        } else {
+            viewMinD = minD;
+            viewMaxD = maxD;
+            viewMinEl = minEl;
+            viewMaxEl = maxEl;
+        }
+
+        const elevRange = Math.max(1e-6, maxEl - minEl);
+        const distRange = Math.max(1e-6, maxD - minD);
 
         // Coordinate helpers
         const marginX = 30; // padding inside the plot to prevent node clipping
         const innerPlotW = Math.max(1, plotW - marginX * 2);
-        const cx = x  => PAD.left + marginX + (x  / (geo.totalDist || 1)) * innerPlotW;
+        const cx = d  => PAD.left + marginX + ((d - minD) / distRange) * innerPlotW;
         const cy = el => PAD.top  + plotH - ((el - minEl) / elevRange) * plotH;
 
         // Clear
@@ -229,18 +250,18 @@
 
         // Vertical grid (distance)
         const nGridV = Math.max(4, Math.min(12, Math.ceil(plotW / 80)));
-        const vStepDist = geo.totalDist / nGridV;
+        const vStepDist = distRange / nGridV;
         const niceDStep  = Math.pow(10, Math.round(Math.log10(vStepDist)));
         let niceVStep = niceDStep;
         for (const m of [1, 2, 5, 10]) {
             if (niceDStep * m >= vStepDist) { niceVStep = niceDStep * m; break; }
         }
-        const firstVD = 0;
+        const firstVD = Math.ceil(minD / niceVStep) * niceVStep;
 
         ctx.font = '11px Inter, system-ui, sans-serif';
-        for (let d = firstVD; d <= geo.totalDist + niceVStep * 0.01; d += niceVStep) {
-            if (d > geo.totalDist * 1.01) break;
+        for (let d = firstVD; d <= maxD + niceVStep * 0.01; d += niceVStep) {
             const x = cx(d);
+            if (x < PAD.left - 2 || x > PAD.left + plotW + 2) continue;
             ctx.strokeStyle = '#e2e8f0';
             ctx.lineWidth = 1;
             ctx.beginPath();
@@ -491,6 +512,7 @@
         }
 
         currentPath = path;
+        isViewModified = false;
 
         // Update modal title
         const titleEl = document.getElementById('profile-title');
@@ -548,6 +570,114 @@
         if (header) initDrag(modalEl, header);
 
         document.getElementById('btn-profile-close')?.addEventListener('click', close);
+
+        // --- Zoom & Pan Events ---
+        canvasEl.addEventListener('wheel', e => {
+            e.preventDefault();
+            const rect = canvasEl.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            const W = rect.width;
+            const H = rect.height;
+            const plotW = W - PAD.left - PAD.right;
+            const plotH = H - PAD.top - PAD.bottom;
+
+            if (mouseX < PAD.left || mouseX > PAD.left + plotW ||
+                mouseY < PAD.top || mouseY > PAD.top + plotH) {
+                return;
+            }
+
+            const marginX = 30;
+            const innerPlotW = Math.max(1, plotW - marginX * 2);
+            const distRange = Math.max(1e-6, viewMaxD - viewMinD);
+            const elevRange = Math.max(1e-6, viewMaxEl - viewMinEl);
+
+            const logicalD = viewMinD + ((mouseX - PAD.left - marginX) / innerPlotW) * distRange;
+            const logicalEl = viewMinEl + ((PAD.top + plotH - mouseY) / plotH) * elevRange;
+
+            const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
+            
+            const newDistRange = distRange * zoomFactor;
+            const newElevRange = elevRange * zoomFactor;
+
+            viewMinD = logicalD - (logicalD - viewMinD) * zoomFactor;
+            viewMaxD = viewMinD + newDistRange;
+
+            viewMinEl = logicalEl - (logicalEl - viewMinEl) * zoomFactor;
+            viewMaxEl = viewMinEl + newElevRange;
+
+            isViewModified = true;
+            draw(currentStep);
+        }, { passive: false });
+
+        let isPanning = false;
+        let lastPanX = 0;
+        let lastPanY = 0;
+
+        canvasEl.addEventListener('mousedown', e => {
+            if (e.button !== 0) return; // only left click
+            const rect = canvasEl.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            const W = rect.width;
+            const H = rect.height;
+            const plotW = W - PAD.left - PAD.right;
+            const plotH = H - PAD.top - PAD.bottom;
+
+            if (mouseX >= PAD.left && mouseX <= PAD.left + plotW &&
+                mouseY >= PAD.top && mouseY <= PAD.top + plotH) {
+                isPanning = true;
+                lastPanX = e.clientX;
+                lastPanY = e.clientY;
+                canvasEl.style.cursor = 'grabbing';
+            }
+        });
+
+        window.addEventListener('mousemove', e => {
+            if (!isPanning) return;
+            
+            const dx = e.clientX - lastPanX;
+            const dy = e.clientY - lastPanY;
+            lastPanX = e.clientX;
+            lastPanY = e.clientY;
+
+            const rect = canvasEl.getBoundingClientRect();
+            const W = rect.width;
+            const H = rect.height;
+            const plotW = W - PAD.left - PAD.right;
+            const plotH = H - PAD.top - PAD.bottom;
+
+            const marginX = 30;
+            const innerPlotW = Math.max(1, plotW - marginX * 2);
+            const distRange = Math.max(1e-6, viewMaxD - viewMinD);
+            const elevRange = Math.max(1e-6, viewMaxEl - viewMinEl);
+
+            const logicalDx = (dx / innerPlotW) * distRange;
+            const logicalDy = (dy / plotH) * elevRange;
+
+            viewMinD -= logicalDx;
+            viewMaxD -= logicalDx;
+
+            viewMinEl += logicalDy;
+            viewMaxEl += logicalDy;
+
+            isViewModified = true;
+            draw(currentStep);
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (isPanning) {
+                isPanning = false;
+                canvasEl.style.cursor = 'default';
+            }
+        });
+
+        canvasEl.addEventListener('dblclick', () => {
+            isViewModified = false;
+            draw(currentStep);
+        });
 
         // Resize canvas when modal size changes
         const ro = new ResizeObserver(() => {
