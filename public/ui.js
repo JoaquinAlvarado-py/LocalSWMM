@@ -88,6 +88,44 @@
 
     document.getElementById('btn-load-sample').addEventListener('click', loadSampleNetwork);
 
+    // Options Modal
+    const optionsModal = document.getElementById('options-modal');
+    document.getElementById('btn-options').addEventListener('click', () => {
+        const opt = Net.options || {};
+        document.getElementById('opt-node-continuity').value = opt.nodeContinuity || '';
+        document.getElementById('opt-anderson-accel').value = opt.andersonAccel || '';
+        document.getElementById('opt-rdii-k0').value = opt.rdiiDecay ? opt.rdiiDecay.k0 : '';
+        document.getElementById('opt-rdii-kt').value = opt.rdiiDecay ? opt.rdiiDecay.kT : '';
+        document.getElementById('opt-rdii-tref').value = opt.rdiiDecay ? opt.rdiiDecay.tRef : '';
+        optionsModal.classList.remove('hidden');
+    });
+    document.getElementById('btn-cancel-options').addEventListener('click', () => {
+        optionsModal.classList.add('hidden');
+    });
+    document.getElementById('btn-save-options').addEventListener('click', () => {
+        if (!Net.options) Net.options = {};
+        
+        const nodeCont = document.getElementById('opt-node-continuity').value;
+        const anderson = document.getElementById('opt-anderson-accel').value;
+        const k0 = document.getElementById('opt-rdii-k0').value;
+        const kT = document.getElementById('opt-rdii-kt').value;
+        const tRef = document.getElementById('opt-rdii-tref').value;
+        
+        if (nodeCont) Net.options.nodeContinuity = nodeCont;
+        else delete Net.options.nodeContinuity;
+        
+        if (anderson) Net.options.andersonAccel = anderson;
+        else delete Net.options.andersonAccel;
+        
+        if (k0 !== '' && kT !== '' && tRef !== '') {
+            Net.options.rdiiDecay = { k0, kT, tRef };
+        } else {
+            delete Net.options.rdiiDecay;
+        }
+        
+        optionsModal.classList.add('hidden');
+    });
+
     document.getElementById('btn-export-inp').addEventListener('click', () => {
         if (Net.nodeCount === 0) { alert('Nothing to export — the network is empty.'); return; }
         window.inpExporter.downloadInp(Net);

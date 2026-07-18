@@ -62,6 +62,8 @@ class InpExporter {
         L.push('HEAD_TOLERANCE       0.005');
         L.push('SYS_FLOW_TOL         5');
         L.push('LAT_FLOW_TOL         5');
+        if (opt.nodeContinuity) L.push(`NODE_CONTINUITY      ${opt.nodeContinuity}`);
+        if (opt.andersonAccel) L.push(`ANDERSON_ACCEL       ${opt.andersonAccel}`);
         L.push('');
 
         if (!net.rawSections || !net.rawSections['EVAPORATION']) {
@@ -82,6 +84,13 @@ class InpExporter {
                 const p = g.props;
                 L.push(`${this.pad(g.id, 16)} ${this.pad(p.format, 9)} ${this.pad(p.interval, 8)} ${this.pad(p.scf, 8)} ${p.sourceType} ${p.sourceName}`);
             });
+            L.push('');
+        }
+
+        if (opt.rdiiDecay && opt.rdiiDecay.k0 !== undefined) {
+            L.push('[RDII_DECAY]');
+            L.push(';;k0             kT               Tref');
+            L.push(`${this.pad(opt.rdiiDecay.k0, 16)} ${this.pad(opt.rdiiDecay.kT, 16)} ${this.pad(opt.rdiiDecay.tRef, 16)}`);
             L.push('');
         }
 
