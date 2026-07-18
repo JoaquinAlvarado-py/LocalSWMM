@@ -260,6 +260,23 @@
     }
     window.refreshNetworkData = refreshNetworkData;
 
+    // Incremental refresh for node moves: Net patches its cached GeoJSON in
+    // place, so we only re-send the nodes + links sources (subcatchments and
+    // mesh are untouched by a move). Throttled to one setData per rAF so
+    // dragging costs at most ~60 updates/s regardless of mousemove rate.
+    let moveRefreshQueued = false;
+    function refreshNetworkDataForMove() {
+        if (moveRefreshQueued) return;
+        moveRefreshQueued = true;
+        requestAnimationFrame(() => {
+            moveRefreshQueued = false;
+            const nodesSrc = map.getSource('swmm-nodes');
+            if (!nodesSrc) return;
+            nodesSrc.setData(Net.nodesGeoJSON());
+            map.getSource('swmm-links').setData(Net.linksGeoJSON());
+        });
+    }
+
     function sourceForId(id) {
         if (Net.getNode(id)) return 'swmm-nodes';
         if (Net.getLink(id)) return 'swmm-links';
@@ -379,8 +396,13 @@
     });
 
     // ---------- React to model changes ----------
-    Net.onChange(() => {
-        refreshNetworkData();
+    Net.onChange((net, evt) => {
+        // node drags fire 'move' at mouse rate — do a cheap incremental update
+        if (evt && evt.type === 'move') {
+            refreshNetworkDataForMove();
+        } else {
+            refreshNetworkData();
+        }
         if (window.updateUICounts) window.updateUICounts();
     });
 
@@ -506,20 +528,24 @@
             Net.loadState(state, true);
         } else {
             // merge: add with fresh unique ids when colliding
+            // (register in the index maps as we go so findAny sees them)
             (model.nodes || []).forEach(n => {
                 if (Net.findAny(n.id)) n.id = Net.nextId(n.type);
                 Net.nodes.push(n);
+                Net._nodeMap.set(n.id, n);
             });
             (model.links || []).forEach(l => {
                 if (Net.findAny(l.id)) l.id = Net.nextId(l.type);
                 Net.links.push(l);
+                Net._linkMap.set(l.id, l);
             });
             (model.subcatchments || []).forEach(s => {
                 if (Net.findAny(s.id)) s.id = Net.nextId('SUBCATCHMENT');
                 Net.subcatchments.push(s);
+                Net._subMap.set(s.id, s);
             });
             Net.commit();
-            Net.emit();
+            Net.emit('bulk');
         }
         window.clearSelection && window.clearSelection();
         setTimeout(() => window.fitToNetwork(), 100);
@@ -541,9 +567,164 @@
         }
         return swmmModulePromise;
     }
-    // preload
-    if (typeof createModule !== 'undefined') {
-        getSwmmModule().then(() => console.log('SWMM WASM Engine Loaded')).catch(e => console.error(e));
+
+    // ---------- loading overlay (parsing / simulation progress) ----------
+    let loadingOverlayEl = null;
+    window.showLoadingOverlay = function (title, stage) {
+        if (!loadingOverlayEl) {
+            loadingOverlayEl = document.createElement('div');
+            loadingOverlayEl.id = 'loading-overlay';
+            Object.assign(loadingOverlayEl.style, {
+                position: 'fixed', inset: '0', zIndex: '9999',
+                background: 'rgba(15, 23, 42, 0.55)', display: 'flex',
+                alignItems: 'center', justifyContent: 'center'
+            });
+            loadingOverlayEl.innerHTML = `
+                <div style="background:#fff;border-radius:10px;padding:22px 30px;min-width:280px;
+                            box-shadow:0 10px 40px rgba(0,0,0,.3);text-align:center;font-family:inherit">
+                    <div id="loading-overlay-title" style="font-weight:600;margin-bottom:10px"></div>
+                    <div style="height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;margin-bottom:8px">
+                        <div id="loading-overlay-bar" style="height:100%;width:10%;background:#1565c0;
+                             border-radius:3px;transition:width .3s"></div>
+                    </div>
+                    <div id="loading-overlay-stage" style="font-size:12px;color:#64748b"></div>
+                </div>`;
+            document.body.appendChild(loadingOverlayEl);
+        }
+        loadingOverlayEl.style.display = 'flex';
+        document.getElementById('loading-overlay-title').textContent = title || 'Working…';
+        document.getElementById('loading-overlay-stage').textContent = stage || '';
+        document.getElementById('loading-overlay-bar').style.width = '10%';
+    };
+    window.updateLoadingOverlay = function (pct, stage) {
+        if (!loadingOverlayEl) return;
+        if (pct != null) document.getElementById('loading-overlay-bar').style.width = Math.max(2, Math.min(100, pct)) + '%';
+        if (stage) document.getElementById('loading-overlay-stage').textContent = stage;
+    };
+    window.hideLoadingOverlay = function () {
+        if (loadingOverlayEl) loadingOverlayEl.style.display = 'none';
+    };
+
+    // ---------- .inp parsing in a Web Worker ----------
+    // Falls back to synchronous inpParser.parse() when workers are unavailable
+    // (e.g. when the app is opened from file://).
+    window.parseInpAsync = function (text) {
+        return new Promise((resolve, reject) => {
+            let worker = null;
+            try {
+                worker = new Worker('parseWorker.js');
+            } catch (e) {
+                try { resolve(window.inpParser.parse(text)); }
+                catch (err) { reject(err); }
+                return;
+            }
+            worker.onmessage = (ev) => {
+                const msg = ev.data || {};
+                if (msg.type === 'progress') {
+                    window.updateLoadingOverlay(msg.pct, msg.stage);
+                } else if (msg.type === 'done') {
+                    worker.terminate();
+                    resolve(msg.model);
+                } else if (msg.type === 'error') {
+                    worker.terminate();
+                    reject(new Error(msg.message));
+                }
+            };
+            worker.onerror = () => {
+                // worker failed to boot (CSP, file://, …) — parse on main thread
+                worker.terminate();
+                try { resolve(window.inpParser.parse(text)); }
+                catch (err) { reject(err); }
+            };
+            worker.postMessage({ text });
+        });
+    };
+
+    // ---------- simulation in a Web Worker ----------
+    function runSimulationInWorker(inpText) {
+        return new Promise((resolve, reject) => {
+            let worker = null;
+            try {
+                worker = new Worker('simWorker.js');
+            } catch (e) {
+                reject(e); // caller falls back to main-thread run
+                return;
+            }
+            worker.onmessage = (ev) => {
+                const msg = ev.data || {};
+                if (msg.type === 'log') { console.log('SWMM:', msg.text); }
+                else if (msg.type === 'err') { console.warn('SWMM Err:', msg.text); }
+                else if (msg.type === 'done') {
+                    worker.terminate();
+                    resolve({ rpt: msg.rpt, outBuffer: msg.outBuffer });
+                } else if (msg.type === 'error') {
+                    worker.terminate();
+                    reject(new Error(msg.message));
+                }
+            };
+            worker.onerror = (e) => {
+                worker.terminate();
+                reject(new Error(e.message || 'Simulation worker failed to start.'));
+            };
+            worker.postMessage({ type: 'run', inpText });
+        });
+    }
+
+    // Main-thread fallback (previous behavior) for environments without workers
+    async function runSimulationOnMainThread(inpText) {
+        const Module = await getSwmmModule();
+        // let the UI paint before the synchronous run blocks the thread
+        await new Promise(r => setTimeout(r, 50));
+
+        Module.FS.writeFile('/in.inp', inpText);
+        try {
+            let ran = false;
+
+            // Try callMain first since it's the standard Emscripten way now
+            if (typeof Module.callMain === 'function') {
+                console.log('Running via callMain');
+                Module.callMain(['/in.inp', '/rpt.rpt', '/out.out']);
+                ran = true;
+            } else {
+                // Safely check for ccall to avoid getter aborts in newer Emscripten
+                let hasCCall = false;
+                try { hasCCall = typeof Module.ccall === 'function'; } catch (e) { }
+
+                if (hasCCall && typeof Module._swmm_run === 'function') {
+                    console.log('Running via ccall(swmm_run)');
+                    Module.ccall('swmm_run', 'number', ['string', 'string', 'string'], ['/in.inp', '/rpt.rpt', '/out.out']);
+                    ran = true;
+                } else if (typeof Module.run === 'function') {
+                    console.log('Running via run (fallback)');
+                    Module.run(['/in.inp', '/rpt.rpt', '/out.out']);
+                    ran = true;
+                }
+            }
+
+            if (!ran) {
+                throw new Error('No entry point found in SWMM WebAssembly module.');
+            }
+
+        } catch (e) {
+            // Emscripten's exit() throws — a report may still exist
+            console.warn('SWMM engine exit:', e);
+        }
+
+        let rpt = '';
+        try {
+            rpt = Module.FS.readFile('/rpt.rpt', { encoding: 'utf8' });
+        } catch (err) {
+            throw new Error('Simulation produced no report file.');
+        }
+
+        let outBuffer = null;
+        try {
+            const outBytes = Module.FS.readFile('/out.out');
+            outBuffer = outBytes.buffer.slice(outBytes.byteOffset, outBytes.byteOffset + outBytes.byteLength);
+        } catch (err) {
+            console.warn('Simulation produced no binary .out file.');
+        }
+        return { rpt, outBuffer };
     }
 
     window.runSimulation = async function () {
@@ -562,60 +743,19 @@
         btnRun.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg> Running…';
 
         try {
-            const Module = await getSwmmModule();
-            // let the UI paint before the synchronous run blocks the thread
-            await new Promise(r => setTimeout(r, 50));
-
-            Module.FS.writeFile('/in.inp', inpText);
+            let result;
             try {
-                let ran = false;
-                
-                // Try callMain first since it's the standard Emscripten way now
-                if (typeof Module.callMain === 'function') {
-                    console.log('Running via callMain');
-                    Module.callMain(['/in.inp', '/rpt.rpt', '/out.out']);
-                    ran = true;
-                } else {
-                    // Safely check for ccall to avoid getter aborts in newer Emscripten
-                    let hasCCall = false;
-                    try { hasCCall = typeof Module.ccall === 'function'; } catch(e) {}
-                    
-                    if (hasCCall && typeof Module._swmm_run === 'function') {
-                        console.log('Running via ccall(swmm_run)');
-                        Module.ccall('swmm_run', 'number', ['string', 'string', 'string'], ['/in.inp', '/rpt.rpt', '/out.out']);
-                        ran = true;
-                    } else if (typeof Module.run === 'function') {
-                        console.log('Running via run (fallback)');
-                        Module.run(['/in.inp', '/rpt.rpt', '/out.out']);
-                        ran = true;
-                    }
-                }
-                
-                if (!ran) {
-                    throw new Error('No entry point found in SWMM WebAssembly module.');
-                }
-
-            } catch (e) {
-                // Emscripten's exit() throws — a report may still exist
-                console.warn('SWMM engine exit:', e);
+                // Preferred: run in a worker so the UI stays interactive
+                result = await runSimulationInWorker(inpText);
+            } catch (workerErr) {
+                console.warn('Simulation worker unavailable, running on main thread:', workerErr);
+                result = await runSimulationOnMainThread(inpText);
             }
 
-            let rpt = '';
-            try {
-                rpt = Module.FS.readFile('/rpt.rpt', { encoding: 'utf8' });
-            } catch (err) {
-                throw new Error('Simulation produced no report file.');
-            }
-
-            let outBuffer = null;
-            try {
-                outBuffer = Module.FS.readFile('/out.out');
-            } catch (err) {
-                console.warn('Simulation produced no binary .out file.');
-            }
+            const { rpt, outBuffer } = result;
 
             if (outBuffer && window.SWMMOutParser) {
-                const outParser = new window.SWMMOutParser(outBuffer.buffer);
+                const outParser = new window.SWMMOutParser(outBuffer);
                 outParser.parse();
                 window.App.outData = outParser;
             } else {

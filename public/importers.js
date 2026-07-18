@@ -81,6 +81,11 @@
         const nodeKey = (c) => c[0].toFixed(7) + ',' + c[1].toFixed(7);
         const nodeAt = {};      // key -> id
 
+        // Set-based id dedup (O(1) instead of .some() linear scans)
+        const usedNodeIds = new Set();
+        const usedLinkIds = new Set();
+        const usedSubIds = new Set();
+
         function ensureNode(c) {
             const key = nodeKey(c);
             if (nodeAt[key]) return nodeAt[key];
@@ -103,8 +108,11 @@
                 if (coords.length < 2) return;
                 const from = ensureNode(coords[0]);
                 const to = ensureNode(coords[coords.length - 1]);
+                const linkId = name && !usedLinkIds.has(String(name).replace(/\s+/g, '_'))
+                    ? String(name).replace(/\s+/g, '_') : 'IMP_C' + (++li);
+                usedLinkIds.add(linkId);
                 model.links.push({
-                    id: name && !model.links.some(l => l.id === name) ? String(name).replace(/\s+/g, '_') : 'IMP_C' + (++li),
+                    id: linkId,
                     type: 'CONDUIT', from, to,
                     vertices: coords.slice(1, -1).map(c => [c[0], c[1]]),
                     props: {
@@ -122,8 +130,11 @@
                 // drop closing dup
                 const open = [...ring];
                 if (open.length > 3 && nodeKey(open[0]) === nodeKey(open[open.length - 1])) open.pop();
+                const subId = name && !usedSubIds.has(String(name).replace(/\s+/g, '_'))
+                    ? String(name).replace(/\s+/g, '_') : 'IMP_S' + (++si);
+                usedSubIds.add(subId);
                 model.subcatchments.push({
-                    id: name && !model.subcatchments.some(s => s.id === name) ? String(name).replace(/\s+/g, '_') : 'IMP_S' + (++si),
+                    id: subId,
                     ring: open.map(c => [c[0], c[1]]),
                     props: {
                         raingage: 'RG1', outlet: '',
@@ -136,8 +147,11 @@
             };
 
             if (g.type === 'Point') {
+                const ptId = name && !usedNodeIds.has(String(name).replace(/\s+/g, '_'))
+                    ? String(name).replace(/\s+/g, '_') : 'IMP_J' + (++ni);
+                usedNodeIds.add(ptId);
                 model.nodes.push({
-                    id: name && !model.nodes.some(n => n.id === name) ? String(name).replace(/\s+/g, '_') : 'IMP_J' + (++ni),
+                    id: ptId,
                     type: 'JUNCTION', lngLat: [g.coordinates[0], g.coordinates[1]],
                     props: {
                         invertEl: parseFloat(props.elevation) || 0,
@@ -163,21 +177,26 @@
 
         // register explicit point nodes in the endpoint lookup so lines snap to them
         model.nodes.forEach(n => { nodeAt[nodeKey(n.lngLat)] = n.id; });
-        // remove auto-nodes duplicated by explicit ones, remap link refs
+        // remove auto-nodes duplicated by explicit ones; remap link refs in a
+        // single pass via an id->id map (was O(autoNodes × links))
         const explicitByKey = {};
         model.nodes.forEach(n => explicitByKey[nodeKey(n.lngLat)] = n.id);
+        const remap = {};
         const keep = [];
         autoNodes.forEach(an => {
             const key = nodeKey(an.lngLat);
             if (explicitByKey[key] && explicitByKey[key] !== an.id) {
-                model.links.forEach(l => {
-                    if (l.from === an.id) l.from = explicitByKey[key];
-                    if (l.to === an.id) l.to = explicitByKey[key];
-                });
+                remap[an.id] = explicitByKey[key];
             } else {
                 keep.push(an);
             }
         });
+        if (Object.keys(remap).length) {
+            model.links.forEach(l => {
+                if (remap[l.from]) l.from = remap[l.from];
+                if (remap[l.to]) l.to = remap[l.to];
+            });
+        }
         model.nodes = model.nodes.concat(keep);
 
         window.loadModelIntoNetwork(model, true); // merge into current network

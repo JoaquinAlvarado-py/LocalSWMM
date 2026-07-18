@@ -78,6 +78,19 @@
         return result;
     }
 
+    // Densified geometry cache. Network.js caches GeoJSON features and swaps
+    // out the coordinates array (never mutates it) when geometry changes, so
+    // keying a WeakMap on the coords array gives correct invalidation for free.
+    const densifyCache = new WeakMap();
+    function densifyCachedLL(coords) {
+        let dense = densifyCache.get(coords);
+        if (!dense) {
+            dense = densifyToLL(coords);
+            densifyCache.set(coords, dense);
+        }
+        return dense;
+    }
+
     // Extract network features directly from the SWMM network model
     function extractMapboxFeatures() {
         const features = [];
@@ -138,7 +151,7 @@
             else if (geom.type === 'MultiPoint') coords = geom.coordinates.map(pt => [pt]);
 
             coords.forEach(ring => {
-                let dense = densifyToLL(ring);
+                let dense = densifyCachedLL(ring);
                 dense.forEach(ll => {
                     if (haversine(camLL, ll) > MAX_DIST_M) return;
                     let k = elevKey(ll[0], ll[1]);
@@ -359,16 +372,16 @@
 
             let type = geom.type;
             if (type === 'LineString') {
-                let ll = densifyToLL(geom.coordinates);
+                let ll = densifyCachedLL(geom.coordinates);
                 if (drawLL(ll, camLL, heading, pitch, f, W, H, false)) svCtx.stroke();
             } else if (type === 'MultiLineString') {
                 geom.coordinates.forEach(ls => {
-                    let ll = densifyToLL(ls);
+                    let ll = densifyCachedLL(ls);
                     if (drawLL(ll, camLL, heading, pitch, f, W, H, false)) svCtx.stroke();
                 });
             } else if (type === 'Polygon') {
                 geom.coordinates.forEach(ring => {
-                    let ll = densifyToLL(ring);
+                    let ll = densifyCachedLL(ring);
                     if (drawLL(ll, camLL, heading, pitch, f, W, H, true)) {
                         svCtx.fill();
                         svCtx.stroke();
@@ -377,7 +390,7 @@
             } else if (type === 'MultiPolygon') {
                 geom.coordinates.forEach(poly => {
                     poly.forEach(ring => {
-                        let ll = densifyToLL(ring);
+                        let ll = densifyCachedLL(ring);
                         if (drawLL(ll, camLL, heading, pitch, f, W, H, true)) {
                             svCtx.fill();
                             svCtx.stroke();

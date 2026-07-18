@@ -1,5 +1,14 @@
 // network.js — Project state, undo/redo, persistence
 // Single source of truth for the SWMM network being edited.
+//
+// Performance notes:
+// - _nodeMap/_linkMap/_subMap give O(1) id lookups (getNode/getLink/…).
+// - GeoJSON FeatureCollections are cached and invalidated on mutation;
+//   moveNode patches the cached features in place instead of rebuilding.
+// - Undo/redo is command-based: each edit stores a small delta op instead
+//   of a full JSON.stringify snapshot. Bulk ops (load/merge/clear) store a
+//   full snapshot, and a checkpoint snapshot is inserted every 25 commands
+//   so history can be trimmed and restored cheaply.
 
 (function () {
     'use strict';
@@ -11,6 +20,9 @@
         JUNCTION: 'J', OUTFALL: 'O', STORAGE: 'ST', DIVIDER: 'D', RAINGAGE: 'RG',
         CONDUIT: 'C', PUMP: 'P', WEIR: 'W', ORIFICE: 'OR', SUBCATCHMENT: 'S'
     };
+
+    const HISTORY_LIMIT = 100;
+    const SNAPSHOT_EVERY = 25; // checkpoint snapshot every N delta commands
 
     function defaultNodeProps(type) {
         switch (type) {
@@ -48,6 +60,8 @@
         };
     }
 
+    function deepCopy(v) { return JSON.parse(JSON.stringify(v)); }
+
     // --- Geometry helpers (WGS84) ---
     const R_EARTH = 6371008.8;
     function haversine(a, b) {
@@ -82,12 +96,15 @@
 
     class Network {
         constructor() {
-            this.reset(false);
-            this.history = [];
-            this.hIndex = -1;
             this.listeners = [];
             this._saveTimer = null;
-            this.commit(); // initial empty snapshot
+            this.reset(false);
+            // history entries: { t:'snap', json } — full state after a bulk op
+            //                  { t:'cmd', op, snapAfter? } — a small delta
+            // history[0] is always state-bearing.
+            this.history = [{ t: 'snap', json: JSON.stringify(this.serialize()) }];
+            this.hIndex = 0;
+            this._cmdsSinceSnap = 0;
         }
 
         reset(notify = true) {
@@ -99,13 +116,38 @@
             this.units = 'SI';
             this.title = 'Untitled SWMM Project';
             this.counters = {};
-            if (notify) this.emit();
+            this.rawSections = {};
+            this.rebuildIndexes();
+            if (notify) this.emit('bulk');
+        }
+
+        // ---------- id index maps (O(1) lookups) ----------
+        rebuildIndexes() {
+            this._nodeMap = new Map();
+            this._linkMap = new Map();
+            this._subMap = new Map();
+            this.nodes.forEach(n => this._nodeMap.set(n.id, n));
+            this.links.forEach(l => this._linkMap.set(l.id, l));
+            this.subcatchments.forEach(s => this._subMap.set(s.id, s));
+            this._realNodes = null;
+            this._invalidateGeo();
+        }
+
+        _invalidateGeo() {
+            this._geoNodes = null;
+            this._geoLinks = null;
+            this._geoSubs = null;
+            this._geoMesh = null;
+            this._geoNodeFeat = null; // id -> cached node Feature
+            this._geoLinkFeat = null; // id -> cached link Feature
         }
 
         // ---------- events ----------
         onChange(fn) { this.listeners.push(fn); }
-        emit() {
-            this.listeners.forEach(fn => { try { fn(this); } catch (e) { console.error(e); } });
+        // evt: { type: 'add'|'delete'|'move'|'props'|'rename'|'bulk'|'change', ... }
+        emit(type = 'change', detail = null) {
+            const evt = Object.assign({ type }, detail || {});
+            this.listeners.forEach(fn => { try { fn(this, evt); } catch (e) { console.error(e); } });
             this.scheduleAutosave();
         }
 
@@ -117,23 +159,26 @@
             do {
                 this.counters[type]++;
                 id = prefix + this.counters[type];
-            } while (this.findAny(id));
+            } while (this.findAny(id)); // O(1) per check via index maps
             return id;
         }
 
         findAny(id) {
-            return this.getNode(id) || this.getLink(id) || this.getSubcatchment(id) || null;
+            return this._nodeMap.get(id) || this._linkMap.get(id) || this._subMap.get(id) || null;
         }
 
         // ---------- accessors ----------
-        getNode(id) { return this.nodes.find(n => n.id === id); }
-        getLink(id) { return this.links.find(l => l.id === id); }
-        getSubcatchment(id) { return this.subcatchments.find(s => s.id === id); }
-        get realNodes() { return this.nodes.filter(n => n.type !== 'RAINGAGE'); } // rain gages aren't hydraulic nodes
+        getNode(id) { return this._nodeMap.get(id); }
+        getLink(id) { return this._linkMap.get(id); }
+        getSubcatchment(id) { return this._subMap.get(id); }
+        get realNodes() {
+            if (!this._realNodes) this._realNodes = this.nodes.filter(n => n.type !== 'RAINGAGE'); // rain gages aren't hydraulic nodes
+            return this._realNodes;
+        }
         get nodeCount() { return this.realNodes.length; }
         get linkCount() { return this.links.length; }
 
-        // ---------- mutations (each commits a snapshot) ----------
+        // ---------- mutations (each records a delta command) ----------
         addNode(type, lngLat) {
             const node = {
                 id: this.nextId(type),
@@ -142,8 +187,11 @@
                 props: defaultNodeProps(type)
             };
             this.nodes.push(node);
-            this.commit();
-            this.emit();
+            this._nodeMap.set(node.id, node);
+            this._realNodes = null;
+            this._invalidateGeo();
+            this._record({ t: 'add', nodes: [node] });
+            this.emit('add', { id: node.id });
             return node;
         }
 
@@ -158,8 +206,10 @@
             };
             if (type === 'CONDUIT') this.updateConduitLength(link);
             this.links.push(link);
-            this.commit();
-            this.emit();
+            this._linkMap.set(link.id, link);
+            this._invalidateGeo();
+            this._record({ t: 'add', links: [link] });
+            this.emit('add', { id: link.id });
             return link;
         }
 
@@ -182,8 +232,10 @@
             const nearest = this.nearestNode(c, Infinity);
             if (nearest) sub.props.outlet = nearest.id;
             this.subcatchments.push(sub);
-            this.commit();
-            this.emit();
+            this._subMap.set(sub.id, sub);
+            this._invalidateGeo();
+            this._record({ t: 'add', subs: [sub] });
+            this.emit('add', { id: sub.id });
             return sub;
         }
 
@@ -217,33 +269,92 @@
             link.props.length = this.units === 'US' ? +(m * 3.28084).toFixed(2) : +m.toFixed(2);
         }
 
+        // Move a node; commit=false while dragging (record the command once
+        // via commitMove() on drag end for a single undo step).
         moveNode(id, lngLat, commit = true) {
             const node = this.getNode(id);
             if (!node) return;
+            const from = node.lngLat;
             node.lngLat = [lngLat[0], lngLat[1]];
+            const touched = this._refreshLinksAt(id);
+            this._patchGeoForMove(node, touched);
+            if (commit) this._record({ t: 'move', id, from: [from[0], from[1]], to: [lngLat[0], lngLat[1]] });
+            this.emit('move', { id, links: touched });
+        }
+
+        // Record a single move command for a completed drag.
+        commitMove(id, fromLngLat) {
+            const node = this.getNode(id);
+            if (!node || !fromLngLat) return;
+            if (fromLngLat[0] === node.lngLat[0] && fromLngLat[1] === node.lngLat[1]) return;
+            this._record({ t: 'move', id, from: [fromLngLat[0], fromLngLat[1]], to: [node.lngLat[0], node.lngLat[1]] });
+            this.emit('commit', { id }); // refresh undo/redo button state
+        }
+
+        _refreshLinksAt(nodeId) {
+            const touched = [];
             this.links.forEach(l => {
-                if (l.from === id || l.to === id) this.updateConduitLength(l);
+                if (l.from === nodeId || l.to === nodeId) {
+                    this.updateConduitLength(l);
+                    touched.push(l.id);
+                }
             });
-            if (commit) { this.commit(); }
-            this.emit();
+            return touched;
+        }
+
+        // Patch cached GeoJSON in place for a node move (avoids full rebuild)
+        _patchGeoForMove(node, touchedLinkIds) {
+            if (this._geoNodeFeat) {
+                const nf = this._geoNodeFeat.get(node.id);
+                if (nf) nf.geometry.coordinates = node.lngLat;
+            }
+            if (this._geoLinkFeat) {
+                touchedLinkIds.forEach(id => {
+                    const lf = this._geoLinkFeat.get(id);
+                    const l = this.getLink(id);
+                    if (lf && l) {
+                        const path = this.linkPathCoords(l);
+                        if (path) lf.geometry.coordinates = path;
+                    }
+                });
+            }
         }
 
         updateProps(id, updates) {
             const el = this.findAny(id);
             if (!el) return;
+            const before = {}, after = {};
+            Object.keys(updates).forEach(k => { before[k] = el.props[k]; after[k] = updates[k]; });
+            const lenBefore = el.props.length;
             Object.assign(el.props, updates);
             if (el.type === 'CONDUIT') this.updateConduitLength(el);
-            this.commit();
-            this.emit();
+            // capture derived length change (e.g. re-enabling autoLength)
+            if (el.type === 'CONDUIT' && el.props.length !== lenBefore && !('length' in after)) {
+                before.length = lenBefore;
+                after.length = el.props.length;
+            }
+            if (Object.keys(after).length) this._record({ t: 'props', id, before, after });
+            this.emit('props', { id });
         }
 
         renameElement(oldId, newId) {
             newId = String(newId).trim().replace(/\s+/g, '_');
             if (!newId || newId === oldId) return oldId;
             if (this.findAny(newId)) return oldId; // must stay unique
+            if (!this.findAny(oldId)) return oldId;
+            this._applyRename(oldId, newId);
+            this._record({ t: 'rename', from: oldId, to: newId });
+            this.emit('rename', { from: oldId, to: newId });
+            return newId;
+        }
+
+        _applyRename(oldId, newId) {
             const el = this.findAny(oldId);
-            if (!el) return oldId;
+            if (!el) return;
             el.id = newId;
+            if (this._nodeMap.delete(oldId)) this._nodeMap.set(newId, el);
+            if (this._linkMap.delete(oldId)) this._linkMap.set(newId, el);
+            if (this._subMap.delete(oldId)) this._subMap.set(newId, el);
             // fix references
             this.links.forEach(l => {
                 if (l.from === oldId) l.from = newId;
@@ -253,9 +364,7 @@
                 if (s.props.outlet === oldId) s.props.outlet = newId;
                 if (s.props.raingage === oldId) s.props.raingage = newId;
             });
-            this.commit();
-            this.emit();
-            return newId;
+            this._invalidateGeo();
         }
 
         deleteElements(ids) {
@@ -264,27 +373,51 @@
             this.links.forEach(l => {
                 if (idSet.has(l.from) || idSet.has(l.to)) idSet.add(l.id);
             });
+            const remNodes = this.nodes.filter(n => idSet.has(n.id));
+            const remLinks = this.links.filter(l => idSet.has(l.id));
+            const remSubs = this.subcatchments.filter(s => idSet.has(s.id));
+            if (!remNodes.length && !remLinks.length && !remSubs.length) return;
+
             this.nodes = this.nodes.filter(n => !idSet.has(n.id));
             this.links = this.links.filter(l => !idSet.has(l.id));
             this.subcatchments = this.subcatchments.filter(s => !idSet.has(s.id));
-            // clear dangling outlet refs
+            remNodes.forEach(n => this._nodeMap.delete(n.id));
+            remLinks.forEach(l => this._linkMap.delete(l.id));
+            remSubs.forEach(s => this._subMap.delete(s.id));
+
+            // clear dangling outlet refs (recorded so undo restores them)
+            const subPatches = [];
             this.subcatchments.forEach(s => {
-                if (s.props.outlet && idSet.has(s.props.outlet)) s.props.outlet = '';
-                if (s.props.raingage && idSet.has(s.props.raingage)) s.props.raingage = 'RG1';
+                const before = {}, after = {};
+                if (s.props.outlet && idSet.has(s.props.outlet)) {
+                    before.outlet = s.props.outlet; after.outlet = '';
+                    s.props.outlet = '';
+                }
+                if (s.props.raingage && idSet.has(s.props.raingage)) {
+                    before.raingage = s.props.raingage; after.raingage = 'RG1';
+                    s.props.raingage = 'RG1';
+                }
+                if (Object.keys(before).length) subPatches.push({ id: s.id, before, after });
             });
-            this.commit();
-            this.emit();
+
+            this._realNodes = null;
+            this._invalidateGeo();
+            this._record({ t: 'del', nodes: remNodes, links: remLinks, subs: remSubs, subPatches });
+            this.emit('delete', { ids: [...idSet] });
         }
 
         setUnits(units) {
-            this.units = units === 'US' ? 'US' : 'SI';
-            // recompute auto lengths/areas in the new unit system
+            units = units === 'US' ? 'US' : 'SI';
+            if (units === this.units) return;
+            const before = this.units;
+            this.units = units;
+            // recompute auto lengths in the new unit system
             this.links.forEach(l => this.updateConduitLength(l));
-            this.commit();
-            this.emit();
+            this._record({ t: 'units', before, after: units });
+            this.emit('bulk');
         }
 
-        // ---------- undo / redo ----------
+        // ---------- undo / redo (command pattern with checkpoints) ----------
         serialize() {
             return {
                 version: 1,
@@ -300,7 +433,7 @@
             };
         }
 
-        loadState(state, resetHistory = false) {
+        loadState(state, resetHistory = false, notify = true) {
             this.title = state.title || 'Untitled SWMM Project';
             this.units = state.units || 'SI';
             this.options = Object.assign(defaultOptions(), state.options || {});
@@ -310,22 +443,53 @@
             this.subcatchments = state.subcatchments || [];
             this.mesh2D = state.mesh2D || []; // Added for 2D mesh
             this.rawSections = state.rawSections || {};
+            this.rebuildIndexes();
             if (resetHistory) {
-                this.history = [];
-                this.hIndex = -1;
-                this.commit();
+                this.history = [{ t: 'snap', json: JSON.stringify(this.serialize()) }];
+                this.hIndex = 0;
+                this._cmdsSinceSnap = 0;
             }
-            this.emit();
+            if (notify) this.emit('bulk');
         }
 
+        // Bulk commit: pushes a full snapshot of the CURRENT state.
+        // Use after direct bulk mutation (merge import, clear, …).
         commit() {
-            const snap = JSON.stringify(this.serialize());
-            // skip no-op commits
-            if (this.hIndex >= 0 && this.history[this.hIndex] === snap) return;
             this.history = this.history.slice(0, this.hIndex + 1);
-            this.history.push(snap);
-            if (this.history.length > 100) this.history.shift();
+            this.history.push({ t: 'snap', json: JSON.stringify(this.serialize()) });
             this.hIndex = this.history.length - 1;
+            this._cmdsSinceSnap = 0;
+            this._trimHistory();
+            // external bulk mutations bypassed the index bookkeeping
+            this.rebuildIndexes();
+        }
+
+        _record(op) {
+            this.history = this.history.slice(0, this.hIndex + 1);
+            const entry = { t: 'cmd', op };
+            if (++this._cmdsSinceSnap >= SNAPSHOT_EVERY) {
+                entry.snapAfter = JSON.stringify(this.serialize());
+                this._cmdsSinceSnap = 0;
+            }
+            this.history.push(entry);
+            this.hIndex = this.history.length - 1;
+            this._trimHistory();
+        }
+
+        _trimHistory() {
+            while (this.history.length > HISTORY_LIMIT) {
+                // drop oldest entries up to the next state-bearing entry
+                let j = -1;
+                for (let i = 1; i < this.history.length; i++) {
+                    const e = this.history[i];
+                    if (e.t === 'snap' || e.snapAfter) { j = i; break; }
+                }
+                if (j <= 0 || j > this.hIndex) break; // nothing safely trimmable
+                const e = this.history[j];
+                if (e.t !== 'snap') this.history[j] = { t: 'snap', json: e.snapAfter };
+                this.history = this.history.slice(j);
+                this.hIndex -= j;
+            }
         }
 
         get canUndo() { return this.hIndex > 0; }
@@ -333,24 +497,145 @@
 
         undo() {
             if (!this.canUndo) return;
-            this.hIndex--;
-            this.loadState(JSON.parse(this.history[this.hIndex]));
+            const entry = this.history[this.hIndex];
+            if (entry.t === 'cmd') {
+                this._applyOp(entry.op, true);
+                this.hIndex--;
+            } else {
+                // snapshot entry — restore the state at the previous position
+                this.hIndex--;
+                this._restoreTo(this.hIndex);
+            }
+            this.emit('bulk');
         }
 
         redo() {
             if (!this.canRedo) return;
             this.hIndex++;
-            this.loadState(JSON.parse(this.history[this.hIndex]));
+            const entry = this.history[this.hIndex];
+            if (entry.t === 'cmd') this._applyOp(entry.op, false);
+            else this.loadState(JSON.parse(entry.json), false, false);
+            this.emit('bulk');
+        }
+
+        // Restore state at history position pos: load nearest checkpoint ≤ pos,
+        // then replay commands forward.
+        _restoreTo(pos) {
+            let j = pos;
+            while (j > 0 && this.history[j].t !== 'snap' && !this.history[j].snapAfter) j--;
+            const e = this.history[j];
+            this.loadState(JSON.parse(e.t === 'snap' ? e.json : e.snapAfter), false, false);
+            for (let k = j + 1; k <= pos; k++) {
+                this._applyOp(this.history[k].op, false);
+            }
+        }
+
+        _insertElements(op) {
+            (op.nodes || []).forEach(n => {
+                const copy = deepCopy(n);
+                this.nodes.push(copy);
+                this._nodeMap.set(copy.id, copy);
+            });
+            (op.links || []).forEach(l => {
+                const copy = deepCopy(l);
+                this.links.push(copy);
+                this._linkMap.set(copy.id, copy);
+            });
+            (op.subs || []).forEach(s => {
+                const copy = deepCopy(s);
+                this.subcatchments.push(copy);
+                this._subMap.set(copy.id, copy);
+            });
+            this._realNodes = null;
+        }
+
+        _removeElements(op) {
+            const ids = new Set([
+                ...(op.nodes || []).map(n => n.id),
+                ...(op.links || []).map(l => l.id),
+                ...(op.subs || []).map(s => s.id)
+            ]);
+            this.nodes = this.nodes.filter(n => !ids.has(n.id));
+            this.links = this.links.filter(l => !ids.has(l.id));
+            this.subcatchments = this.subcatchments.filter(s => !ids.has(s.id));
+            ids.forEach(id => {
+                this._nodeMap.delete(id);
+                this._linkMap.delete(id);
+                this._subMap.delete(id);
+            });
+            this._realNodes = null;
+        }
+
+        _applyOp(op, inv) {
+            switch (op.t) {
+                case 'add':
+                    inv ? this._removeElements(op) : this._insertElements(op);
+                    break;
+                case 'del':
+                    inv ? this._insertElements(op) : this._removeElements(op);
+                    (op.subPatches || []).forEach(p => {
+                        const s = this.getSubcatchment(p.id);
+                        if (s) Object.assign(s.props, inv ? p.before : p.after);
+                    });
+                    break;
+                case 'move': {
+                    const n = this.getNode(op.id);
+                    if (n) {
+                        const c = inv ? op.from : op.to;
+                        n.lngLat = [c[0], c[1]];
+                        this._refreshLinksAt(op.id);
+                    }
+                    break;
+                }
+                case 'props': {
+                    const el = this.findAny(op.id);
+                    if (el) {
+                        Object.assign(el.props, inv ? op.before : op.after);
+                        if (el.type === 'CONDUIT') this.updateConduitLength(el);
+                    }
+                    break;
+                }
+                case 'rename':
+                    this._applyRename(inv ? op.to : op.from, inv ? op.from : op.to);
+                    break;
+                case 'units':
+                    this.units = inv ? op.before : op.after;
+                    this.links.forEach(l => this.updateConduitLength(l));
+                    break;
+            }
+            this._invalidateGeo();
         }
 
         // ---------- persistence ----------
         scheduleAutosave() {
             clearTimeout(this._saveTimer);
             this._saveTimer = setTimeout(() => {
+                let json;
                 try {
-                    localStorage.setItem('openswmm3d.project', JSON.stringify(this.serialize()));
-                } catch (e) { /* storage full or unavailable */ }
-            }, 400);
+                    json = JSON.stringify(this.serialize());
+                    localStorage.setItem('openswmm3d.project', json);
+                } catch (e) {
+                    // storage full/unavailable — fall back to IndexedDB (no ~5MB cap)
+                    if (json) this._saveToIndexedDB(json);
+                }
+            }, 2000);
+        }
+
+        _idb() {
+            return new Promise((resolve, reject) => {
+                if (typeof indexedDB === 'undefined') return reject(new Error('IndexedDB unavailable'));
+                const req = indexedDB.open('openswmm3d', 1);
+                req.onupgradeneeded = () => req.result.createObjectStore('kv');
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        async _saveToIndexedDB(json) {
+            try {
+                const db = await this._idb();
+                db.transaction('kv', 'readwrite').objectStore('kv').put(json, 'project');
+            } catch (e) { /* give up silently, same as before */ }
         }
 
         loadFromLocalStorage() {
@@ -368,6 +653,27 @@
             }
         }
 
+        // Async fallback for models too large for localStorage
+        async loadFromIndexedDB() {
+            try {
+                const db = await this._idb();
+                return await new Promise((resolve) => {
+                    const rq = db.transaction('kv').objectStore('kv').get('project');
+                    rq.onsuccess = () => {
+                        try {
+                            const state = rq.result ? JSON.parse(rq.result) : null;
+                            if (!state || !state.nodes || !state.nodes.length) return resolve(false);
+                            this.loadState(state, true);
+                            resolve(true);
+                        } catch (e) { resolve(false); }
+                    };
+                    rq.onerror = () => resolve(false);
+                });
+            } catch (e) {
+                return false;
+            }
+        }
+
         downloadProject() {
             const blob = new Blob([JSON.stringify(this.serialize(), null, 2)], { type: 'application/json' });
             const a = document.createElement('a');
@@ -377,68 +683,88 @@
             URL.revokeObjectURL(a.href);
         }
 
-        // ---------- GeoJSON for map rendering ----------
+        // ---------- GeoJSON for map rendering (cached) ----------
         nodesGeoJSON() {
-            return {
-                type: 'FeatureCollection',
-                features: this.nodes.map(n => ({
-                    type: 'Feature',
-                    id: n.id,
-                    properties: { id: n.id, type: n.type },
-                    geometry: { type: 'Point', coordinates: n.lngLat }
-                }))
-            };
+            if (!this._geoNodes) {
+                this._geoNodeFeat = new Map();
+                this._geoNodes = {
+                    type: 'FeatureCollection',
+                    features: this.nodes.map(n => {
+                        const f = {
+                            type: 'Feature',
+                            id: n.id,
+                            properties: { id: n.id, type: n.type },
+                            geometry: { type: 'Point', coordinates: n.lngLat }
+                        };
+                        this._geoNodeFeat.set(n.id, f);
+                        return f;
+                    })
+                };
+            }
+            return this._geoNodes;
         }
 
         linksGeoJSON() {
-            const feats = [];
-            this.links.forEach(l => {
-                const path = this.linkPathCoords(l);
-                if (!path) return;
-                feats.push({
-                    type: 'Feature',
-                    id: l.id,
-                    properties: { id: l.id, type: l.type },
-                    geometry: { type: 'LineString', coordinates: path }
+            if (!this._geoLinks) {
+                this._geoLinkFeat = new Map();
+                const feats = [];
+                this.links.forEach(l => {
+                    const path = this.linkPathCoords(l); // O(1) node lookups
+                    if (!path) return;
+                    const f = {
+                        type: 'Feature',
+                        id: l.id,
+                        properties: { id: l.id, type: l.type },
+                        geometry: { type: 'LineString', coordinates: path }
+                    };
+                    this._geoLinkFeat.set(l.id, f);
+                    feats.push(f);
                 });
-            });
-            return { type: 'FeatureCollection', features: feats };
+                this._geoLinks = { type: 'FeatureCollection', features: feats };
+            }
+            return this._geoLinks;
         }
 
         subcatchmentsGeoJSON() {
-            return {
-                type: 'FeatureCollection',
-                features: this.subcatchments.map(s => {
-                    const ring = [...s.ring];
-                    if (ring.length && (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1])) {
-                        ring.push([...ring[0]]);
-                    }
-                    return {
-                        type: 'Feature',
-                        id: s.id,
-                        properties: { id: s.id, type: 'SUBCATCHMENT' },
-                        geometry: { type: 'Polygon', coordinates: [ring] }
-                    };
-                })
-            };
+            if (!this._geoSubs) {
+                this._geoSubs = {
+                    type: 'FeatureCollection',
+                    features: this.subcatchments.map(s => {
+                        const ring = [...s.ring];
+                        if (ring.length && (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1])) {
+                            ring.push([...ring[0]]);
+                        }
+                        return {
+                            type: 'Feature',
+                            id: s.id,
+                            properties: { id: s.id, type: 'SUBCATCHMENT' },
+                            geometry: { type: 'Polygon', coordinates: [ring] }
+                        };
+                    })
+                };
+            }
+            return this._geoSubs;
         }
 
         mesh2DGeoJSON() {
-            return {
-                type: 'FeatureCollection',
-                features: this.mesh2D.map(m => {
-                    const ring = [...m.ring];
-                    if (ring.length && (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1])) {
-                        ring.push([...ring[0]]);
-                    }
-                    return {
-                        type: 'Feature',
-                        id: m.id, // For feature-state binding
-                        properties: { id: m.id, type: 'MESH2D' },
-                        geometry: { type: 'Polygon', coordinates: [ring] }
-                    };
-                })
-            };
+            if (!this._geoMesh) {
+                this._geoMesh = {
+                    type: 'FeatureCollection',
+                    features: this.mesh2D.map(m => {
+                        const ring = [...m.ring];
+                        if (ring.length && (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1])) {
+                            ring.push([...ring[0]]);
+                        }
+                        return {
+                            type: 'Feature',
+                            id: m.id, // For feature-state binding
+                            properties: { id: m.id, type: 'MESH2D' },
+                            geometry: { type: 'Polygon', coordinates: [ring] }
+                        };
+                    })
+                };
+            }
+            return this._geoMesh;
         }
 
         bounds() {
