@@ -140,7 +140,7 @@ class InpParser {
         const defaultCoord = Object.values(coords)[0] || [0, 0];
         (S['RAINGAGES'] || []).forEach(row => {
             // Give raingages a default map position so they are not dropped if [SYMBOLS] is missing
-            const pos = symbols[row[0]] || [defaultCoord[0] + 50, defaultCoord[1] + 50]; 
+            const pos = symbols[row[0]] || [defaultCoord[0], defaultCoord[1]]; 
             model.nodes.push({
                 id: row[0], type: 'RAINGAGE', lngLat: pos,
                 props: {
