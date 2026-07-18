@@ -137,39 +137,57 @@ class SWMMOutParser {
         const linkVars = this.vars.links;
         const sysVars = this.vars.system;
 
+        // Use zero-copy Float32Array VIEWS onto the buffer instead of
+        // buffer.slice() copies (~2× memory for large .out files).
+        // Views require 4-byte alignment; if the results section is
+        // misaligned (ID-name strings have arbitrary lengths), make ONE
+        // aligned copy of the whole section and view into that.
+        let viewBuffer = this.buffer;
+        if (pos % 4 !== 0) {
+            viewBuffer = this.buffer.slice(pos, this.buffer.byteLength - 24);
+            pos = 0;
+        }
+        const bufEnd = (viewBuffer === this.buffer) ? this.buffer.byteLength - 24 : viewBuffer.byteLength;
+        const timeView = new DataView(viewBuffer);
+
         for (let p = 0; p < this.numPeriods; p++) {
-            if (pos + 8 > this.buffer.byteLength - 24) break;
-            
+            if (pos + 8 > bufEnd) break;
+
             // Read time (double)
-            const time = this.view.getFloat64(pos, true);
+            const time = timeView.getFloat64(pos, true);
             this.results.times.push(time);
             pos += 8;
 
             // Subcatchments
-            const bytesSub = this.counts.subcatchments * subcatchVars * 4;
-            this.results.subcatchments.push(new Float32Array(this.buffer.slice(pos, pos + bytesSub)));
-            pos += bytesSub;
+            const nSub = this.counts.subcatchments * subcatchVars;
+            this.results.subcatchments.push(new Float32Array(viewBuffer, pos, nSub));
+            pos += nSub * 4;
 
             // Nodes
-            const bytesNode = this.counts.nodes * nodeVars * 4;
-            this.results.nodes.push(new Float32Array(this.buffer.slice(pos, pos + bytesNode)));
-            pos += bytesNode;
+            const nNode = this.counts.nodes * nodeVars;
+            this.results.nodes.push(new Float32Array(viewBuffer, pos, nNode));
+            pos += nNode * 4;
 
             // Links
-            const bytesLink = this.counts.links * linkVars * 4;
-            this.results.links.push(new Float32Array(this.buffer.slice(pos, pos + bytesLink)));
-            pos += bytesLink;
+            const nLink = this.counts.links * linkVars;
+            this.results.links.push(new Float32Array(viewBuffer, pos, nLink));
+            pos += nLink * 4;
 
             // System
-            const bytesSys = sysVars * 4;
-            this.results.system.push(new Float32Array(this.buffer.slice(pos, pos + bytesSys)));
-            pos += bytesSys;
+            this.results.system.push(new Float32Array(viewBuffer, pos, sysVars));
+            pos += sysVars * 4;
         }
     }
 
     // Helper to extract a full time series for a specific element and variable
+    // (cached — results.js requests the same series repeatedly)
     getTimeSeries(type, index, varIndex) {
         if (!this.parsed) return [];
+        if (!this._tsCache) this._tsCache = new Map();
+        const key = type + ':' + index + ':' + varIndex;
+        const cached = this._tsCache.get(key);
+        if (cached) return cached;
+
         let dataArray = null;
         let numVars = 0;
 
@@ -186,6 +204,7 @@ class SWMMOutParser {
                 series[p] = 0;
             }
         }
+        this._tsCache.set(key, series);
         return series;
     }
 

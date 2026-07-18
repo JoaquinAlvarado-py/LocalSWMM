@@ -374,9 +374,13 @@
 
         // hover highlight (select/delete/link tools)
         if (['select', 'delete'].includes(Tools.active) || Tools.active in LINK_TOOL_TYPES) {
-            const feat = (Tools.active in LINK_TOOL_TYPES)
-                ? (Tools.snapNodeAt(e.point) ? { properties: { id: Tools.snapNodeAt(e.point).id }, source: 'swmm-nodes' } : null)
-                : Tools.featureAt(e.point);
+            let feat = null;
+            if (Tools.active in LINK_TOOL_TYPES) {
+                const snapped = Tools.snapNodeAt(e.point); // single lookup (was called twice)
+                if (snapped) feat = { properties: { id: snapped.id }, source: 'swmm-nodes' };
+            } else {
+                feat = Tools.featureAt(e.point);
+            }
             const newId = feat ? feat.properties.id : null;
             if (hovered && hovered !== newId) window.setElementState(hovered, { hovered: false });
             if (newId && newId !== hovered) window.setElementState(newId, { hovered: true });
@@ -415,21 +419,38 @@
         if (!snapped) return;
         Tools.dragging = snapped.id;
         Tools._dragMoved = false;
+        const dragStartLngLat = [snapped.lngLat[0], snapped.lngLat[1]];
         map.dragPan.disable();
         map.getCanvas().style.cursor = 'grabbing';
 
+        // rAF-throttled: mousemove only records the latest position; the
+        // model is updated at most once per animation frame.
+        let pendingLngLat = null;
+        let rafId = null;
+        const flushMove = () => {
+            rafId = null;
+            if (pendingLngLat && Tools.dragging) {
+                Net.moveNode(Tools.dragging, pendingLngLat, false);
+                pendingLngLat = null;
+            }
+        };
         const onMove = (ev) => {
             Tools._dragMoved = true;
-            Net.moveNode(Tools.dragging, [ev.lngLat.lng, ev.lngLat.lat], false);
+            pendingLngLat = [ev.lngLat.lng, ev.lngLat.lat];
+            if (!rafId) rafId = requestAnimationFrame(flushMove);
         };
         const onUp = () => {
             map.off('mousemove', onMove);
             map.off('mouseup', onUp);
             map.dragPan.enable();
             map.getCanvas().style.cursor = '';
+            if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+            if (pendingLngLat && Tools.dragging) {
+                Net.moveNode(Tools.dragging, pendingLngLat, false);
+                pendingLngLat = null;
+            }
             if (Tools._dragMoved) {
-                Net.commit();      // single undo step for the whole drag
-                Net.emit();
+                Net.commitMove(Tools.dragging, dragStartLngLat); // single undo step for the whole drag
                 if (window.renderPropsPanel) window.renderPropsPanel();
             }
             Tools.dragging = null;

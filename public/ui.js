@@ -69,13 +69,19 @@
         inpInput.value = '';
         if (!file) return;
         try {
-            const model = window.inpParser.parse(await file.text());
+            window.showLoadingOverlay('Loading ' + file.name, 'Reading file…');
+            const text = await file.text();
+            window.updateLoadingOverlay(20, 'Parsing…');
+            // parse off the main thread so the UI stays responsive on large files
+            const model = await window.parseInpAsync(text);
+            window.hideLoadingOverlay();
             if (!model.nodes.length) {
                 alert('No nodes with coordinates found in the .inp file.');
                 return;
             }
             window.openProjectionModal(model);
         } catch (err) {
+            window.hideLoadingOverlay();
             alert('Failed to parse .inp file: ' + err.message);
         }
     });
@@ -603,7 +609,7 @@
     const btnPlayPause = document.getElementById('btn-play-pause');
     const btnSpeed = document.getElementById('btn-speed');
 
-    let animationInterval = null;
+    let animationRaf = null;
     let isPlaying = false;
     let speedIdx = 0;
     const speeds = [1, 2, 4, 8, 16];
@@ -641,24 +647,34 @@
             if (isPlaying) return;
             isPlaying = true;
             btnPlayPause.textContent = '⏸ Pause';
-            
-            const currentSpeed = speeds[speedIdx];
-            const intervalTime = 500 / currentSpeed;
 
-            animationInterval = setInterval(() => {
-                let step = parseInt(timeSlider.value);
-                let max = parseInt(timeSlider.max);
-                if (step >= max) step = 0;
-                else step++;
-                timeSlider.value = step;
-                this.updateDisplay();
-            }, intervalTime);
+            // rAF-driven loop: steps advance on the animation clock instead of
+            // setInterval, so updates stay in sync with actual rendered frames
+            // (no wasted setFeatureState calls between frames at high speeds).
+            let lastTime = performance.now();
+            const tick = (now) => {
+                if (!isPlaying) return;
+                const stepDuration = 500 / speeds[speedIdx];
+                if (now - lastTime >= stepDuration) {
+                    // Advance by however many steps elapsed, render once
+                    const advance = Math.max(1, Math.floor((now - lastTime) / stepDuration));
+                    lastTime = now;
+                    let step = parseInt(timeSlider.value);
+                    const max = parseInt(timeSlider.max);
+                    step += advance;
+                    if (step > max) step = 0;
+                    timeSlider.value = step;
+                    this.updateDisplay();
+                }
+                animationRaf = requestAnimationFrame(tick);
+            };
+            animationRaf = requestAnimationFrame(tick);
         },
         pause() {
             if (!isPlaying) return;
             isPlaying = false;
             btnPlayPause.textContent = '▶ Play';
-            clearInterval(animationInterval);
+            if (animationRaf) { cancelAnimationFrame(animationRaf); animationRaf = null; }
         }
     };
 

@@ -253,4 +253,5 @@ class InpParser {
     }
 }
 
-window.inpParser = new InpParser();
+// Works on the main thread (window) and inside parseWorker.js (self)
+(typeof window !== 'undefined' ? window : self).inpParser = new InpParser();

@@ -20,10 +20,23 @@
         const i = Math.min(Math.floor(seg), RAMP.length - 2);
         return lerpColor(RAMP[i], RAMP[i + 1], seg - i);
     }
+    window.rampColor = rampColor; // used by street_view_overlay.js
+
+    // min/max via loop — Math.min(...arr) overflows the stack on >100k elements
+    function arrayMinMax(arr) {
+        let min = Infinity, max = -Infinity;
+        for (let i = 0; i < arr.length; i++) {
+            const v = arr[i];
+            if (v < min) min = v;
+            if (v > max) max = v;
+        }
+        return { min, max };
+    }
 
     // ---------- rpt parsing ----------
-    function sectionLines(rpt, title) {
-        const lines = rpt.split('\n');
+    // All parsers take the pre-split lines array — the report is split ONCE
+    // in displayResults instead of 8+ times.
+    function sectionLines(lines, title) {
         const i = lines.findIndex(l => l.includes(title));
         if (i === -1) return null;
         const out = [];
@@ -38,8 +51,8 @@
         return out;
     }
 
-    function parseNodeDepths(rpt) {
-        const lines = sectionLines(rpt, 'Node Depth Summary');
+    function parseNodeDepths(lines0) {
+        const lines = sectionLines(lines0, 'Node Depth Summary');
         if (!lines) return {};
         const out = {};
         for (const line of lines) {
@@ -49,8 +62,8 @@
         return out;
     }
 
-    function parseLinkFlows(rpt) {
-        const lines = sectionLines(rpt, 'Link Flow Summary');
+    function parseLinkFlows(lines0) {
+        const lines = sectionLines(lines0, 'Link Flow Summary');
         if (!lines) return {};
         const out = {};
         for (const line of lines) {
@@ -60,8 +73,8 @@
         return out;
     }
 
-    function parseFlooding(rpt) {
-        const lines = sectionLines(rpt, 'Node Flooding Summary');
+    function parseFlooding(lines0) {
+        const lines = sectionLines(lines0, 'Node Flooding Summary');
         if (!lines) return [];
         const out = [];
         for (const line of lines) {
@@ -82,8 +95,8 @@
         return out;
     }
 
-    function parseNodeInflows(rpt) {
-        const lines = sectionLines(rpt, 'Node Inflow Summary');
+    function parseNodeInflows(lines0) {
+        const lines = sectionLines(lines0, 'Node Inflow Summary');
         if (!lines) return [];
         const out = [];
         for (const line of lines) {
@@ -104,8 +117,8 @@
         return out;
     }
 
-    function parseOutfallLoadings(rpt) {
-        const lines = sectionLines(rpt, 'Outfall Loading Summary');
+    function parseOutfallLoadings(lines0) {
+        const lines = sectionLines(lines0, 'Outfall Loading Summary');
         if (!lines) return [];
         const out = [];
         for (const line of lines) {
@@ -124,8 +137,8 @@
         return out;
     }
 
-    function parseConduitSurcharges(rpt) {
-        const lines = sectionLines(rpt, 'Conduit Surcharge Summary');
+    function parseConduitSurcharges(lines0) {
+        const lines = sectionLines(lines0, 'Conduit Surcharge Summary');
         if (!lines) return [];
         const out = [];
         for (const line of lines) {
@@ -145,8 +158,8 @@
         return out;
     }
 
-    function parseSubcatchmentRunoffs(rpt) {
-        const lines = sectionLines(rpt, 'Subcatchment Runoff Summary');
+    function parseSubcatchmentRunoffs(lines0) {
+        const lines = sectionLines(lines0, 'Subcatchment Runoff Summary');
         if (!lines) return [];
         const out = [];
         for (const line of lines) {
@@ -169,8 +182,8 @@
         return out;
     }
 
-    function parseFlowClassifications(rpt) {
-        const lines = sectionLines(rpt, 'Flow Classification Summary');
+    function parseFlowClassifications(lines0) {
+        const lines = sectionLines(lines0, 'Flow Classification Summary');
         if (!lines) return [];
         const out = [];
         for (const line of lines) {
@@ -211,7 +224,7 @@
     }
 
     // ---------- time-series parsing ----------
-    function parseTimeSeries(rpt) {
+    function parseTimeSeries(rptLines) {
         const out = {
             times: [], // array of "Date Time" strings
             nodes: {}, // id -> array of depth values
@@ -341,13 +354,20 @@
         nodeMinMax: { min: 0, max: 0.1 },
         linkMinMax: { min: 0, max: 0.1 },
         currentStep: 0,
+        // dirty-tracking: last color pushed via setFeatureState, per element
+        _appliedNode: new Map(),
+        _appliedLink: new Map(),
 
         applyToMap() {
             Object.entries(this.nodeColors).forEach(([id, color]) => {
+                if (this._appliedNode.get(id) === color) return;
+                this._appliedNode.set(id, color);
                 try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: color }); } catch (e) { }
                 try { map.setFeatureState({ source: 'swmm-2d-mesh', id }, { resultColor: color }); } catch (e) { }
             });
             Object.entries(this.linkColors).forEach(([id, color]) => {
+                if (this._appliedLink.get(id) === color) return;
+                this._appliedLink.set(id, color);
                 try { map.setFeatureState({ source: 'swmm-links', id }, { resultColor: color }); } catch (e) { }
             });
         },
@@ -366,6 +386,9 @@
                 if (val !== undefined) {
                     const t = nMax > nMin ? (val - nMin) / (nMax - nMin) : 0.5;
                     const color = rampColor(t);
+                    // Only touch the map when the color actually changed
+                    if (this._appliedNode.get(id) === color) return;
+                    this._appliedNode.set(id, color);
                     try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: color }); } catch (e) { }
                     try { map.setFeatureState({ source: 'swmm-2d-mesh', id }, { resultColor: color }); } catch (e) { }
                 }
@@ -376,6 +399,8 @@
                 if (val !== undefined) {
                     const t = lMax > lMin ? (Math.abs(val) - lMin) / (lMax - lMin) : 0.5;
                     const color = rampColor(t);
+                    if (this._appliedLink.get(id) === color) return;
+                    this._appliedLink.set(id, color);
                     try { map.setFeatureState({ source: 'swmm-links', id }, { resultColor: color }); } catch (e) { }
                 }
             });
@@ -393,13 +418,19 @@
 
         clear() {
             this.active = false;
-            Object.keys(this.nodeColors).forEach(id => {
+            // Clear every element we ever pushed a color to (applyToMapForStep
+            // may have touched ids beyond nodeColors/linkColors)
+            const nodeIds = new Set([...Object.keys(this.nodeColors), ...this._appliedNode.keys()]);
+            const linkIds = new Set([...Object.keys(this.linkColors), ...this._appliedLink.keys()]);
+            nodeIds.forEach(id => {
                 try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: null }); } catch (e) { }
                 try { map.setFeatureState({ source: 'swmm-2d-mesh', id }, { resultColor: null }); } catch (e) { }
             });
-            Object.keys(this.linkColors).forEach(id => {
+            linkIds.forEach(id => {
                 try { map.setFeatureState({ source: 'swmm-links', id }, { resultColor: null }); } catch (e) { }
             });
+            this._appliedNode.clear();
+            this._appliedLink.clear();
             this.nodeColors = {};
             this.linkColors = {};
             this.timeSeries = null;
@@ -460,20 +491,22 @@
         if (hint) hint.classList.add('hidden');
         container.innerHTML = '';
 
-        const errors = parseEngineErrors(rpt);
-        const depths = parseNodeDepths(rpt);
-        const flows = parseLinkFlows(rpt);
+        // split the report ONCE; every parser works on the same lines array
+        const rptLines = rpt.split('\n');
+        const errors = parseEngineErrors(rptLines);
+        const depths = parseNodeDepths(rptLines);
+        const flows = parseLinkFlows(rptLines);
         const contErrors = parseContinuityErrors(rpt);
         
         const summaryData = {
             'Node Depth': depths,
             'Link Flow': flows,
-            'Node Inflow': parseNodeInflows(rpt),
-            'Node Flooding': parseFlooding(rpt),
-            'Outfall Loading': parseOutfallLoadings(rpt),
-            'Conduit Surcharge': parseConduitSurcharges(rpt),
-            'Subcatchment Runoff': parseSubcatchmentRunoffs(rpt),
-            'Flow Classification': parseFlowClassifications(rpt)
+            'Node Inflow': parseNodeInflows(rptLines),
+            'Node Flooding': parseFlooding(rptLines),
+            'Outfall Loading': parseOutfallLoadings(rptLines),
+            'Conduit Surcharge': parseConduitSurcharges(rptLines),
+            'Subcatchment Runoff': parseSubcatchmentRunoffs(rptLines),
+            'Flow Classification': parseFlowClassifications(rptLines)
         };
 
         const isUS = Net.units === 'US';
@@ -489,7 +522,7 @@
 
         let dMin = 0, dMax = 0, fMin = 0, fMax = 0;
         if (depthVals.length) {
-            dMin = Math.min(...depthVals); dMax = Math.max(...depthVals);
+            ({ min: dMin, max: dMax } = arrayMinMax(depthVals));
             ResultStyling.nodeMinMax = { min: dMin, max: dMax };
             Object.entries(depths).forEach(([id, d]) => {
                 const t = dMax > dMin ? (d.maxDepth - dMin) / (dMax - dMin) : 0.5;
@@ -498,7 +531,7 @@
         }
 
         if (flowVals.length) {
-            fMin = Math.min(...flowVals); fMax = Math.max(...flowVals);
+            ({ min: fMin, max: fMax } = arrayMinMax(flowVals));
             ResultStyling.linkMinMax = { min: fMin, max: fMax };
             Object.entries(flows).forEach(([id, f]) => {
                 const t = fMax > fMin ? (f.maxFlow - fMin) / (fMax - fMin) : 0.5;
@@ -539,7 +572,7 @@
                 };
             });
         } else {
-            ts = parseTimeSeries(rpt);
+            ts = parseTimeSeries(rptLines);
         }
         
         if (ts && ts.times && ts.times.length > 0) {
