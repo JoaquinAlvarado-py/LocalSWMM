@@ -550,8 +550,8 @@
                     listeners.push(panorama.addListener('position_changed', onPositionChanged));
                     
                     if (window.map) {
-                        map.on('moveend', scheduleRedraw);
-                        map.on('render', scheduleRedraw); 
+                        // Removed map.on('render', scheduleRedraw) here because it causes massive CPU
+                        // thrashing when the user pans the Mapbox map (rendering thousands of items 60fps).
                     }
 
                     onPositionChanged();
@@ -573,8 +573,7 @@
         listeners = [];
         
         if (window.map) {
-            map.off('moveend', scheduleRedraw);
-            map.off('render', scheduleRedraw);
+            // Nothing to remove
         }
 
         if (pegmanMarker) {

@@ -680,6 +680,10 @@
             if (window.ProfilePlot && typeof window.ProfilePlot.update === 'function') {
                 window.ProfilePlot.update(step);
             }
+            // Sync Street View overlay animation
+            if (window.StreetViewOverlay && typeof window.StreetViewOverlay.scheduleRedraw === 'function') {
+                window.StreetViewOverlay.scheduleRedraw();
+            }
         },
         play() {
             if (isPlaying) return;
