@@ -80,6 +80,28 @@ html, body {
     letter-spacing: 0.3px;
     color: var(--accent);
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+}
+.tb-brand img {
+    height: 34px;
+    width: auto;
+    display: block;
+}
+
+.tb-gh {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    color: var(--text-mid);
+    flex-shrink: 0;
+}
+.tb-gh:hover {
+    color: var(--text-dark);
+    background: var(--bg-hover);
 }
 
 .tb-group {
