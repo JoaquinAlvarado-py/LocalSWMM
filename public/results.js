@@ -351,9 +351,12 @@
         nodeColors: {},   // id -> max color
         linkColors: {},   // id -> max color
         timeSeries: null, // parsed time series data
+        outData: null,    // binary out data parser
         nodeMinMax: { min: 0, max: 0.1 },
         linkMinMax: { min: 0, max: 0.1 },
         currentStep: 0,
+        activeNodeVar: 'depth',
+        activeLinkVar: 'flow',
         // dirty-tracking: last color pushed via setFeatureState, per element
         _appliedNode: new Map(),
         _appliedLink: new Map(),
@@ -381,29 +384,67 @@
             const nMin = this.nodeMinMax.min, nMax = this.nodeMinMax.max;
             const lMin = this.linkMinMax.min, lMax = this.linkMinMax.max;
 
-            Object.entries(ts.nodes).forEach(([id, values]) => {
-                const val = values[this.activeNodeVar] ? values[this.activeNodeVar][step] : undefined;
-                if (val !== undefined) {
-                    const t = nMax > nMin ? (val - nMin) / (nMax - nMin) : 0.5;
-                    const color = rampColor(t);
-                    // Only touch the map when the color actually changed
-                    if (this._appliedNode.get(id) === color) return;
-                    this._appliedNode.set(id, color);
-                    try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: color }); } catch (e) { }
-                    try { map.setFeatureState({ source: 'swmm-2d-mesh', id }, { resultColor: color }); } catch (e) { }
-                }
-            });
+            const outData = this.outData;
+            if (outData && outData.parsed) {
+                // Highly optimized path: read only the current step's variables directly from outData
+                const nodeVarIdx = this.activeNodeVar === 'depth' ? 0 :
+                                   this.activeNodeVar === 'head' ? 1 :
+                                   this.activeNodeVar === 'inflow' ? 4 :
+                                   this.activeNodeVar === 'flooding' ? 5 : -1;
+                const linkVarIdx = this.activeLinkVar === 'flow' ? 0 :
+                                   this.activeLinkVar === 'depth' ? 1 :
+                                   this.activeLinkVar === 'velocity' ? 2 :
+                                   this.activeLinkVar === 'capacity' ? 4 : -1;
 
-            Object.entries(ts.links).forEach(([id, values]) => {
-                const val = values[this.activeLinkVar] ? values[this.activeLinkVar][step] : undefined;
-                if (val !== undefined) {
-                    const t = lMax > lMin ? (Math.abs(val) - lMin) / (lMax - lMin) : 0.5;
-                    const color = rampColor(t);
-                    if (this._appliedLink.get(id) === color) return;
-                    this._appliedLink.set(id, color);
-                    try { map.setFeatureState({ source: 'swmm-links', id }, { resultColor: color }); } catch (e) { }
+                if (nodeVarIdx !== -1) {
+                    const nodeVals = outData.getStepData('NODE', step, nodeVarIdx);
+                    outData.names.nodes.forEach((id, i) => {
+                        const val = nodeVals[i];
+                        const t = nMax > nMin ? (val - nMin) / (nMax - nMin) : 0.5;
+                        const color = rampColor(t);
+                        if (this._appliedNode.get(id) === color) return;
+                        this._appliedNode.set(id, color);
+                        try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: color }); } catch (e) { }
+                        try { map.setFeatureState({ source: 'swmm-2d-mesh', id }, { resultColor: color }); } catch (e) { }
+                    });
                 }
-            });
+
+                if (linkVarIdx !== -1) {
+                    const linkVals = outData.getStepData('LINK', step, linkVarIdx);
+                    outData.names.links.forEach((id, i) => {
+                        const val = linkVals[i];
+                        const t = lMax > lMin ? (Math.abs(val) - lMin) / (lMax - lMin) : 0.5;
+                        const color = rampColor(t);
+                        if (this._appliedLink.get(id) === color) return;
+                        this._appliedLink.set(id, color);
+                        try { map.setFeatureState({ source: 'swmm-links', id }, { resultColor: color }); } catch (e) { }
+                    });
+                }
+            } else {
+                // Fallback to reading from parsed timeSeries arrays
+                Object.entries(ts.nodes).forEach(([id, values]) => {
+                    const val = values[this.activeNodeVar] ? values[this.activeNodeVar][step] : undefined;
+                    if (val !== undefined) {
+                        const t = nMax > nMin ? (val - nMin) / (nMax - nMin) : 0.5;
+                        const color = rampColor(t);
+                        if (this._appliedNode.get(id) === color) return;
+                        this._appliedNode.set(id, color);
+                        try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: color }); } catch (e) { }
+                        try { map.setFeatureState({ source: 'swmm-2d-mesh', id }, { resultColor: color }); } catch (e) { }
+                    }
+                });
+
+                Object.entries(ts.links).forEach(([id, values]) => {
+                    const val = values[this.activeLinkVar] ? values[this.activeLinkVar][step] : undefined;
+                    if (val !== undefined) {
+                        const t = lMax > lMin ? (Math.abs(val) - lMin) / (lMax - lMin) : 0.5;
+                        const color = rampColor(t);
+                        if (this._appliedLink.get(id) === color) return;
+                        this._appliedLink.set(id, color);
+                        try { map.setFeatureState({ source: 'swmm-links', id }, { resultColor: color }); } catch (e) { }
+                    }
+                });
+            }
             
             // Also update the UI time display safely if needed
             const timeDisplay = document.getElementById('time-display');
@@ -434,6 +475,7 @@
             this.nodeColors = {};
             this.linkColors = {};
             this.timeSeries = null;
+            this.outData = null;
             if (window.AnimationUI) window.AnimationUI.hide();
         }
     };
@@ -615,6 +657,7 @@
 
         let ts = null;
         if (outData && outData.parsed && outData.numPeriods > 0) {
+            ResultStyling.outData = outData;
             ts = { times: [], nodes: {}, links: {}, nodeMax: {}, linkMax: {} };
             // SWMM epoch (1899-12-30); use UTC so historical timezone
             // offsets don't skew the wall-clock times stored in the file
@@ -631,18 +674,18 @@
             }
             outData.names.nodes.forEach((id, i) => {
                 ts.nodes[id] = {
-                    depth: outData.getTimeSeries('NODE', i, 0),
-                    head: outData.getTimeSeries('NODE', i, 1),
-                    inflow: outData.getTimeSeries('NODE', i, 4),
-                    flooding: outData.getTimeSeries('NODE', i, 5)
+                    get depth() { delete this.depth; return this.depth = outData.getTimeSeries('NODE', i, 0); },
+                    get head() { delete this.head; return this.head = outData.getTimeSeries('NODE', i, 1); },
+                    get inflow() { delete this.inflow; return this.inflow = outData.getTimeSeries('NODE', i, 4); },
+                    get flooding() { delete this.flooding; return this.flooding = outData.getTimeSeries('NODE', i, 5); }
                 };
             });
             outData.names.links.forEach((id, i) => {
                 ts.links[id] = {
-                    flow: outData.getTimeSeries('LINK', i, 0),
-                    depth: outData.getTimeSeries('LINK', i, 1),
-                    velocity: outData.getTimeSeries('LINK', i, 2),
-                    capacity: outData.getTimeSeries('LINK', i, 4)
+                    get flow() { delete this.flow; return this.flow = outData.getTimeSeries('LINK', i, 0); },
+                    get depth() { delete this.depth; return this.depth = outData.getTimeSeries('LINK', i, 1); },
+                    get velocity() { delete this.velocity; return this.velocity = outData.getTimeSeries('LINK', i, 2); },
+                    get capacity() { delete this.capacity; return this.capacity = outData.getTimeSeries('LINK', i, 4); }
                 };
             });
         } else {
@@ -979,6 +1022,52 @@
                 tstate.sortKey = null;
                 tstate.sortDir = -1;
                 tstate.showAll = false;
+
+                // Update active map styling variables based on category selection
+                const cat = select.value;
+                if (cat === 'Node Depth') {
+                    ResultStyling.activeNodeVar = 'depth';
+                } else if (cat === 'Node Inflow') {
+                    ResultStyling.activeNodeVar = 'inflow';
+                } else if (cat === 'Node Flooding') {
+                    ResultStyling.activeNodeVar = 'flooding';
+                } else if (cat === 'Link Flow') {
+                    ResultStyling.activeLinkVar = 'flow';
+                }
+
+                // If time series exists, recalculate the min/max range for the newly selected variable
+                if (ResultStyling.timeSeries) {
+                    let vals = [];
+                    const ts = ResultStyling.timeSeries;
+                    if (['Node Depth', 'Node Inflow', 'Node Flooding'].includes(cat)) {
+                        const varName = ResultStyling.activeNodeVar;
+                        Object.values(ts.nodes).forEach(n => {
+                            if (n[varName]) {
+                                for (let i = 0; i < n[varName].length; i++) {
+                                    vals.push(n[varName][i]);
+                                }
+                            }
+                        });
+                        if (vals.length) {
+                            ResultStyling.nodeMinMax = arrayMinMax(vals);
+                        }
+                    } else if (cat === 'Link Flow') {
+                        const varName = ResultStyling.activeLinkVar;
+                        Object.values(ts.links).forEach(l => {
+                            if (l[varName]) {
+                                for (let i = 0; i < l[varName].length; i++) {
+                                    vals.push(Math.abs(l[varName][i]));
+                                }
+                            }
+                        });
+                        if (vals.length) {
+                            ResultStyling.linkMinMax = arrayMinMax(vals);
+                        }
+                    }
+                    // Refresh the map rendering for the current step with the new variable
+                    ResultStyling.applyToMapForStep(ResultStyling.currentStep);
+                }
+
                 renderTable();
             };
 

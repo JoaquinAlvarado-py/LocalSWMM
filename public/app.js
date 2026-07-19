@@ -608,6 +608,76 @@
         return swmmModulePromise;
     }
 
+    // ---------- top middle progress bar helper ----------
+    let topProgressInterval = null;
+    window.showTopProgress = function (label, pct) {
+        if (topProgressInterval) {
+            clearInterval(topProgressInterval);
+            topProgressInterval = null;
+        }
+        const container = document.getElementById('top-progress-container');
+        const bar = document.getElementById('top-progress-bar');
+        const lbl = document.getElementById('top-progress-label');
+        if (container && bar && lbl) {
+            container.classList.remove('hidden');
+            lbl.textContent = label;
+            bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+            bar.style.backgroundColor = '';
+        }
+    };
+
+    window.startSimulatedTopProgress = function (label) {
+        if (topProgressInterval) clearInterval(topProgressInterval);
+        const container = document.getElementById('top-progress-container');
+        const bar = document.getElementById('top-progress-bar');
+        const lbl = document.getElementById('top-progress-label');
+        if (!container || !bar || !lbl) return;
+
+        container.classList.remove('hidden');
+        bar.style.width = '0%';
+        bar.style.backgroundColor = '';
+        lbl.textContent = label;
+
+        let percent = 0;
+        topProgressInterval = setInterval(() => {
+            if (percent < 50) {
+                percent += 8;
+            } else if (percent < 85) {
+                percent += 2;
+            } else if (percent < 98) {
+                percent += 0.4;
+            }
+            bar.style.width = percent + '%';
+            lbl.textContent = `${label} (${Math.floor(percent)}%)`;
+        }, 100);
+    };
+
+    window.hideTopProgress = function (success = true) {
+        if (topProgressInterval) {
+            clearInterval(topProgressInterval);
+            topProgressInterval = null;
+        }
+        const container = document.getElementById('top-progress-container');
+        const bar = document.getElementById('top-progress-bar');
+        const lbl = document.getElementById('top-progress-label');
+        if (!container || !bar || !lbl) return;
+
+        if (success) {
+            bar.style.width = '100%';
+            lbl.textContent = 'Complete';
+            setTimeout(() => {
+                container.classList.add('hidden');
+            }, 800);
+        } else {
+            lbl.textContent = 'Failed';
+            bar.style.backgroundColor = '#d32f2f'; // Red color
+            setTimeout(() => {
+                container.classList.add('hidden');
+                bar.style.backgroundColor = '';
+            }, 1500);
+        }
+    };
+
     // ---------- loading overlay (parsing / simulation progress) ----------
     let loadingOverlayEl = null;
     window.showLoadingOverlay = function (title, stage) {
@@ -635,14 +705,17 @@
         document.getElementById('loading-overlay-title').textContent = title || 'Working…';
         document.getElementById('loading-overlay-stage').textContent = stage || '';
         document.getElementById('loading-overlay-bar').style.width = '10%';
+        window.showTopProgress(title || 'Working…', 10);
     };
     window.updateLoadingOverlay = function (pct, stage) {
         if (!loadingOverlayEl) return;
         if (pct != null) document.getElementById('loading-overlay-bar').style.width = Math.max(2, Math.min(100, pct)) + '%';
         if (stage) document.getElementById('loading-overlay-stage').textContent = stage;
+        window.showTopProgress(stage || 'Working…', pct);
     };
     window.hideLoadingOverlay = function () {
         if (loadingOverlayEl) loadingOverlayEl.style.display = 'none';
+        window.hideTopProgress(true);
     };
 
     // ---------- .inp parsing in a Web Worker ----------
@@ -799,6 +872,7 @@
         const inpText = window.inpExporter.generateInp(Net);
         btnRun.disabled = true;
         btnRun.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg> Running…';
+        window.startSimulatedTopProgress('Simulating');
 
         try {
             let result;
@@ -823,9 +897,11 @@
             window.App.lastRunReport = rpt;
             console.log(rpt);
             window.displayResults(rpt, window.App.outData);
+            window.hideTopProgress(true);
         } catch (err) {
             console.error('Simulation failed:', err);
             window.showResultsWarning('Simulation failed: ' + err.message);
+            window.hideTopProgress(false);
         } finally {
             btnRun.disabled = false;
             btnRun.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M8 5v14l11-7z"/></svg> Run';
