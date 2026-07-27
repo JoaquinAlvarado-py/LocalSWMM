@@ -8,5 +8,3 @@ __pycache__/
 build/
 .tools/
 .tmp-openswmm/
-public/openswmm2d.js
-public/openswmm2d.wasm
