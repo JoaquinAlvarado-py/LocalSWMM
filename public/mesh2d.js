@@ -107,6 +107,11 @@
                             cell.manningN = roughness.nPerv;
                             cell.landCoverClass = lcCode;
                             cell.parentSubcatch = sub.id;
+                            cell.props = {
+                                manningN: roughness.nPerv,
+                                landCoverClass: lcCode,
+                                parentSubcatch: sub.id
+                            };
                         });
                     }
 
@@ -224,7 +229,9 @@
 
                 cells.push({
                     id: `M2D_${String(cellId).padStart(4, '0')}`,
-                    ring: triRing
+                    type: 'MESH2D',
+                    ring: triRing,
+                    props: {}
                 });
 
                 cellId++;

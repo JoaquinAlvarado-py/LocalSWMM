@@ -355,21 +355,9 @@
 
     function toggleLandCoverLayer(visible) {
         if (!map) return;
-        const layerId = 'vito-landcover-layer';
-        const sourceId = 'vito-landcover-source';
+        const layerId = 'mapbox-landcover-layer';
 
         if (visible) {
-            if (!map.getSource(sourceId)) {
-                map.addSource(sourceId, {
-                    type: 'raster',
-                    tiles: [
-                        'https://tiles.maps.eox.at/wmts/1.0.0/ESA_WorldCover_2021/default/GoogleMapsCompatible/{z}/{y}/{x}.png'
-                    ],
-                    tileSize: 256,
-                    maxzoom: 18,
-                    attribution: '© ESA WorldCover 2021 (EOX / VITO)'
-                });
-            }
             if (!map.getLayer(layerId)) {
                 let beforeId = null;
                 const layers = map.getStyle().layers || [];
@@ -381,19 +369,31 @@
                 }
                 map.addLayer({
                     id: layerId,
-                    type: 'raster',
-                    source: sourceId,
+                    type: 'fill',
+                    source: 'composite',
+                    'source-layer': 'landuse',
                     paint: {
-                        'raster-opacity': 0.70
+                        'fill-color': [
+                            'match', ['get', 'class'],
+                            'wood', '#006400',
+                            'agriculture', '#f0d66d',
+                            'grass', '#8fbc5a',
+                            'scrub', '#b1a46f',
+                            'park', '#72b05a',
+                            'school', '#d9c7a7',
+                            'hospital', '#e8b4b8',
+                            'industrial', '#b7a9a1',
+                            '#a8bf8c'
+                        ],
+                        'fill-opacity': 0.72,
+                        'fill-outline-color': 'rgba(70, 90, 55, 0.35)'
                     }
                 }, beforeId);
             } else {
                 map.setLayoutProperty(layerId, 'visibility', 'visible');
             }
-        } else {
-            if (map.getLayer(layerId)) {
-                map.setLayoutProperty(layerId, 'visibility', 'none');
-            }
+        } else if (map.getLayer(layerId)) {
+            map.setLayoutProperty(layerId, 'visibility', 'none');
         }
     }
     window.toggleLandCoverLayer = toggleLandCoverLayer;
@@ -1147,6 +1147,12 @@
         }
         if (!Net.nodes.some(n => n.type === 'OUTFALL')) {
             window.showResultsWarning('The network needs at least one outfall node.');
+            return;
+        }
+        if (Net.mesh2D.length > 0) {
+            window.showResultsWarning(
+                '2D mesh simulation is not available in this browser build. The bundled SWMM WebAssembly engine and binary output parser support the 1D drainage network and lumped subcatchment runoff only; they do not solve or return cell-to-cell surface flow. Clear the 2D mesh to run the 1D model.'
+            );
             return;
         }
 

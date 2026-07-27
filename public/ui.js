@@ -877,15 +877,20 @@
             });
         }
 
-        document.getElementById('prop-id').addEventListener('change', (e) => {
-            const newId = Net.renameElement(el.id, e.target.value);
-            App.selection.delete(id);
-            App.selection.add(newId);
-            window.setElementState(newId, { selected: true });
-            renderPropsPanel();
-        });
-
-        document.getElementById('prop-delete').addEventListener('click', () => Tools.deleteSelection());
+        const propId = document.getElementById('prop-id');
+        if (type === 'MESH2D') {
+            propId.readOnly = true;
+            document.getElementById('prop-delete').style.display = 'none';
+        } else {
+            propId.addEventListener('change', (e) => {
+                const newId = Net.renameElement(el.id, e.target.value);
+                App.selection.delete(id);
+                App.selection.add(newId);
+                window.setElementState(newId, { selected: true });
+                renderPropsPanel();
+            });
+            document.getElementById('prop-delete').addEventListener('click', () => Tools.deleteSelection());
+        }
     };
 
     function openRainDataEditor(seriesName) {
