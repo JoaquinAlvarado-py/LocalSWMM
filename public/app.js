@@ -363,11 +363,11 @@
                 map.addSource(sourceId, {
                     type: 'raster',
                     tiles: [
-                        'https://services.terrascope.be/wms/v2?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=WORLDCOVER_2021_MAP&SRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256&FORMAT=image/png&TRANSPARENT=true'
+                        'https://tiles.maps.eox.at/wmts/1.0.0/ESA_WorldCover_2021/default/GoogleMapsCompatible/{z}/{y}/{x}.png'
                     ],
                     tileSize: 256,
-                    maxzoom: 15,
-                    attribution: '© ESA WorldCover 2021 (VITO/Terrascope)'
+                    maxzoom: 18,
+                    attribution: '© ESA WorldCover 2021 (EOX / VITO)'
                 });
             }
             if (!map.getLayer(layerId)) {

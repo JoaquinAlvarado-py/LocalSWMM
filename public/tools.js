@@ -30,7 +30,7 @@
         className: 'results-popup'
     });
 
-    const INTERACTIVE_LAYERS = ['swmm-nodes-layer', 'swmm-links-hit', 'swmm-links-layer', 'swmm-subcatchments-fill'];
+    const INTERACTIVE_LAYERS = ['swmm-nodes-layer', 'swmm-links-hit', 'swmm-links-layer', 'swmm-subcatchments-fill', 'swmm-2d-mesh-fill'];
 
     const Tools = {
         active: 'select',
@@ -219,8 +219,8 @@
                 { layers: INTERACTIVE_LAYERS.filter(l => map.getLayer(l)) }
             );
             if (!feats.length) return null;
-            // prefer nodes > links > subcatchments
-            const rank = f => f.layer.id === 'swmm-nodes-layer' ? 0 : (f.layer.id.startsWith('swmm-links') ? 1 : 2);
+            // prefer nodes > links > subcatchments > 2d mesh cells
+            const rank = f => f.layer.id === 'swmm-nodes-layer' ? 0 : (f.layer.id.startsWith('swmm-links') ? 1 : (f.layer.id === 'swmm-subcatchments-fill' ? 2 : 3));
             feats.sort((a, b) => rank(a) - rank(b));
             return feats[0];
         },
