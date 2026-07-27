@@ -109,7 +109,14 @@ class InpExporter {
             }
             gages.forEach(g => {
                 const p = g.props;
-                L.push(`${this.pad(g.id, 16)} ${this.pad(p.format, 9)} ${this.pad(p.interval, 8)} ${this.pad(p.scf, 8)} ${p.sourceType} ${p.sourceName}`);
+                const src = p.sourceType || 'TIMESERIES';
+                if (src === 'FILE') {
+                    const fn = String(p.fileName || '').replace(/^"|"$/g, '');
+                    const fileStr = fn ? `"${fn}"` : '""';
+                    L.push(`${this.pad(g.id, 16)} ${this.pad(p.format || 'INTENSITY', 9)} ${this.pad(p.interval || '1:00', 8)} ${this.pad(p.scf || 1.0, 8)} FILE ${fileStr} ${p.stationID || '*'} ${p.rainUnits || 'IN'}`);
+                } else {
+                    L.push(`${this.pad(g.id, 16)} ${this.pad(p.format || 'INTENSITY', 9)} ${this.pad(p.interval || '1:00', 8)} ${this.pad(p.scf || 1.0, 8)} TIMESERIES ${p.sourceName || 'TS1'}`);
+                }
             });
             L.push('');
         }
@@ -130,23 +137,22 @@ class InpExporter {
                 L.push(`${this.pad(s.id, 16)} ${this.pad(p.raingage || 'RG1', 16)} ${this.pad(p.outlet || '*', 16)} ${this.pad(p.area, 8)} ${this.pad(p.imperv, 8)} ${this.pad(p.width, 8)} ${this.pad(p.slope, 8)} ${this.pad(p.curbLen || 0, 8)}`);
             });
             L.push('');
-            if (!net.rawSections || !net.rawSections['SUBAREAS']) {
-                L.push('[SUBAREAS]');
-                L.push(';;Subcatchment   N-Imperv   N-Perv     S-Imperv   S-Perv     PctZero    RouteTo');
-                net.subcatchments.forEach(s => {
-                    L.push(`${this.pad(s.id, 16)} 0.01       0.1        0.05       0.05       25         OUTLET`);
-                });
-                L.push('');
-            }
-            if (!net.rawSections || !net.rawSections['INFILTRATION']) {
-                L.push('[INFILTRATION]');
-                L.push(';;Subcatchment   MaxRate    MinRate    Decay      DryTime    MaxInfil');
-                net.subcatchments.forEach(s => {
-                    L.push(`${this.pad(s.id, 16)} 3.0        0.5        4          7          0`);
-                });
-                L.push('');
-            }
 
+            L.push('[SUBAREAS]');
+            L.push(';;Subcatchment   N-Imperv   N-Perv     S-Imperv   S-Perv     PctZero    RouteTo          PctRouted');
+            net.subcatchments.forEach(s => {
+                const p = s.props;
+                L.push(`${this.pad(s.id, 16)} ${this.pad(p.nImperv ?? 0.01, 10)} ${this.pad(p.nPerv ?? 0.1, 10)} ${this.pad(p.dstoreImperv ?? 0.05, 10)} ${this.pad(p.dstorePerv ?? 0.05, 10)} ${this.pad(p.pctZero ?? 25, 10)} ${this.pad(p.subareaRouting || 'OUTLET', 16)} ${p.pctRouted ?? 100}`);
+            });
+            L.push('');
+
+            L.push('[INFILTRATION]');
+            L.push(';;Subcatchment   MaxRate    MinRate    Decay      DryTime    MaxInfil');
+            net.subcatchments.forEach(s => {
+                const p = s.props;
+                L.push(`${this.pad(s.id, 16)} ${this.pad(p.infilMaxRate ?? 3.0, 10)} ${this.pad(p.infilMinRate ?? 0.5, 10)} ${this.pad(p.infilDecay ?? 4.0, 10)} ${this.pad(p.infilDryTime ?? 7.0, 10)} ${p.infilMaxInfil ?? 0}`);
+            });
+            L.push('');
         }
 
         // --- Nodes ---
@@ -212,7 +218,18 @@ class InpExporter {
             L.push(';;Name           From Node        To Node          Length     Roughness  InOffset   OutOffset  InitFlow   MaxFlow');
             conduits.forEach(l => {
                 const p = l.props;
-                L.push(`${this.pad(l.id, 16)} ${this.pad(l.from, 16)} ${this.pad(l.to, 16)} ${this.pad(p.length || 100, 10)} ${this.pad(p.roughness, 10)} ${this.pad(p.inOffset, 10)} ${this.pad(p.outOffset, 10)} ${this.pad(p.initFlow, 10)} ${this.pad(p.maxFlow, 10)}`);
+                L.push(`${this.pad(l.id, 16)} ${this.pad(l.from, 16)} ${this.pad(l.to, 16)} ${this.pad(p.length || 100, 10)} ${this.pad(p.roughness, 10)} ${this.pad(p.inOffset, 10)} ${this.pad(p.outOffset, 10)} ${this.pad(p.initFlow || 0, 10)} ${this.pad(p.maxFlow || 0, 10)}`);
+            });
+            L.push('');
+        }
+
+        const lossLinks = net.links.filter(l => l.props.entryLoss || l.props.exitLoss || l.props.avgLoss || l.props.seepageRate);
+        if (lossLinks.length) {
+            L.push('[LOSSES]');
+            L.push(';;Link           Entry      Exit       Avg        Flap Gate  Seepage');
+            lossLinks.forEach(l => {
+                const p = l.props;
+                L.push(`${this.pad(l.id, 16)} ${this.pad(p.entryLoss || 0, 10)} ${this.pad(p.exitLoss || 0, 10)} ${this.pad(p.avgLoss || 0, 10)} ${this.pad(p.gated || 'NO', 10)} ${p.seepageRate || 0}`);
             });
             L.push('');
         }
@@ -232,7 +249,7 @@ class InpExporter {
             L.push(';;Name           From Node        To Node          Type         CrestHt    Qcoeff     Gated    EndCon   EndCoeff Surcharge');
             weirs.forEach(l => {
                 const p = l.props;
-                L.push(`${this.pad(l.id, 16)} ${this.pad(l.from, 16)} ${this.pad(l.to, 16)} ${this.pad(p.weirType || 'TRANSVERSE', 12)} ${this.pad(p.crestHt, 10)} ${this.pad(p.qCoeff, 10)} ${this.pad(p.gated || 'NO', 8)} ${this.pad(p.endCon ?? 0, 8)} ${this.pad(p.endCoeff ?? 0, 8)} ${p.surcharge || 'YES'}`);
+                L.push(`${this.pad(l.id, 16)} ${this.pad(l.from, 16)} ${this.pad(l.to, 16)} ${this.pad(p.weirType || 'TRANSVERSE', 12)} ${this.pad(p.crestHt || p.offset || 0, 10)} ${this.pad(p.qCoeff, 10)} ${this.pad(p.gated || 'NO', 8)} ${this.pad(p.endCon ?? 0, 8)} ${this.pad(p.endCoeff ?? 0, 8)} ${p.surcharge || 'YES'}`);
             });
             L.push('');
         }
@@ -285,6 +302,21 @@ class InpExporter {
                 L.push('TS1                         3:00       0');
                 L.push('');
             }
+        }
+
+        const taggedEls = [
+            ...net.subcatchments.map(s => ({ type: 'Subcatch', id: s.id, tag: s.props.tag })),
+            ...net.nodes.map(n => ({ type: n.type === 'RAINGAGE' ? 'Gage' : 'Node', id: n.id, tag: n.props.tag })),
+            ...net.links.map(l => ({ type: 'Link', id: l.id, tag: l.props.tag }))
+        ].filter(e => e.tag);
+
+        if (taggedEls.length) {
+            L.push('[TAGS]');
+            L.push(';;Object         Name             Tag');
+            taggedEls.forEach(e => {
+                L.push(`${this.pad(e.type, 16)} ${this.pad(e.id, 16)} ${e.tag}`);
+            });
+            L.push('');
         }
 
         L.push('[REPORT]');
@@ -358,9 +390,9 @@ class InpExporter {
         // --- Append any raw sections that we did not parse explicitly ---
         if (net.rawSections) {
             const handledSections = new Set([
-                'TITLE', 'OPTIONS', 'RAINGAGES', 'SUBCATCHMENTS',
+                'TITLE', 'OPTIONS', 'RAINGAGES', 'SUBCATCHMENTS', 'SUBAREAS', 'INFILTRATION',
                 'JUNCTIONS', 'OUTFALLS', 'STORAGE',
-                'DIVIDERS', 'CONDUITS', 'PUMPS', 'WEIRS', 'ORIFICES', 'OUTLETS', 'XSECTIONS',
+                'DIVIDERS', 'CONDUITS', 'PUMPS', 'WEIRS', 'ORIFICES', 'OUTLETS', 'XSECTIONS', 'LOSSES', 'TAGS',
                 'COORDINATES', 'VERTICES', 'POLYGONS', 'SYMBOLS', 'REPORT'
             ]);
             for (const [secName, lines] of Object.entries(net.rawSections)) {
@@ -387,4 +419,5 @@ class InpExporter {
     }
 }
 
+window.InpExporter = InpExporter;
 window.inpExporter = new InpExporter();

@@ -454,6 +454,8 @@
 
     const FIELD_DEFS = {
         JUNCTION: () => [
+            { key: 'description', label: 'Description', type: 'text' },
+            { key: 'tag', label: 'Tag', type: 'text' },
             { key: 'invertEl', label: 'Invert elevation', unit: U('m', 'ft'), type: 'number' },
             { key: 'maxDepth', label: 'Max depth', unit: U('m', 'ft'), type: 'number' },
             { key: 'initDepth', label: 'Init depth', unit: U('m', 'ft'), type: 'number' },
@@ -461,15 +463,22 @@
             { key: 'aponded', label: 'Ponded area', unit: U('m²', 'ft²'), type: 'number' }
         ],
         OUTFALL: () => [
+            { key: 'description', label: 'Description', type: 'text' },
+            { key: 'tag', label: 'Tag', type: 'text' },
             { key: 'invertEl', label: 'Invert elevation', unit: U('m', 'ft'), type: 'number' },
             { key: 'outfallType', label: 'Type', type: 'select', options: ['FREE', 'NORMAL', 'FIXED'] },
             { key: 'stageData', label: 'Fixed stage', unit: U('m', 'ft'), type: 'text' },
             { key: 'gated', label: 'Flap gate', type: 'select', options: ['NO', 'YES'] }
         ],
         STORAGE: () => [
+            { key: 'description', label: 'Description', type: 'text' },
+            { key: 'tag', label: 'Tag', type: 'text' },
             { key: 'invertEl', label: 'Invert elevation', unit: U('m', 'ft'), type: 'number' },
             { key: 'maxDepth', label: 'Max depth', unit: U('m', 'ft'), type: 'number' },
             { key: 'initDepth', label: 'Init depth', unit: U('m', 'ft'), type: 'number' },
+            { key: 'surDepth', label: 'Surcharge depth', unit: U('m', 'ft'), type: 'number' },
+            { key: 'fevap', label: 'Evap. Factor', type: 'number', step: 0.1 },
+            { key: 'seepageRate', label: 'Seepage loss rate', unit: U('mm/h', 'in/h'), type: 'number' },
             { key: 'shape', label: 'Shape curve', type: 'select', options: ['FUNCTIONAL', 'TABULAR'] },
             { key: 'curveName', label: 'Storage curve (tabular)', type: 'text' },
             { key: 'coeff', label: 'Coefficient', type: 'number' },
@@ -477,6 +486,8 @@
             { key: 'constant', label: 'Constant', type: 'number' }
         ],
         DIVIDER: () => [
+            { key: 'description', label: 'Description', type: 'text' },
+            { key: 'tag', label: 'Tag', type: 'text' },
             { key: 'invertEl', label: 'Invert elevation', unit: U('m', 'ft'), type: 'number' },
             { key: 'divertedLink', label: 'Diverted link', type: 'text' },
             { key: 'dividerType', label: 'Type', type: 'select', options: ['CUTOFF', 'OVERFLOW', 'TABULAR', 'WEIR'] },
@@ -484,18 +495,33 @@
             { key: 'maxDepth', label: 'Max depth', unit: U('m', 'ft'), type: 'number' }
         ],
         RAINGAGE: () => [
+            { key: 'description', label: 'Description', type: 'text' },
+            { key: 'tag', label: 'Tag', type: 'text' },
             { key: 'format', label: 'Rain format', type: 'select', options: ['INTENSITY', 'VOLUME', 'CUMULATIVE'] },
             { key: 'interval', label: 'Interval', unit: 'h:mm', type: 'text' },
             { key: 'scf', label: 'Snow catch factor', type: 'number' },
-            { key: 'sourceType', label: 'Source', type: 'select', options: ['TIMESERIES', 'FILE'] },
-            { key: 'sourceName', label: 'Series / file name', type: 'text' }
+            { key: 'sourceType', label: 'Data Source', type: 'select', options: ['TIMESERIES', 'FILE'] },
+            { key: 'sourceName', label: 'Series Name (TIMESERIES)', type: 'text' },
+            { key: 'fileName', label: 'File Name (FILE)', type: 'text' },
+            { key: 'stationID', label: 'Station ID', type: 'text' },
+            { key: 'rainUnits', label: 'Rain Units', type: 'select', options: ['IN', 'MM'] }
         ],
         CONDUIT: () => [
+            { key: 'description', label: 'Description', type: 'text' },
+            { key: 'tag', label: 'Tag', type: 'text' },
             { key: 'length', label: 'Length', unit: U('m', 'ft'), type: 'number' },
             { key: 'autoLength', label: 'Auto length', type: 'select', options: ['true', 'false'], bool: true },
             { key: 'roughness', label: 'Roughness (n)', type: 'number', step: 0.001 },
             { key: 'inOffset', label: 'Inlet offset', unit: U('m', 'ft'), type: 'number' },
             { key: 'outOffset', label: 'Outlet offset', unit: U('m', 'ft'), type: 'number' },
+            { key: 'initFlow', label: 'Initial Flow', unit: U('LPS', 'CFS'), type: 'number' },
+            { key: 'maxFlow', label: 'Maximum Flow', unit: U('LPS', 'CFS'), type: 'number' },
+            { key: 'entryLoss', label: 'Entry Loss Coeff.', type: 'number', step: 0.01 },
+            { key: 'exitLoss', label: 'Exit Loss Coeff.', type: 'number', step: 0.01 },
+            { key: 'avgLoss', label: 'Avg. Loss Coeff.', type: 'number', step: 0.01 },
+            { key: 'seepageRate', label: 'Seepage Loss Rate', unit: U('mm/h', 'in/h'), type: 'number' },
+            { key: 'gated', label: 'Flap Gate', type: 'select', options: ['NO', 'YES'] },
+            { key: 'culvertCode', label: 'Culvert Code', type: 'text' },
             { key: 'xShape', label: 'X-section', type: 'select', options: ['CIRCULAR', 'FORCE_MAIN', 'FILLED_CIRCULAR', 'RECT_CLOSED', 'RECT_OPEN', 'TRAPEZOIDAL', 'TRIANGULAR', 'EGG', 'HORSESHOE', 'PARABOLIC'] },
             { key: 'geom1', label: 'Geom1 (depth/diam)', unit: U('m', 'ft'), type: 'number', step: 0.05 },
             { key: 'geom2', label: 'Geom2 (width)', unit: U('m', 'ft'), type: 'number', step: 0.05 },
@@ -504,20 +530,34 @@
             { key: 'barrels', label: 'Barrels', type: 'number', step: 1 }
         ],
         PUMP: () => [
+            { key: 'description', label: 'Description', type: 'text' },
+            { key: 'tag', label: 'Tag', type: 'text' },
             { key: 'pumpCurve', label: 'Pump curve', type: 'text' },
             { key: 'status', label: 'Initial status', type: 'select', options: ['ON', 'OFF'] },
             { key: 'startup', label: 'Startup depth', unit: U('m', 'ft'), type: 'number' },
             { key: 'shutoff', label: 'Shutoff depth', unit: U('m', 'ft'), type: 'number' }
         ],
         WEIR: () => [
-            { key: 'weirType', label: 'Type', type: 'select', options: ['TRANSVERSE', 'SIDEFLOW', 'V-NOTCH', 'TRAPEZOIDAL'] },
-            { key: 'crestHt', label: 'Crest height', unit: U('m', 'ft'), type: 'number' },
+            { key: 'description', label: 'Description', type: 'text' },
+            { key: 'tag', label: 'Tag', type: 'text' },
+            { key: 'weirType', label: 'Type', type: 'select', options: ['TRANSVERSE', 'SIDEFLOW', 'V-NOTCH', 'TRAPEZOIDAL', 'ROADWAY'] },
+            { key: 'crestHt', label: 'Crest height / Height', unit: U('m', 'ft'), type: 'number' },
+            { key: 'offset', label: 'Inlet Offset', unit: U('m', 'ft'), type: 'number' },
             { key: 'qCoeff', label: 'Discharge coeff.', type: 'number', step: 0.01 },
             { key: 'gated', label: 'Flap gate', type: 'select', options: ['NO', 'YES'] },
-            { key: 'geom1', label: 'Height', unit: U('m', 'ft'), type: 'number', step: 0.05 },
-            { key: 'geom2', label: 'Width', unit: U('m', 'ft'), type: 'number', step: 0.05 }
+            { key: 'endCon', label: 'End Contractions', type: 'number' },
+            { key: 'endCoeff', label: 'End Coeff.', type: 'number', step: 0.01 },
+            { key: 'surcharge', label: 'Can Surcharge', type: 'select', options: ['NO', 'YES'] },
+            { key: 'coeffCurve', label: 'Coeff. Curve', type: 'text' },
+            { key: 'roadWidth', label: 'Road Width (Roadway Weir)', unit: U('m', 'ft'), type: 'number' },
+            { key: 'roadSurface', label: 'Road Surface', type: 'select', options: ['PAVED', 'UNPAVED'] },
+            { key: 'geom1', label: 'Height (Geom1)', unit: U('m', 'ft'), type: 'number', step: 0.05 },
+            { key: 'geom2', label: 'Width (Length/Geom2)', unit: U('m', 'ft'), type: 'number', step: 0.05 },
+            { key: 'geom3', label: 'Side Slope (Geom3)', type: 'number', step: 0.05 }
         ],
         ORIFICE: () => [
+            { key: 'description', label: 'Description', type: 'text' },
+            { key: 'tag', label: 'Tag', type: 'text' },
             { key: 'orificeType', label: 'Type', type: 'select', options: ['SIDE', 'BOTTOM'] },
             { key: 'offset', label: 'Inlet offset', unit: U('m', 'ft'), type: 'number' },
             { key: 'qCoeff', label: 'Discharge coeff.', type: 'number', step: 0.01 },
@@ -527,6 +567,8 @@
             { key: 'geom2', label: 'Width', unit: U('m', 'ft'), type: 'number', step: 0.05 }
         ],
         OUTLET: () => [
+            { key: 'description', label: 'Description', type: 'text' },
+            { key: 'tag', label: 'Tag', type: 'text' },
             { key: 'outletType', label: 'Rating type', type: 'select', options: ['FUNCTIONAL/DEPTH', 'FUNCTIONAL/HEAD', 'TABULAR/DEPTH', 'TABULAR/HEAD'] },
             { key: 'offset', label: 'Inlet offset', unit: U('m', 'ft'), type: 'number' },
             { key: 'qCoeff', label: 'Flow coeff. (functional)', type: 'number', step: 0.01 },
@@ -535,12 +577,26 @@
             { key: 'gated', label: 'Flap gate', type: 'select', options: ['NO', 'YES'] }
         ],
         SUBCATCHMENT: () => [
+            { key: 'description', label: 'Description', type: 'text' },
+            { key: 'tag', label: 'Tag', type: 'text' },
             { key: 'raingage', label: 'Rain gage', type: 'text' },
             { key: 'outlet', label: 'Outlet node', type: 'text' },
             { key: 'area', label: 'Area', unit: U('ha', 'ac'), type: 'number', step: 0.01 },
-            { key: 'imperv', label: 'Impervious', unit: '%', type: 'number' },
             { key: 'width', label: 'Width', unit: U('m', 'ft'), type: 'number' },
-            { key: 'slope', label: 'Slope', unit: '%', type: 'number', step: 0.1 },
+            { key: 'slope', label: '% Slope', unit: '%', type: 'number', step: 0.1 },
+            { key: 'imperv', label: '% Imperv', unit: '%', type: 'number' },
+            { key: 'nImperv', label: 'N-Imperv', type: 'number', step: 0.001 },
+            { key: 'nPerv', label: 'N-Perv', type: 'number', step: 0.001 },
+            { key: 'dstoreImperv', label: 'Dstore-Imperv', unit: U('mm', 'in'), type: 'number', step: 0.01 },
+            { key: 'dstorePerv', label: 'Dstore-Perv', unit: U('mm', 'in'), type: 'number', step: 0.01 },
+            { key: 'pctZero', label: '%Zero-Imperv', unit: '%', type: 'number' },
+            { key: 'subareaRouting', label: 'Subarea Routing', type: 'select', options: ['OUTLET', 'IMPERVIOUS', 'PERVIOUS'] },
+            { key: 'pctRouted', label: 'Percent Routed', unit: '%', type: 'number' },
+            { key: 'infilMaxRate', label: 'Infil. Max Rate', unit: U('mm/h', 'in/h'), type: 'number', step: 0.1 },
+            { key: 'infilMinRate', label: 'Infil. Min Rate', unit: U('mm/h', 'in/h'), type: 'number', step: 0.1 },
+            { key: 'infilDecay', label: 'Infil. Decay Const (1/h)', type: 'number', step: 0.1 },
+            { key: 'infilDryTime', label: 'Infil. Dry Time (days)', type: 'number', step: 0.1 },
+            { key: 'infilMaxInfil', label: 'Infil. Max Vol', unit: U('mm', 'in'), type: 'number', step: 0.1 },
             { key: 'curbLen', label: 'Curb length', type: 'number' }
         ]
     };
