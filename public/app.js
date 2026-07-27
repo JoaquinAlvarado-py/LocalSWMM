@@ -353,6 +353,50 @@
     }
     window.apply3D = apply3D;
 
+    function toggleLandCoverLayer(visible) {
+        if (!map) return;
+        const layerId = 'vito-landcover-layer';
+        const sourceId = 'vito-landcover-source';
+
+        if (visible) {
+            if (!map.getSource(sourceId)) {
+                map.addSource(sourceId, {
+                    type: 'raster',
+                    tiles: [
+                        'https://services.terrascope.be/wmts/v2/default/wmts?service=WMTS&request=GetTile&version=1.0.0&layer=WORLDCOVER_2021_MAP&style=default&format=image/png&tilematrixset=EPSG3857&tilematrix={z}&tilerow={y}&tilecol={x}'
+                    ],
+                    tileSize: 256,
+                    attribution: '© ESA WorldCover 2021 / VITO Remote Sensing'
+                });
+            }
+            if (!map.getLayer(layerId)) {
+                let beforeId = null;
+                const layers = map.getStyle().layers || [];
+                for (const l of layers) {
+                    if (l.id.startsWith('node-') || l.id.startsWith('link-') || l.id.startsWith('subcatchment-')) {
+                        beforeId = l.id;
+                        break;
+                    }
+                }
+                map.addLayer({
+                    id: layerId,
+                    type: 'raster',
+                    source: sourceId,
+                    paint: {
+                        'raster-opacity': 0.60
+                    }
+                }, beforeId);
+            } else {
+                map.setLayoutProperty(layerId, 'visibility', 'visible');
+            }
+        } else {
+            if (map.getLayer(layerId)) {
+                map.setLayoutProperty(layerId, 'visibility', 'none');
+            }
+        }
+    }
+    window.toggleLandCoverLayer = toggleLandCoverLayer;
+
     // ---------- DEM Terrain Sampling Functions ----------
     window.sampleDEMElevationAsync = async function (lngLat) {
         if (!map) return null;
