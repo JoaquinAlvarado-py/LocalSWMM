@@ -848,6 +848,54 @@
         };
     }
 
+    function estimateSimDurationMs(inpText, networkSize) {
+        let startDateStr = '01/01/2000', startTimeStr = '00:00:00';
+        let endDateStr = '01/02/2000', endTimeStr = '00:00:00';
+        let routingStepSec = 30;
+
+        const lines = (inpText || '').split(/\r?\n/);
+        let inOptions = false;
+        for (let line of lines) {
+            let clean = line.replace(/;.*$/, '').trim();
+            if (clean.startsWith('[') && clean.endsWith(']')) {
+                inOptions = (clean.toUpperCase() === '[OPTIONS]');
+                continue;
+            }
+            if (inOptions && clean) {
+                const parts = clean.split(/\s+/);
+                const key = (parts[0] || '').toUpperCase();
+                const val = parts.slice(1).join(' ');
+                if (key === 'START_DATE') startDateStr = val;
+                if (key === 'START_TIME') startTimeStr = val;
+                if (key === 'END_DATE') endDateStr = val;
+                if (key === 'END_TIME') endTimeStr = val;
+                if (key === 'ROUTING_STEP') {
+                    const hms = val.split(':').map(Number);
+                    if (hms.length === 3) {
+                        routingStepSec = (hms[0] * 3600) + (hms[1] * 60) + hms[2];
+                    } else {
+                        const parsed = parseFloat(val);
+                        if (!isNaN(parsed) && parsed > 0) routingStepSec = parsed;
+                    }
+                }
+            }
+        }
+
+        try {
+            const startMs = Date.parse(`${startDateStr} ${startTimeStr}`);
+            const endMs = Date.parse(`${endDateStr} ${endTimeStr}`);
+            if (!isNaN(startMs) && !isNaN(endMs) && endMs > startMs) {
+                const durationSec = (endMs - startMs) / 1000;
+                const steps = durationSec / Math.max(1, routingStepSec);
+                const workUnits = steps * Math.max(10, networkSize);
+                const estimatedMs = Math.round((workUnits / 2200000) * 1000);
+                return Math.max(1200, estimatedMs);
+            }
+        } catch (e) { }
+
+        return 3500;
+    }
+
     function runSimulationInWorker(inpText, targetDurationMs) {
         return new Promise((resolve, reject) => {
             let worker = null;
@@ -869,9 +917,16 @@
 
             simProgressTimer = setInterval(() => {
                 const elapsed = Date.now() - simStartTime;
-                let frac = Math.min(0.98, elapsed / (targetDurationMs || 3000));
-                let percent = Math.floor(frac * 100);
-                let currDaysFrac = frac * totalDays;
+                let frac = 0;
+                if (elapsed <= targetDurationMs) {
+                    frac = (elapsed / targetDurationMs) * 0.95;
+                } else {
+                    const extra = elapsed - targetDurationMs;
+                    frac = 0.95 + 0.04 * (1 - Math.exp(-extra / 8000));
+                }
+
+                let percent = Math.min(99, Math.floor(frac * 100));
+                let currDaysFrac = Math.min(1.0, frac) * totalDays;
                 let days = Math.floor(currDaysFrac);
                 let remHoursFrac = (currDaysFrac - days) * 24;
                 let hours = Math.floor(remHoursFrac);
@@ -884,7 +939,7 @@
             worker.onmessage = (ev) => {
                 const msg = ev.data || {};
                 if (msg.type === 'progress') {
-                    updateRunStatusUI(msg.percent, msg.days, msg.hrsMin);
+                    // Ignore background worker progress if timer is running smooth
                 } else if (msg.type === 'log') {
                     console.log('SWMM:', msg.text);
                 } else if (msg.type === 'err') {
@@ -992,15 +1047,14 @@
         btnRun.disabled = true;
         btnRun.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg> Running…';
         
-        // Estimate run time based on network size or use last known execution time
+        // Estimate run time based on simulation time steps and network size
         const networkSize = Net.nodeCount + Net.linkCount + Net.subcatchments.length;
         let targetDuration = window.App.lastSimDuration;
         if (!targetDuration) {
-            targetDuration = networkSize < 100 ? 800 : networkSize < 500 ? 1800 : 3500;
+            targetDuration = estimateSimDurationMs(inpText, networkSize);
         }
 
         const simStartTime = Date.now();
-        window.startSimulatedTopProgress('Simulating', targetDuration);
 
         try {
             let result;
@@ -1028,11 +1082,9 @@
             window.App.lastRunReport = rpt;
             console.log(rpt);
             window.displayResults(rpt, window.App.outData);
-            window.hideTopProgress(true);
         } catch (err) {
             console.error('Simulation failed:', err);
             window.showResultsWarning('Simulation failed: ' + err.message);
-            window.hideTopProgress(false);
         } finally {
             hideRunStatusModals();
             btnRun.disabled = false;
