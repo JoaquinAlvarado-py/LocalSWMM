@@ -783,4 +783,7 @@
     window.NetworkGeom = { haversine, pathLengthMeters, ringAreaM2 };
     window.NET_NODE_TYPES = NODE_TYPES;
     window.NET_LINK_TYPES = LINK_TYPES;
+    window.defaultNodeProps = defaultNodeProps;
+    window.defaultLinkProps = defaultLinkProps;
+    window.defaultSubcatchProps = defaultSubcatchProps;
 })();

@@ -661,8 +661,13 @@
                 <input type="text" value="${el.lngLat[1].toFixed(6)}, ${el.lngLat[0].toFixed(6)}" readonly></div>`;
         }
 
+        const defaultProps = (type === 'SUBCATCHMENT' ? window.defaultSubcatchProps?.() : ((window.NET_NODE_TYPES || []).includes(type) ? window.defaultNodeProps?.(type) : window.defaultLinkProps?.(type))) || {};
+
         defs.forEach(f => {
-            const val = el.props[f.key];
+            let val = el.props[f.key];
+            if (val === undefined || val === null) {
+                val = defaultProps[f.key] !== undefined ? defaultProps[f.key] : '';
+            }
             const unitHint = f.unit ? ` <span class="unit-hint">(${esc(f.unit)})</span>` : '';
             if (f.type === 'select') {
                 const opts = f.options.map(o =>
