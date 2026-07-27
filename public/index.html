@@ -178,11 +178,22 @@
                         <option value="USGS10m">OpenTopography: USGS 3DEP 10m DTM</option>
                         <option value="SRTMGL1">OpenTopography: NASA SRTM 30m</option>
                         <option value="NASADEM">OpenTopography: NASADEM 30m</option>
+                    <option value="ANADEM">OpenTopography: ANADEM ML DTM 30m (S. America)</option>
+                    <option value="GEDTM30">OpenTopography: Global Ensemble DTM 30m</option>
                     </select>
                     <input type="password" id="opentopo-api-key" class="tb-input" placeholder="OpenTopography API Key (Optional)" style="width:100%;font-size:11px;padding:3px 6px;margin-bottom:6px;">
                 </div>
                 <div class="settings-group" style="margin-top:6px;">
                     <button id="btn-sample-all-dem" class="tb-btn" style="width:100%;font-size:11px;" title="Extract terrain elevation from selected DEM source for all network nodes">⛰️ Sample DEM for All Nodes</button>
+                </div>
+                <div class="settings-group" style="margin-top:6px;border-top:1px solid rgba(255,255,255,0.08);padding-top:6px;">
+                    <span class="settings-label">2D Surface Mesh</span>
+                    <button id="btn-generate-mesh2d" class="tb-btn" style="width:100%;font-size:11px;" title="Generate a 2D triangular mesh from subcatchment polygons for overland flow routing">🔺 Generate 2D Mesh from Subcatchments</button>
+                    <div style="display:flex;align-items:center;gap:4px;margin-top:4px;">
+                        <label style="font-size:10px;color:#7a8a9c;white-space:nowrap;">Max area (m²):</label>
+                        <input type="number" id="mesh2d-max-area" value="200" min="10" max="100000" step="10" style="width:70px;font-size:10px;padding:2px 4px;" class="tb-input">
+                        <button id="btn-clear-mesh2d" class="tb-btn" style="font-size:10px;padding:2px 6px;" title="Remove all 2D mesh cells">Clear</button>
+                    </div>
                 </div>
             </div>
 
@@ -565,6 +576,8 @@
     <!-- Shapefile & DXF parsers -->
     <script src="https://unpkg.com/shpjs@4.0.4/dist/shp.js"></script>
     <script src="https://unpkg.com/dxf-parser@1.1.2/dist/dxf-parser.js"></script>
+    <!-- poly2tri.js for Constrained Delaunay Triangulation (2D mesh generation) -->
+    <script src="https://cdn.jsdelivr.net/npm/poly2tri@1.5.0/dist/poly2tri.min.js"></script>
 
     <!-- Application -->
     <script src="inpParser.js?v=11"></script>
@@ -579,6 +592,7 @@
     <script src="tools.js?v=11"></script>
     <script src="profile.js?v=11"></script>
     <script src="plot.js?v=11"></script>
+    <script src="mesh2d.js?v=11"></script>
     <script src="landcover.js?v=11"></script>
     <script src="ui.js?v=11"></script>
 </body>

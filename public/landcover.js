@@ -101,7 +101,9 @@
         'COP30': 'Copernicus Global DSM 30m',
         'USGS10m': 'USGS 3DEP 10m High-Res DTM',
         'SRTMGL1': 'NASA SRTM 30m Global DTM',
-        'NASADEM': 'NASADEM Global 30m'
+        'NASADEM': 'NASADEM Global 30m',
+        'ANADEM': 'ANADEM ML DTM 30m (South America)',
+        'GEDTM30': 'Global Ensemble DTM 30m'
     };
 
     const LandCoverModule = {
