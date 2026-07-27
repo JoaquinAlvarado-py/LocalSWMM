@@ -171,7 +171,15 @@
             if (el) return el;
             if (this.mesh2D) {
                 const cell = this.mesh2D.find(m => m.id === id);
-                if (cell) return Object.assign({ type: 'MESH2D' }, cell);
+                if (cell) {
+                    cell.type = 'MESH2D';
+                    cell.props ||= {
+                        parentSubcatch: cell.parentSubcatch || '',
+                        landCoverClass: cell.landCoverClass || 0,
+                        manningN: cell.manningN || 0.10
+                    };
+                    return cell;
+                }
             }
             return null;
         }
