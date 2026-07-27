@@ -363,7 +363,8 @@
                 map.addSource(sourceId, {
                     type: 'raster',
                     tiles: [
-                        'https://services.arcgisonline.com/arcgis/rest/services/World_Land_Cover_2020/MapServer/tile/{z}/{y}/{x}'
+                        'https://tiles.arcgis.com/tiles/P3ePLMYs2RVChkJx/arcgis/rest/services/Esri_2020_Land_Cover_10m/MapServer/tile/{z}/{y}/{x}',
+                        'https://services.terrascope.be/wmts/v2?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=WORLDCOVER_2021_MAP&STYLE=default&TILEMATRIXSET=EPSG:3857&TILEMATRIX=EPSG:3857:{z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png'
                     ],
                     tileSize: 256,
                     maxzoom: 18,
@@ -374,7 +375,7 @@
                 let beforeId = null;
                 const layers = map.getStyle().layers || [];
                 for (const l of layers) {
-                    if (l.id.startsWith('node-') || l.id.startsWith('link-') || l.id.startsWith('subcatchment-')) {
+                    if (l.id.startsWith('swmm-') || l.id.startsWith('node-') || l.id.startsWith('link-') || l.id.startsWith('subcatchment-')) {
                         beforeId = l.id;
                         break;
                     }
@@ -384,7 +385,7 @@
                     type: 'raster',
                     source: sourceId,
                     paint: {
-                        'raster-opacity': 0.65
+                        'raster-opacity': 0.70
                     }
                 }, beforeId);
             } else {
