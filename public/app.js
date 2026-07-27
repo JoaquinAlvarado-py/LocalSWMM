@@ -363,12 +363,11 @@
                 map.addSource(sourceId, {
                     type: 'raster',
                     tiles: [
-                        'https://tiles.arcgis.com/tiles/P3ePLMYs2RVChkJx/arcgis/rest/services/Esri_2020_Land_Cover_10m/MapServer/tile/{z}/{y}/{x}',
-                        'https://services.terrascope.be/wmts/v2?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=WORLDCOVER_2021_MAP&STYLE=default&TILEMATRIXSET=EPSG:3857&TILEMATRIX=EPSG:3857:{z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png'
+                        'https://services.terrascope.be/wms/v2?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=WORLDCOVER_2021_MAP&SRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256&FORMAT=image/png&TRANSPARENT=true'
                     ],
                     tileSize: 256,
-                    maxzoom: 18,
-                    attribution: '© ESA WorldCover / Esri Sentinel 10m Land Cover'
+                    maxzoom: 15,
+                    attribution: '© ESA WorldCover 2021 (VITO/Terrascope)'
                 });
             }
             if (!map.getLayer(layerId)) {

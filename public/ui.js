@@ -359,6 +359,62 @@
         });
     }
 
+    // 2D Mesh Generation
+    const btnGenMesh = document.getElementById('btn-generate-mesh2d');
+    if (btnGenMesh) {
+        btnGenMesh.addEventListener('click', () => {
+            if (!window.Mesh2DGenerator) {
+                alert('Mesh generator module not loaded.');
+                return;
+            }
+            if (!Net.subcatchments || Net.subcatchments.length === 0) {
+                alert('No subcatchments found. Draw or import subcatchments first.');
+                return;
+            }
+
+            const maxAreaInput = document.getElementById('mesh2d-max-area');
+            const maxAreaM2 = maxAreaInput ? parseFloat(maxAreaInput.value) || 200 : 200;
+
+            btnGenMesh.disabled = true;
+            btnGenMesh.textContent = '⏳ Generating...';
+
+            // Use requestAnimationFrame to let UI update before blocking computation
+            requestAnimationFrame(() => {
+                try {
+                    const result = window.Mesh2DGenerator.generateFromSubcatchments({
+                        maxAreaM2,
+                        assignLandCover: true
+                    });
+
+                    if (window.refreshNetworkData) window.refreshNetworkData();
+
+                    let msg = `🔺 2D Mesh: ${result.cells} triangular cells generated (${result.vertices} vertices).`;
+                    if (result.errors.length > 0) {
+                        msg += ` ⚠️ ${result.errors.length} warning(s): ${result.errors.join('; ')}`;
+                    }
+                    if (window.showResultsWarning) window.showResultsWarning(msg);
+                } catch (e) {
+                    alert('Mesh generation failed: ' + e.message);
+                    console.error('Mesh2D generation error:', e);
+                } finally {
+                    btnGenMesh.disabled = false;
+                    btnGenMesh.textContent = '🔺 Generate 2D Mesh from Subcatchments';
+                }
+            });
+        });
+    }
+
+    const btnClearMesh = document.getElementById('btn-clear-mesh2d');
+    if (btnClearMesh) {
+        btnClearMesh.addEventListener('click', () => {
+            if (window.Mesh2DGenerator) {
+                window.Mesh2DGenerator.clearMesh();
+                if (window.refreshNetworkData) window.refreshNetworkData();
+                if (window.showResultsWarning) window.showResultsWarning('2D Mesh cleared.');
+            }
+        });
+    }
+
     // OSM place search (Nominatim)
     const searchInput = document.getElementById('osm-search-input');
     const searchResults = document.getElementById('osm-search-results');

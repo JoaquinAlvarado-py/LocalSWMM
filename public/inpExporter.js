@@ -400,13 +400,57 @@ class InpExporter {
         }
 
 
+        // --- 2D Mesh (OpenSWMM Engine) ---
+        if (net.mesh2D && net.mesh2D.length > 0) {
+            // Collect unique vertices from all mesh cells
+            const vertexMap = new Map(); // key: 'lng_lat' -> vertex ID
+            let vIdx = 1;
+            net.mesh2D.forEach(cell => {
+                cell.ring.forEach(coord => {
+                    const key = `${coord[0].toFixed(8)}_${coord[1].toFixed(8)}`;
+                    if (!vertexMap.has(key)) {
+                        vertexMap.set(key, { id: `V${vIdx}`, lng: coord[0], lat: coord[1] });
+                        vIdx++;
+                    }
+                });
+            });
+
+            L.push('[2D_VERTICES]');
+            L.push(';;ID               X-Coord            Y-Coord');
+            for (const [, v] of vertexMap) {
+                L.push(`${this.pad(v.id, 18)} ${v.lng.toFixed(8).padStart(18)} ${v.lat.toFixed(8).padStart(18)}`);
+            }
+            L.push('');
+
+            L.push('[2D_CELLS]');
+            L.push(';;ID               Vertex1            Vertex2            Vertex3');
+            net.mesh2D.forEach(cell => {
+                const vIds = cell.ring.map(coord => {
+                    const key = `${coord[0].toFixed(8)}_${coord[1].toFixed(8)}`;
+                    return vertexMap.get(key).id;
+                });
+                // Only output unique triangle vertices (skip closing vertex if ring is closed)
+                const uniqueIds = [];
+                for (const vid of vIds) {
+                    if (uniqueIds.length === 0 || vid !== uniqueIds[0]) {
+                        uniqueIds.push(vid);
+                    } else {
+                        break; // Reached closing vertex
+                    }
+                }
+                L.push(`${this.pad(cell.id, 18)} ${uniqueIds.map(v => this.pad(v, 18)).join(' ')}`);
+            });
+            L.push('');
+        }
+
         // --- Append any raw sections that we did not parse explicitly ---
         if (net.rawSections) {
             const handledSections = new Set([
                 'TITLE', 'OPTIONS', 'RAINGAGES', 'SUBCATCHMENTS', 'SUBAREAS', 'INFILTRATION',
                 'JUNCTIONS', 'OUTFALLS', 'STORAGE',
                 'DIVIDERS', 'CONDUITS', 'PUMPS', 'WEIRS', 'ORIFICES', 'OUTLETS', 'XSECTIONS', 'LOSSES', 'TAGS',
-                'COORDINATES', 'VERTICES', 'POLYGONS', 'SYMBOLS', 'REPORT', 'TIMESERIES'
+                'COORDINATES', 'VERTICES', 'POLYGONS', 'SYMBOLS', 'REPORT', 'TIMESERIES',
+                '2D_VERTICES', '2D_CELLS'
             ]);
             for (const [secName, lines] of Object.entries(net.rawSections)) {
                 if (!handledSections.has(secName)) {
