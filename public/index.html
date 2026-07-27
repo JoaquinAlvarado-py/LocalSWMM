@@ -172,6 +172,9 @@
                         <option value="US">US (ft, in, CFS)</option>
                     </select>
                 </div>
+                <div class="settings-group" style="margin-top:10px;">
+                    <button id="btn-sample-all-dem" class="tb-btn" style="width:100%;font-size:11px;" title="Extract terrain elevation from Mapbox DEM for all network nodes">⛰️ Sample DEM for All Nodes</button>
+                </div>
             </div>
 
             <!-- Street View pegman -->
@@ -360,6 +363,60 @@
                 <button id="btn-confirm-importas" class="tb-btn tb-btn-run">Import</button>
             </div>
         </div>
+    </div>
+
+    <!-- Run Status Modal (Classic EPA SWMM style) -->
+    <div id="run-status-modal" class="modal-overlay hidden">
+        <div class="modal-box run-status-box">
+            <div class="run-status-header">
+                <h2>Run Status</h2>
+            </div>
+            <div class="run-status-body">
+                <div class="run-status-banner">
+                    <div class="cloud-icon" title="Computing...">
+                        <svg viewBox="0 0 24 24" width="32" height="32"><path fill="#0284c7" d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM19 18H6c-2.21 0-4-1.79-4-4 0-2.05 1.53-3.76 3.56-3.97l1.07-.11.5-.95C8.08 7.14 9.94 6 12 6c2.62 0 4.88 1.86 5.39 4.43l.3 1.5 1.53.11c1.56.1 2.78 1.41 2.78 2.96 0 1.65-1.35 3-3 3z"/></svg>
+                        <div class="rain-drops">
+                            <span></span><span></span><span></span>
+                        </div>
+                    </div>
+                    <span class="computing-text">Computing ...</span>
+                </div>
+
+                <div class="status-field-group">
+                    <div class="status-field-label">Percent Complete: <span id="sim-percent-label">0%</span></div>
+                    <div class="progress-track">
+                        <div id="sim-percent-bar" class="progress-fill"></div>
+                    </div>
+                </div>
+
+                <div class="status-time-group">
+                    <div class="status-field-label">Simulated Time:</div>
+                    <div class="time-boxes">
+                        <div class="time-box">
+                            <label>Days</label>
+                            <input type="text" id="sim-days-val" value="0" readonly>
+                        </div>
+                        <div class="time-box">
+                            <label>Hrs:Min</label>
+                            <input type="text" id="sim-hrsmin-val" value="00:00" readonly>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-actions run-status-actions">
+                <button id="btn-stop-sim" class="tb-btn tb-btn-danger">Stop</button>
+                <button id="btn-minimize-sim" class="tb-btn">Minimize</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Minimized Run Status Floating Badge -->
+    <div id="run-status-minimized" class="run-status-minimized hidden">
+        <span class="pulse-dot"></span>
+        <span>Computing... <b id="min-percent-label">0%</b></span>
+        <button id="btn-restore-sim" title="Restore Run Status window">Expand</button>
+        <button id="btn-stop-min-sim" class="btn-min-stop" title="Stop simulation">✕</button>
     </div>
 
     <!-- API Configuration -->

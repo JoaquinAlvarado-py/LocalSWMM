@@ -353,6 +353,49 @@
     }
     window.apply3D = apply3D;
 
+    // ---------- DEM Terrain Sampling Functions ----------
+    window.sampleDEMElevation = function (lngLat) {
+        if (!map) return null;
+        try {
+            if (!map.getSource('terrain-dem')) {
+                map.addSource('terrain-dem', {
+                    type: 'raster-dem',
+                    url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
+                    tileSize: 512, maxzoom: 14
+                });
+            }
+            if (typeof map.queryTerrainElevation === 'function') {
+                const elev = map.queryTerrainElevation(lngLat);
+                if (elev !== null && elev !== undefined) {
+                    return Math.round(elev * 100) / 100;
+                }
+            }
+        } catch (e) { }
+        return null;
+    };
+
+    window.sampleAllNodesDEM = function () {
+        if (Net.nodes.length === 0) {
+            window.showResultsWarning('No nodes in the network to sample.');
+            return;
+        }
+        let count = 0;
+        Net.nodes.forEach(node => {
+            const elev = window.sampleDEMElevation(node.lngLat);
+            if (elev !== null) {
+                node.props.invertEl = elev;
+                count++;
+            }
+        });
+        if (count > 0) {
+            window.refreshNetworkData();
+            if (window.renderProperties) window.renderProperties();
+            window.showResultsWarning(`Sampled DEM elevation for ${count} nodes.`);
+        } else {
+            window.showResultsWarning('DEM elevation unavailable. Enable 3D View and try again.');
+        }
+    };
+
     function add3DBuildings() {
         if (map.getLayer('3d-buildings-base')) {
             map.setLayoutProperty('3d-buildings-base', 'visibility', 'visible');
@@ -760,6 +803,9 @@
     // ---------- simulation in a Web Worker ----------
     // One persistent worker: it fetches + compiles the engine binary once
     // (started at page load, below) and each run only re-instantiates it.
+    // ---------- simulation in a Web Worker ----------
+    // One persistent worker: it fetches + compiles the engine binary once
+    // (started at page load, below) and each run only re-instantiates it.
     let simWorker = null;
     function getSimWorker() {
         if (!simWorker) {
@@ -772,7 +818,67 @@
         return simWorker;
     }
 
-    function runSimulationInWorker(inpText) {
+    // --- Run Status Modal Elements & Handlers ---
+    const runStatusModal = document.getElementById('run-status-modal');
+    const runStatusMinimized = document.getElementById('run-status-minimized');
+    const simPercentLabel = document.getElementById('sim-percent-label');
+    const minPercentLabel = document.getElementById('min-percent-label');
+    const simPercentBar = document.getElementById('sim-percent-bar');
+    const simDaysVal = document.getElementById('sim-days-val');
+    const simHrsMinVal = document.getElementById('sim-hrsmin-val');
+
+    function updateRunStatusUI(percent, days, hrsMin) {
+        const pctStr = (percent || 0) + '%';
+        if (simPercentLabel) simPercentLabel.textContent = pctStr;
+        if (minPercentLabel) minPercentLabel.textContent = pctStr;
+        if (simPercentBar) simPercentBar.style.width = pctStr;
+        if (simDaysVal) simDaysVal.value = days !== undefined ? days : 0;
+        if (simHrsMinVal) simHrsMinVal.value = hrsMin || '00:00';
+    }
+
+    function hideRunStatusModals() {
+        if (runStatusModal) runStatusModal.classList.add('hidden');
+        if (runStatusMinimized) runStatusMinimized.classList.add('hidden');
+    }
+
+    function stopSimulationWorker() {
+        if (simWorker) {
+            try { simWorker.terminate(); } catch (e) { }
+            simWorker = null;
+        }
+        hideRunStatusModals();
+        window.hideTopProgress(false);
+        const btnRun = document.getElementById('btn-run');
+        if (btnRun) {
+            btnRun.disabled = false;
+            btnRun.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M8 5v14l11-7z"/></svg> Run';
+        }
+        window.showResultsWarning('Simulation stopped by user.');
+    }
+
+    // Modal Action Bindings
+    const btnStopSim = document.getElementById('btn-stop-sim');
+    const btnStopMinSim = document.getElementById('btn-stop-min-sim');
+    const btnMinimizeSim = document.getElementById('btn-minimize-sim');
+    const btnRestoreSim = document.getElementById('btn-restore-sim');
+
+    if (btnStopSim) btnStopSim.onclick = stopSimulationWorker;
+    if (btnStopMinSim) btnStopMinSim.onclick = stopSimulationWorker;
+
+    if (btnMinimizeSim) {
+        btnMinimizeSim.onclick = () => {
+            if (runStatusModal) runStatusModal.classList.add('hidden');
+            if (runStatusMinimized) runStatusMinimized.classList.remove('hidden');
+        };
+    }
+    if (btnRestoreSim) {
+        btnRestoreSim.onclick = () => {
+            if (runStatusMinimized) runStatusMinimized.classList.add('hidden');
+            if (runStatusModal) runStatusModal.classList.remove('hidden');
+        };
+    }
+
+    function runSimulationInWorker(inpText, targetDurationMs) {
         return new Promise((resolve, reject) => {
             let worker = null;
             try {
@@ -781,24 +887,34 @@
                 reject(e); // caller falls back to main-thread run
                 return;
             }
+
+            // Show Run Status Modal
+            updateRunStatusUI(0, 0, '00:00');
+            if (runStatusModal) runStatusModal.classList.remove('hidden');
+
             worker.onmessage = (ev) => {
                 const msg = ev.data || {};
-                if (msg.type === 'log') { console.log('SWMM:', msg.text); }
-                else if (msg.type === 'err') { console.warn('SWMM Err:', msg.text); }
-                else if (msg.type === 'done') {
+                if (msg.type === 'progress') {
+                    updateRunStatusUI(msg.percent, msg.days, msg.hrsMin);
+                } else if (msg.type === 'log') {
+                    console.log('SWMM:', msg.text);
+                } else if (msg.type === 'err') {
+                    console.warn('SWMM Err:', msg.text);
+                } else if (msg.type === 'done') {
+                    hideRunStatusModals();
                     resolve({ rpt: msg.rpt, outBuffer: msg.outBuffer });
                 } else if (msg.type === 'error') {
+                    hideRunStatusModals();
                     reject(new Error(msg.message));
                 }
             };
             worker.onerror = (e) => {
-                // the worker itself died (not an engine error inside it) —
-                // discard so the next run starts fresh, fall back for this one
+                hideRunStatusModals();
                 try { worker.terminate(); } catch (err) { }
                 if (simWorker === worker) simWorker = null;
                 reject(new Error(e.message || 'Simulation worker failed to start.'));
             };
-            worker.postMessage({ type: 'run', inpText });
+            worker.postMessage({ type: 'run', inpText, targetDurationMs });
         });
     }
 
@@ -807,6 +923,9 @@
 
     // Main-thread fallback (previous behavior) for environments without workers
     async function runSimulationOnMainThread(inpText) {
+        updateRunStatusUI(0, 0, '00:00');
+        if (runStatusModal) runStatusModal.classList.remove('hidden');
+
         const Module = await getSwmmModule();
         // let the UI paint before the synchronous run blocks the thread
         await new Promise(r => setTimeout(r, 50));
@@ -849,6 +968,7 @@
         try {
             rpt = Module.FS.readFile('/rpt.rpt', { encoding: 'utf8' });
         } catch (err) {
+            hideRunStatusModals();
             throw new Error('Simulation produced no report file.');
         }
 
@@ -859,6 +979,8 @@
         } catch (err) {
             console.warn('Simulation produced no binary .out file.');
         }
+
+        hideRunStatusModals();
         return { rpt, outBuffer };
     }
 
@@ -881,7 +1003,7 @@
         const networkSize = Net.nodeCount + Net.linkCount + Net.subcatchments.length;
         let targetDuration = window.App.lastSimDuration;
         if (!targetDuration) {
-            targetDuration = networkSize < 100 ? 600 : networkSize < 500 ? 1500 : 3000;
+            targetDuration = networkSize < 100 ? 800 : networkSize < 500 ? 1800 : 3500;
         }
 
         const simStartTime = Date.now();
@@ -891,7 +1013,7 @@
             let result;
             try {
                 // Preferred: run in a worker so the UI stays interactive
-                result = await runSimulationInWorker(inpText);
+                result = await runSimulationInWorker(inpText, targetDuration);
             } catch (workerErr) {
                 console.warn('Simulation worker unavailable, running on main thread:', workerErr);
                 result = await runSimulationOnMainThread(inpText);
@@ -919,6 +1041,7 @@
             window.showResultsWarning('Simulation failed: ' + err.message);
             window.hideTopProgress(false);
         } finally {
+            hideRunStatusModals();
             btnRun.disabled = false;
             btnRun.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M8 5v14l11-7z"/></svg> Run';
         }

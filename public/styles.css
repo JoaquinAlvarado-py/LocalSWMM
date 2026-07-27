@@ -1461,3 +1461,179 @@ body.hide-warnings .results-warning {
     border-radius: 4px;
     transition: width 0.1s ease;
 }
+
+/* --- EPA SWMM Style Run Status Modal --- */
+.run-status-box {
+    width: 380px;
+    padding: 18px 22px;
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    box-shadow: 0 12px 36px rgba(0,0,0,0.2);
+}
+.run-status-box h2 {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1e293b;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 8px;
+    margin-bottom: 14px;
+}
+.run-status-banner {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+.cloud-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.rain-drops {
+    position: absolute;
+    bottom: -6px;
+    left: 4px;
+    right: 4px;
+    display: flex;
+    justify-content: space-around;
+}
+.rain-drops span {
+    width: 2px;
+    height: 6px;
+    background: #0284c7;
+    border-radius: 1px;
+    animation: dropRain 0.6s infinite linear;
+}
+.rain-drops span:nth-child(2) { animation-delay: 0.2s; }
+.rain-drops span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes dropRain {
+    0% { transform: translateY(-2px); opacity: 1; }
+    100% { transform: translateY(6px); opacity: 0; }
+}
+
+.computing-text {
+    font-size: 14px;
+    font-weight: 600;
+    color: #334155;
+}
+
+.status-field-group {
+    margin-bottom: 14px;
+}
+.status-field-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #475569;
+    margin-bottom: 6px;
+}
+.status-field-label span {
+    font-weight: 700;
+    color: #0284c7;
+}
+
+.progress-track {
+    width: 100%;
+    height: 20px;
+    background: #e2e8f0;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+}
+.progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #16a34a, #22c55e);
+    transition: width 0.15s ease-out;
+}
+
+.status-time-group {
+    margin-bottom: 16px;
+}
+.time-boxes {
+    display: flex;
+    gap: 12px;
+    margin-top: 4px;
+}
+.time-box {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.time-box label {
+    font-size: 12px;
+    color: #64748b;
+}
+.time-box input {
+    width: 72px;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-family: monospace;
+    font-weight: 600;
+    color: #1e293b;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.run-status-actions {
+    display: flex;
+    justify-content: center;
+    gap: 14px;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 12px;
+    margin-top: 8px;
+}
+.run-status-actions button {
+    min-width: 84px;
+}
+
+/* Minimized Floating Badge */
+.run-status-minimized {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 1100;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 20px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.15);
+    padding: 6px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: #1e293b;
+}
+.pulse-dot {
+    width: 8px;
+    height: 8px;
+    background: #16a34a;
+    border-radius: 50%;
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7);
+    animation: pulseDot 1.4s infinite;
+}
+@keyframes pulseDot {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(22, 163, 74, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+}
+.run-status-minimized button {
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    border-radius: 12px;
+    padding: 2px 8px;
+    font-size: 11px;
+    cursor: pointer;
+}
+.run-status-minimized button:hover {
+    background: #e2e8f0;
+}
+.btn-min-stop {
+    color: #ef4444;
+    font-weight: bold;
+}

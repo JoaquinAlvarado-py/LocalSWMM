@@ -332,6 +332,13 @@
         document.body.classList.toggle('hide-warnings', !App.warningsVisible);
     });
 
+    const btnSampleAllDem = document.getElementById('btn-sample-all-dem');
+    if (btnSampleAllDem) {
+        btnSampleAllDem.addEventListener('click', () => {
+            if (window.sampleAllNodesDEM) window.sampleAllNodesDEM();
+        });
+    }
+
     // OSM place search (Nominatim)
     const searchInput = document.getElementById('osm-search-input');
     const searchResults = document.getElementById('osm-search-results');
@@ -613,6 +620,12 @@
             }
         });
 
+        if (el.lngLat) {
+            html += `<div class="prop-actions" style="margin-top:6px;margin-bottom:10px;">
+                <button class="tb-btn" id="prop-sample-dem" style="width:100%;font-size:11px;" title="Sample terrain elevation at this node coordinate">⛰️ Sample DEM Elevation</button>
+            </div>`;
+        }
+
         html += `<div class="prop-actions">
             <button class="tb-btn prop-btn-danger" id="prop-delete">Delete</button>
         </div>`;
@@ -638,6 +651,20 @@
                 }
             });
         });
+
+        const btnSampleDem = document.getElementById('prop-sample-dem');
+        if (btnSampleDem && el.lngLat) {
+            btnSampleDem.addEventListener('click', () => {
+                const elev = window.sampleDEMElevation ? window.sampleDEMElevation(el.lngLat) : null;
+                if (elev !== null && elev !== undefined) {
+                    Net.updateProps(el.id, { invertEl: elev });
+                    renderPropsPanel();
+                    window.showResultsWarning(`Updated ${el.id} invert elevation to ${elev} m from Mapbox DEM.`);
+                } else {
+                    alert('DEM elevation unavailable. Ensure 3D View is enabled and try again.');
+                }
+            });
+        }
 
         document.getElementById('prop-id').addEventListener('change', (e) => {
             const newId = Net.renameElement(el.id, e.target.value);

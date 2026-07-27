@@ -294,7 +294,14 @@
 
         // --- node placement tools ---
         if (tool in NODE_TOOL_TYPES) {
-            const node = Net.addNode(NODE_TOOL_TYPES[tool], [e.lngLat.lng, e.lngLat.lat]);
+            const coords = [e.lngLat.lng, e.lngLat.lat];
+            const node = Net.addNode(NODE_TOOL_TYPES[tool], coords);
+            if (window.sampleDEMElevation) {
+                const sampledElev = window.sampleDEMElevation(coords);
+                if (sampledElev !== null && sampledElev !== undefined) {
+                    node.props.invertEl = sampledElev;
+                }
+            }
             Tools.select(node.id);
             return;
         }
