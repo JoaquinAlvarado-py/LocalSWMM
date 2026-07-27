@@ -152,14 +152,19 @@ class InpParser {
         });
         const defaultCoord = Object.values(coords)[0] || [0, 0];
         (S['RAINGAGES'] || []).forEach(row => {
-            // Give raingages a default map position so they are not dropped if [SYMBOLS] is missing
-            const pos = symbols[row[0]] || [defaultCoord[0], defaultCoord[1]]; 
+            const pos = symbols[row[0]] || [defaultCoord[0], defaultCoord[1]];
+            const sourceType = (row[4] || 'TIMESERIES').toUpperCase();
             model.nodes.push({
                 id: row[0], type: 'RAINGAGE', lngLat: pos,
                 props: {
                     format: (row[1] || 'INTENSITY').toUpperCase(), interval: row[2] || '1:00',
                     scf: this.num(row[3], 1.0),
-                    sourceType: (row[4] || 'TIMESERIES').toUpperCase(), sourceName: row[5] || 'TS1'
+                    sourceType: sourceType,
+                    sourceName: sourceType === 'TIMESERIES' ? (row[5] || 'TS1') : '',
+                    fileName: sourceType === 'FILE' ? (row[5] || '') : '',
+                    stationID: sourceType === 'FILE' ? (row[6] || '*') : '*',
+                    rainUnits: sourceType === 'FILE' ? (row[7] || 'IN') : 'IN',
+                    description: '', tag: ''
                 }
             });
         });
@@ -177,7 +182,8 @@ class InpParser {
             if (!nodeIds.has(row[1]) || !nodeIds.has(row[2])) return;
             model.links.push({
                 id: row[0], type, from: row[1], to: row[2],
-                vertices: vertices[row[0]] || [], props
+                vertices: vertices[row[0]] || [],
+                props: Object.assign({ description: '', tag: '' }, props)
             });
         };
 
@@ -185,6 +191,7 @@ class InpParser {
             length: this.num(row[3], 100), autoLength: false, roughness: this.num(row[4], 0.013),
             inOffset: this.num(row[5]), outOffset: this.num(row[6]),
             initFlow: this.num(row[7]), maxFlow: this.num(row[8]),
+            entryLoss: 0, exitLoss: 0, avgLoss: 0, seepageRate: 0, gated: 'NO', culvertCode: '',
             xShape: 'CIRCULAR', geom1: 1.0, geom2: 0, geom3: 0, geom4: 0, barrels: 1
         }));
 
@@ -195,9 +202,10 @@ class InpParser {
 
         (S['WEIRS'] || []).forEach(row => pushLink(row, 'WEIR', {
             weirType: (row[3] || 'TRANSVERSE').toUpperCase(), crestHt: this.num(row[4]),
-            qCoeff: this.num(row[5], 3.33), gated: (row[6] || 'NO').toUpperCase(),
+            offset: this.num(row[4]), qCoeff: this.num(row[5], 3.33), gated: (row[6] || 'NO').toUpperCase(),
             endCon: this.num(row[7]), endCoeff: this.num(row[8]),
-            surcharge: (row[9] || 'YES').toUpperCase(),
+            surcharge: (row[9] || 'YES').toUpperCase(), coeffCurve: row[10] || '',
+            roadWidth: 0, roadSurface: 'PAVED',
             xShape: 'RECT_OPEN', geom1: 1.0, geom2: 1.0, geom3: 0, geom4: 0
         }));
 
@@ -222,8 +230,6 @@ class InpParser {
         });
 
         // --- Cross sections applied onto links ---
-        // Geom columns can be curve names (CUSTOM/IRREGULAR shapes), so
-        // non-numeric tokens are kept verbatim rather than coerced to 0.
         const geomVal = (v, fallback) => {
             if (v === undefined || v === '') return fallback;
             const n = parseFloat(v);
@@ -242,6 +248,17 @@ class InpParser {
             l.props.barrels = this.num(row[6], 1);
         });
 
+        // --- Losses applied onto links ---
+        (S['LOSSES'] || []).forEach(row => {
+            const l = linkById[row[0]];
+            if (!l) return;
+            l.props.entryLoss = this.num(row[1]);
+            l.props.exitLoss = this.num(row[2]);
+            l.props.avgLoss = this.num(row[3]);
+            if (row[4]) l.props.gated = row[4].toUpperCase();
+            if (row[5]) l.props.seepageRate = this.num(row[5]);
+        });
+
         // --- Subcatchments ---
         const polygons = {};
         (S['POLYGONS'] || []).forEach(row => {
@@ -250,19 +267,60 @@ class InpParser {
             polygons[row[0]].push([this.num(row[1]), this.num(row[2])]);
         });
 
+        const subMap = {};
         (S['SUBCATCHMENTS'] || []).forEach(row => {
             const ring = polygons[row[0]];
             if (!ring || ring.length < 3) return;
-            model.subcatchments.push({
+            const sub = {
                 id: row[0],
                 ring: ring,
                 props: {
+                    description: '', tag: '',
                     raingage: row[1] || 'RG1', outlet: row[2] || '',
                     area: this.num(row[3], 10), autoArea: false,
                     imperv: this.num(row[4], 50), width: this.num(row[5], 500),
-                    slope: this.num(row[6], 0.5), curbLen: this.num(row[7])
+                    slope: this.num(row[6], 0.5), curbLen: this.num(row[7]),
+                    nImperv: 0.01, nPerv: 0.1, dstoreImperv: 0.05, dstorePerv: 0.05,
+                    pctZero: 25, subareaRouting: 'OUTLET', pctRouted: 100,
+                    infilMaxRate: 3.0, infilMinRate: 0.5, infilDecay: 4.0, infilDryTime: 7.0, infilMaxInfil: 0
                 }
-            });
+            };
+            subMap[row[0]] = sub;
+            model.subcatchments.push(sub);
+        });
+
+        // --- Subareas applied onto subcatchments ---
+        (S['SUBAREAS'] || []).forEach(row => {
+            const s = subMap[row[0]];
+            if (!s) return;
+            s.props.nImperv = this.num(row[1], 0.01);
+            s.props.nPerv = this.num(row[2], 0.1);
+            s.props.dstoreImperv = this.num(row[3], 0.05);
+            s.props.dstorePerv = this.num(row[4], 0.05);
+            s.props.pctZero = this.num(row[5], 25);
+            if (row[6]) s.props.subareaRouting = row[6].toUpperCase();
+            if (row[7] !== undefined) s.props.pctRouted = this.num(row[7], 100);
+        });
+
+        // --- Infiltration applied onto subcatchments ---
+        (S['INFILTRATION'] || []).forEach(row => {
+            const s = subMap[row[0]];
+            if (!s) return;
+            s.props.infilMaxRate = this.num(row[1], 3.0);
+            s.props.infilMinRate = this.num(row[2], 0.5);
+            s.props.infilDecay = this.num(row[3], 4.0);
+            s.props.infilDryTime = this.num(row[4], 7.0);
+            s.props.infilMaxInfil = this.num(row[5], 0);
+        });
+
+        // --- Tags applied onto all elements ---
+        (S['TAGS'] || []).forEach(row => {
+            if (row.length >= 3) {
+                const id = row[1];
+                const tag = row.slice(2).join(' ');
+                const el = model.nodes.find(n => n.id === id) || model.links.find(l => l.id === id) || subMap[id];
+                if (el && el.props) el.props.tag = tag;
+            }
         });
 
         // --- 2D Mesh (OpenSWMM Engine) ---

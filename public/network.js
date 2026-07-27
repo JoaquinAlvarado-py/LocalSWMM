@@ -26,28 +26,28 @@
 
     function defaultNodeProps(type) {
         switch (type) {
-            case 'JUNCTION': return { invertEl: 0, maxDepth: 2, initDepth: 0, surDepth: 0, aponded: 0 };
-            case 'OUTFALL': return { invertEl: 0, outfallType: 'FREE', stageData: '', gated: 'NO' };
-            case 'STORAGE': return { invertEl: 0, maxDepth: 5, initDepth: 0, shape: 'FUNCTIONAL', curveName: '', coeff: 1000, exponent: 0, constant: 0 };
-            case 'DIVIDER': return { invertEl: 0, divertedLink: '', dividerType: 'CUTOFF', param: 0, maxDepth: 2 };
-            case 'RAINGAGE': return { format: 'INTENSITY', interval: '1:00', scf: 1.0, sourceType: 'TIMESERIES', sourceName: 'TS1' };
+            case 'JUNCTION': return { description: '', tag: '', invertEl: 0, maxDepth: 2, initDepth: 0, surDepth: 0, aponded: 0 };
+            case 'OUTFALL': return { description: '', tag: '', invertEl: 0, outfallType: 'FREE', stageData: '', gated: 'NO' };
+            case 'STORAGE': return { description: '', tag: '', invertEl: 0, maxDepth: 5, initDepth: 0, surDepth: 0, fevap: 0, seepageRate: 0, shape: 'FUNCTIONAL', curveName: '', coeff: 1000, exponent: 0, constant: 0 };
+            case 'DIVIDER': return { description: '', tag: '', invertEl: 0, divertedLink: '', dividerType: 'CUTOFF', param: 0, maxDepth: 2 };
+            case 'RAINGAGE': return { description: '', tag: '', format: 'INTENSITY', interval: '1:00', scf: 1.0, sourceType: 'TIMESERIES', sourceName: 'TS1', fileName: '', stationID: '*', rainUnits: 'IN' };
             default: return {};
         }
     }
 
     function defaultLinkProps(type) {
         switch (type) {
-            case 'CONDUIT': return { length: 0, autoLength: true, roughness: 0.013, inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0, xShape: 'CIRCULAR', geom1: 1.0, geom2: 0, geom3: 0, geom4: 0, barrels: 1 };
-            case 'PUMP': return { pumpCurve: '*', status: 'ON', startup: 0, shutoff: 0 };
-            case 'WEIR': return { weirType: 'TRANSVERSE', crestHt: 0, qCoeff: 3.33, gated: 'NO', xShape: 'RECT_OPEN', geom1: 1.0, geom2: 1.0, geom3: 0, geom4: 0 };
-            case 'ORIFICE': return { orificeType: 'SIDE', offset: 0, qCoeff: 0.65, gated: 'NO', xShape: 'CIRCULAR', geom1: 1.0, geom2: 0, geom3: 0, geom4: 0 };
-            case 'OUTLET': return { offset: 0, outletType: 'FUNCTIONAL/DEPTH', qCoeff: 10, qExpon: 0.5, curveName: '', gated: 'NO' };
+            case 'CONDUIT': return { description: '', tag: '', length: 0, autoLength: true, roughness: 0.013, inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0, entryLoss: 0, exitLoss: 0, avgLoss: 0, seepageRate: 0, gated: 'NO', culvertCode: '', xShape: 'CIRCULAR', geom1: 1.0, geom2: 0, geom3: 0, geom4: 0, barrels: 1 };
+            case 'PUMP': return { description: '', tag: '', pumpCurve: '*', status: 'ON', startup: 0, shutoff: 0 };
+            case 'WEIR': return { description: '', tag: '', weirType: 'TRANSVERSE', crestHt: 0, offset: 0, qCoeff: 3.33, gated: 'NO', endCon: 0, endCoeff: 0, surcharge: 'NO', coeffCurve: '', roadWidth: 0, roadSurface: 'PAVED', xShape: 'RECT_OPEN', geom1: 1.0, geom2: 1.0, geom3: 0, geom4: 0 };
+            case 'ORIFICE': return { description: '', tag: '', orificeType: 'SIDE', offset: 0, qCoeff: 0.65, gated: 'NO', xShape: 'CIRCULAR', geom1: 1.0, geom2: 0, geom3: 0, geom4: 0 };
+            case 'OUTLET': return { description: '', tag: '', offset: 0, outletType: 'FUNCTIONAL/DEPTH', qCoeff: 10, qExpon: 0.5, curveName: '', gated: 'NO' };
             default: return {};
         }
     }
 
     function defaultSubcatchProps() {
-        return { raingage: 'RG1', outlet: '', area: 0, autoArea: true, imperv: 50, width: 500, slope: 0.5, curbLen: 0 };
+        return { description: '', tag: '', raingage: 'RG1', outlet: '', area: 0, autoArea: true, imperv: 50, width: 500, slope: 0.5, curbLen: 0, nImperv: 0.01, nPerv: 0.1, dstoreImperv: 0.05, dstorePerv: 0.05, pctZero: 25, subareaRouting: 'OUTLET', pctRouted: 100, infilMaxRate: 3.0, infilMinRate: 0.5, infilDecay: 4.0, infilDryTime: 7.0, infilMaxInfil: 0 };
     }
 
     function defaultOptions() {
