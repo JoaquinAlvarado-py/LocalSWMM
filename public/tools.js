@@ -199,6 +199,9 @@
 
         notifySelection() {
             if (window.renderPropsPanel) window.renderPropsPanel();
+            if (window.TimeSeriesPlot && App.selectedId) {
+                window.TimeSeriesPlot.onMapElementSelected(App.selectedId);
+            }
         },
 
         deleteSelection() {

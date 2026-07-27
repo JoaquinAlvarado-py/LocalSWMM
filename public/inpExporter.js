@@ -290,8 +290,21 @@ class InpExporter {
             L.push('');
         }
 
-        // --- Default timeseries when any raingage references TS1 ---
-        if (!net.rawSections || !net.rawSections['TIMESERIES']) {
+        // --- [TIMESERIES] ---
+        const tsEntries = Object.entries(net.timeseries || {});
+        if (tsEntries.length > 0) {
+            L.push('[TIMESERIES]');
+            L.push(';;Name           Date       Time       Value');
+            tsEntries.forEach(([tsName, rows]) => {
+                rows.forEach(r => {
+                    const dateStr = r.date ? this.pad(r.date, 10) : this.pad('', 10);
+                    const timeStr = this.pad(r.time || '0:00', 10);
+                    const valStr = String(r.value ?? 0);
+                    L.push(`${this.pad(tsName, 16)} ${dateStr} ${timeStr} ${valStr}`);
+                });
+            });
+            L.push('');
+        } else if (!net.rawSections || !net.rawSections['TIMESERIES']) {
             const usesTS1 = needDefaultGage || gages.some(g => g.props.sourceType === 'TIMESERIES' && g.props.sourceName === 'TS1');
             if (usesTS1) {
                 L.push('[TIMESERIES]');
@@ -393,7 +406,7 @@ class InpExporter {
                 'TITLE', 'OPTIONS', 'RAINGAGES', 'SUBCATCHMENTS', 'SUBAREAS', 'INFILTRATION',
                 'JUNCTIONS', 'OUTFALLS', 'STORAGE',
                 'DIVIDERS', 'CONDUITS', 'PUMPS', 'WEIRS', 'ORIFICES', 'OUTLETS', 'XSECTIONS', 'LOSSES', 'TAGS',
-                'COORDINATES', 'VERTICES', 'POLYGONS', 'SYMBOLS', 'REPORT'
+                'COORDINATES', 'VERTICES', 'POLYGONS', 'SYMBOLS', 'REPORT', 'TIMESERIES'
             ]);
             for (const [secName, lines] of Object.entries(net.rawSections)) {
                 if (!handledSections.has(secName)) {
