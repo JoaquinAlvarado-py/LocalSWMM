@@ -363,10 +363,11 @@
                 map.addSource(sourceId, {
                     type: 'raster',
                     tiles: [
-                        'https://services.terrascope.be/wmts/v2/default/wmts?service=WMTS&request=GetTile&version=1.0.0&layer=WORLDCOVER_2021_MAP&style=default&format=image/png&tilematrixset=EPSG3857&tilematrix={z}&tilerow={y}&tilecol={x}'
+                        'https://services.arcgisonline.com/arcgis/rest/services/World_Land_Cover_2020/MapServer/tile/{z}/{y}/{x}'
                     ],
                     tileSize: 256,
-                    attribution: '© ESA WorldCover 2021 / VITO Remote Sensing'
+                    maxzoom: 18,
+                    attribution: '© ESA WorldCover / Esri Sentinel 10m Land Cover'
                 });
             }
             if (!map.getLayer(layerId)) {
@@ -383,7 +384,7 @@
                     type: 'raster',
                     source: sourceId,
                     paint: {
-                        'raster-opacity': 0.60
+                        'raster-opacity': 0.65
                     }
                 }, beforeId);
             } else {

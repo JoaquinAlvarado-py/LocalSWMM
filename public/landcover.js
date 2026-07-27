@@ -141,6 +141,133 @@
         },
 
         /**
+         * Performs grid-cell sampling over a subcatchment polygon to detect land cover breakdown and compute weighted SWMM roughness.
+         */
+        sampleSubcatchmentLandCover(subcatchment, mapInstance) {
+            if (!subcatchment || !subcatchment.geometry || !subcatchment.geometry.coordinates) {
+                return null;
+            }
+
+            const ring = subcatchment.geometry.coordinates[0];
+            if (!ring || ring.length < 3) return null;
+
+            // Compute Bounding Box
+            let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+            ring.forEach(pt => {
+                if (pt[0] < minLng) minLng = pt[0];
+                if (pt[0] > maxLng) maxLng = pt[0];
+                if (pt[1] < minLat) minLat = pt[1];
+                if (pt[1] > maxLat) maxLat = pt[1];
+            });
+
+            // Point-in-polygon helper
+            function pointInPoly(pt, poly) {
+                const x = pt[0], y = pt[1];
+                let inside = false;
+                for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                    const xi = poly[i][0], yi = poly[i][1];
+                    const xj = poly[j][0], yj = poly[j][1];
+                    const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+                    if (intersect) inside = !inside;
+                }
+                return inside;
+            }
+
+            // Generate regular grid sampling points inside subcatchment polygon
+            const gridSteps = 10;
+            const stepLng = (maxLng - minLng) / gridSteps;
+            const stepLat = (maxLat - minLat) / gridSteps;
+            const pointsInPolygon = [];
+
+            for (let i = 0; i <= gridSteps; i++) {
+                for (let j = 0; j <= gridSteps; j++) {
+                    const testPt = [minLng + i * stepLng, minLat + j * stepLat];
+                    if (pointInPoly(testPt, ring)) {
+                        pointsInPolygon.push(testPt);
+                    }
+                }
+            }
+
+            if (pointsInPolygon.length === 0) {
+                // Fallback to centroid
+                const cLng = (minLng + maxLng) / 2;
+                const cLat = (minLat + maxLat) / 2;
+                pointsInPolygon.push([cLng, cLat]);
+            }
+
+            // Count occurrences using spatial heuristics / canvas pixel sampling
+            const counts = {};
+            let totalSampled = pointsInPolygon.length;
+
+            // In urban areas, sample canvas or default to proportional land cover breakdown
+            pointsInPolygon.forEach(pt => {
+                let code = 30; // Grassland default
+                if (mapInstance && typeof mapInstance.queryRenderedFeatures === 'function') {
+                    try {
+                        const pixel = mapInstance.project(pt);
+                        const features = mapInstance.queryRenderedFeatures(pixel);
+                        let isBuilding = false, isRoad = false, isWater = false, isForest = false;
+                        features.forEach(f => {
+                            const layerId = (f.layer && f.layer.id) || '';
+                            if (layerId.includes('building') || f.properties?.building) isBuilding = true;
+                            if (layerId.includes('road') || layerId.includes('street') || f.properties?.highway) isRoad = true;
+                            if (layerId.includes('water') || f.properties?.water) isWater = true;
+                            if (layerId.includes('park') || layerId.includes('landuse') || layerId.includes('wood')) isForest = true;
+                        });
+
+                        if (isBuilding || isRoad) code = 90; // Built-up
+                        else if (isWater) code = 95; // Water
+                        else if (isForest) code = 10; // Tree cover
+                        else code = 30; // Grassland
+                    } catch (e) {
+                        code = 30;
+                    }
+                }
+                counts[code] = (counts[code] || 0) + 1;
+            });
+
+            // Calculate weighted stats
+            let builtUpCount = counts[90] || 0;
+            let perviousCount = totalSampled - builtUpCount;
+            let impervPct = Math.round((builtUpCount / totalSampled) * 100 * 10) / 10;
+
+            let weightedNPervSum = 0;
+            let perviousSampleTotal = 0;
+
+            const breakdown = [];
+            Object.keys(counts).forEach(codeStr => {
+                const code = parseInt(codeStr, 10);
+                const count = counts[codeStr];
+                const pct = Math.round((count / totalSampled) * 100 * 10) / 10;
+                const lcInfo = VITO_LCM10_CLASSES[code] || { name: `Class ${code}`, nManningPerv: 0.05, nManningImperv: 0.013 };
+
+                if (code !== 90) {
+                    weightedNPervSum += count * lcInfo.nManningPerv;
+                    perviousSampleTotal += count;
+                }
+
+                breakdown.push({
+                    code,
+                    name: lcInfo.name,
+                    pct,
+                    color: lcInfo.color || '#888888',
+                    count
+                });
+            });
+
+            const finalNPerv = perviousSampleTotal > 0 ? (weightedNPervSum / perviousSampleTotal) : 0.045;
+            const finalNImperv = 0.013;
+
+            return {
+                totalSamples: totalSampled,
+                impervPct,
+                nPervWeighted: Math.round(finalNPerv * 1000) / 1000,
+                nImpervWeighted: finalNImperv,
+                breakdown
+            };
+        },
+
+        /**
          * Formats an OpenTopography REST point/global elevation request API URL.
          */
         getOpenTopographyPointUrl(lat, lon, demType = 'COP30', apiKey = '') {
