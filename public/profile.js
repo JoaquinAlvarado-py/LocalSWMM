@@ -123,16 +123,18 @@
                 const ndFrom = ts.nodes[edge.from];
                 const ndTo   = ts.nodes[edge.to];
                 if (ndFrom) {
-                    upHead = (ndFrom.head && ndFrom.head[step] !== undefined)
-                        ? ndFrom.head[step]
-                        : fromInv + (ndFrom.depth && ndFrom.depth[step] !== undefined ? ndFrom.depth[step] : 0);
+                    const h = (ndFrom.head && ndFrom.head[step] !== undefined) ? ndFrom.head[step] : undefined;
+                    const d = (ndFrom.depth && ndFrom.depth[step] !== undefined) ? ndFrom.depth[step] : 0;
+                    upHead = (h !== undefined && h >= upInv) ? h : (upInv + d);
                 }
                 if (ndTo) {
-                    dnHead = (ndTo.head && ndTo.head[step] !== undefined)
-                        ? ndTo.head[step]
-                        : toInv + (ndTo.depth && ndTo.depth[step] !== undefined ? ndTo.depth[step] : 0);
+                    const h = (ndTo.head && ndTo.head[step] !== undefined) ? ndTo.head[step] : undefined;
+                    const d = (ndTo.depth && ndTo.depth[step] !== undefined) ? ndTo.depth[step] : 0;
+                    dnHead = (h !== undefined && h >= dnInv) ? h : (dnInv + d);
                 }
             }
+            upHead = Math.max(upInv, upHead);
+            dnHead = Math.max(dnInv, dnHead);
 
             // Link capacity for fill color tinting
             let cap = 0;
@@ -321,9 +323,9 @@
                 const x1  = cx(s.xStart), x2 = cx(s.xEnd);
                 const iUp = cy(s.upInv),  iDn = cy(s.dnInv);
 
-                // Water surface clamped to pipe crown
-                const wsUp = cy(Math.min(s.upHead, s.upCrown));
-                const wsDn = cy(Math.min(s.dnHead, s.dnCrown));
+                // Water surface clamped between pipe invert and crown
+                const wsUp = cy(Math.max(s.upInv, Math.min(s.upHead, s.upCrown)));
+                const wsDn = cy(Math.max(s.dnInv, Math.min(s.dnHead, s.dnCrown)));
 
                 // Color: near-full → amber, surcharged → red, normal → cyan
                 let fillColor;

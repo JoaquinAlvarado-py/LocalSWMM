@@ -121,6 +121,17 @@
         document.getElementById('opt-rdii-tref').value = opt.rdiiDecay ? opt.rdiiDecay.tRef : '';
         optionsModal.classList.remove('hidden');
     });
+
+    // Time Series Plot Selection Modal
+    const btnTsPlot = document.getElementById('btn-ts-plot');
+    if (btnTsPlot) {
+        btnTsPlot.addEventListener('click', () => {
+            if (window.TimeSeriesPlot) {
+                const selectedId = App.selectedId;
+                window.TimeSeriesPlot.openSelectionModal(selectedId);
+            }
+        });
+    }
     document.getElementById('btn-cancel-options').addEventListener('click', () => {
         optionsModal.classList.add('hidden');
     });

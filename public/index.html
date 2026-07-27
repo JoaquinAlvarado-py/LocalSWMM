@@ -58,6 +58,10 @@
                     <svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:middle;margin-right:4px;"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
                     Options
                 </button>
+                <button id="btn-ts-plot" class="tb-btn" title="Time Series Plot Selection">
+                    <svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:middle;margin-right:4px;"><path fill="currentColor" d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.09-4-4L2 15.08l1.5 3.41z"/></svg>
+                    Plot
+                </button>
                 <button id="btn-run" class="tb-btn tb-btn-run" title="Run SWMM simulation">
                     <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
                     Run
@@ -206,6 +210,88 @@
                     <canvas id="profile-canvas"></canvas>
                 </div>
                 <div id="profile-resize-handle" title="Drag to resize"></div>
+            </div>
+
+            <!-- Time Series Plot Selection Modal -->
+            <div id="ts-selection-modal" class="ts-modal hidden">
+                <div id="ts-sel-header" class="ts-modal-header">
+                    <span>Time Series Plot Selection</span>
+                    <button id="btn-ts-sel-close" class="ts-close-btn">&times;</button>
+                </div>
+                <div class="ts-modal-body">
+                    <fieldset class="ts-group">
+                        <legend>Time Periods</legend>
+                        <div class="ts-form-row">
+                            <label>Start Date: <select id="ts-start-time" class="ts-select"></select></label>
+                            <label>End Date: <select id="ts-end-time" class="ts-select"></select></label>
+                        </div>
+                        <div class="ts-form-row ts-radios">
+                            <label><input type="radio" name="ts-mode" id="ts-mode-elapsed" checked> Elapsed Time</label>
+                            <label><input type="radio" name="ts-mode" id="ts-mode-datetime"> Date/Time</label>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="ts-group">
+                        <legend>Data Series</legend>
+                        <div id="ts-series-list" class="ts-series-list"></div>
+                        <div class="ts-toolbar-btn-row">
+                            <button id="btn-ts-add" class="tb-btn">+ Add</button>
+                            <button id="btn-ts-edit" class="tb-btn">✏ Edit</button>
+                            <button id="btn-ts-delete" class="tb-btn tb-btn-danger">− Delete</button>
+                        </div>
+                    </fieldset>
+                </div>
+                <div class="ts-modal-footer">
+                    <button id="btn-ts-sel-ok" class="tb-btn tb-btn-run">OK / Plot</button>
+                    <button id="btn-ts-sel-cancel" class="tb-btn">Cancel</button>
+                </div>
+            </div>
+
+            <!-- Time Series Sub-Editor Modal -->
+            <div id="ts-editor-modal" class="ts-modal hidden">
+                <div id="ts-edit-header" class="ts-modal-header">
+                    <span>Data Series Selection</span>
+                    <button id="btn-ts-edit-close" class="ts-close-btn">&times;</button>
+                </div>
+                <div class="ts-modal-body">
+                    <div class="ts-field">
+                        <label>Object Type:</label>
+                        <select id="ts-edit-type" class="ts-select">
+                            <option value="NODE">Node</option>
+                            <option value="LINK">Link</option>
+                            <option value="SUBCATCHMENT">Subcatchment</option>
+                            <option value="SYSTEM">System</option>
+                        </select>
+                    </div>
+                    <div class="ts-field">
+                        <label>Object ID:</label>
+                        <select id="ts-edit-id" class="ts-select"></select>
+                    </div>
+                    <div class="ts-field">
+                        <label>Variable:</label>
+                        <select id="ts-edit-var" class="ts-select"></select>
+                    </div>
+                    <div class="ts-field">
+                        <label>Line Color:</label>
+                        <input type="color" id="ts-edit-color" value="#0284c7" class="ts-color-picker">
+                    </div>
+                </div>
+                <div class="ts-modal-footer">
+                    <button id="btn-ts-edit-ok" class="tb-btn tb-btn-run">Accept</button>
+                    <button id="btn-ts-edit-cancel" class="tb-btn">Cancel</button>
+                </div>
+            </div>
+
+            <!-- Time Series Interactive Chart Modal -->
+            <div id="ts-chart-modal" class="ts-modal hidden">
+                <div id="ts-chart-header" class="ts-modal-header">
+                    <span>Time Series Plot</span>
+                    <button id="btn-ts-chart-close" class="ts-close-btn">&times;</button>
+                </div>
+                <div id="ts-chart-body" class="ts-chart-body">
+                    <canvas id="ts-chart-canvas"></canvas>
+                </div>
+                <div id="ts-chart-resize" class="ts-resize-handle" title="Drag to resize"></div>
             </div>
         </main>
 
@@ -444,6 +530,7 @@
     <script src="app.js?v=11"></script>
     <script src="tools.js?v=11"></script>
     <script src="profile.js?v=11"></script>
+    <script src="plot.js?v=11"></script>
     <script src="ui.js?v=11"></script>
 </body>
 </html>
