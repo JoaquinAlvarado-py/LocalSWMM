@@ -169,8 +169,19 @@
                         <option value="US">US (ft, in, CFS)</option>
                     </select>
                 </div>
-                <div class="settings-group" style="margin-top:10px;">
-                    <button id="btn-sample-all-dem" class="tb-btn" style="width:100%;font-size:11px;" title="Extract terrain elevation from Mapbox DEM for all network nodes">⛰️ Sample DEM for All Nodes</button>
+                <div class="settings-group" style="margin-top:8px;">
+                    <span class="settings-label">Elevation DEM Source</span>
+                    <select id="dem-source-select" class="tb-select" style="width:100%;margin-bottom:4px;">
+                        <option value="MAPBOX" selected>Mapbox Terrain DEM (Default)</option>
+                        <option value="COP30">OpenTopography: Copernicus 30m</option>
+                        <option value="USGS10m">OpenTopography: USGS 3DEP 10m DTM</option>
+                        <option value="SRTMGL1">OpenTopography: NASA SRTM 30m</option>
+                        <option value="NASADEM">OpenTopography: NASADEM 30m</option>
+                    </select>
+                    <input type="password" id="opentopo-api-key" class="tb-input" placeholder="OpenTopography API Key (Optional)" style="width:100%;font-size:11px;padding:3px 6px;margin-bottom:6px;">
+                </div>
+                <div class="settings-group" style="margin-top:6px;">
+                    <button id="btn-sample-all-dem" class="tb-btn" style="width:100%;font-size:11px;" title="Extract terrain elevation from selected DEM source for all network nodes">⛰️ Sample DEM for All Nodes</button>
                 </div>
             </div>
 
@@ -567,6 +578,7 @@
     <script src="tools.js?v=11"></script>
     <script src="profile.js?v=11"></script>
     <script src="plot.js?v=11"></script>
+    <script src="landcover.js?v=11"></script>
     <script src="ui.js?v=11"></script>
 </body>
 </html>

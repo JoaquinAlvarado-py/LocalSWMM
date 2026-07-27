@@ -596,6 +596,21 @@
             { key: 'width', label: 'Width', unit: U('m', 'ft'), type: 'number' },
             { key: 'slope', label: '% Slope', unit: '%', type: 'number', step: 0.1 },
             { key: 'imperv', label: '% Imperv', unit: '%', type: 'number' },
+            { key: 'landCoverClass', label: 'VITO Land Cover (10m)', type: 'select', options: [
+                '0 - Custom / None',
+                '10 - Tree cover',
+                '20 - Shrubland',
+                '30 - Grassland',
+                '40 - Cropland',
+                '50 - Herbaceous wetland',
+                '60 - Mangroves',
+                '70 - Moss and lichen',
+                '80 - Bare/sparse vegetation',
+                '90 - Built-up (pavement)',
+                '90 - Built-up (obstacle)',
+                '95 - Permanent water',
+                '100 - Snow and ice'
+            ] },
             { key: 'nImperv', label: 'N-Imperv', type: 'number', step: 0.001 },
             { key: 'nPerv', label: 'N-Perv', type: 'number', step: 0.001 },
             { key: 'dstoreImperv', label: 'Dstore-Imperv', unit: U('mm', 'in'), type: 'number', step: 0.01 },
@@ -718,6 +733,15 @@
                 if (input.dataset.bool === '1') value = value === 'true';
                 else if (input.type === 'number') value = parseFloat(value) || 0;
                 Net.updateProps(el.id, { [key]: value });
+                if (key === 'landCoverClass' && el.type === 'SUBCATCHMENT' && window.LandCoverModule) {
+                    const code = parseInt(value, 10);
+                    const isObstacle = value.includes('obstacle');
+                    if (code > 0) {
+                        window.LandCoverModule.applyToSubcatchment(el, code, { builtUpMode: isObstacle ? 'OBSTACLE' : 'PAVEMENT' });
+                        Net.updateProps(el.id, { nPerv: el.props.nPerv, nImperv: el.props.nImperv, landCoverClass: value });
+                        renderPropsPanel();
+                    }
+                }
                 // manual length edit disables auto length
                 if (key === 'length' && el.type === 'CONDUIT') {
                     Net.updateProps(el.id, { autoLength: false });
@@ -732,14 +756,15 @@
 
         const btnSampleDem = document.getElementById('prop-sample-dem');
         if (btnSampleDem && el.lngLat) {
-            btnSampleDem.addEventListener('click', () => {
-                const elev = window.sampleDEMElevation ? window.sampleDEMElevation(el.lngLat) : null;
+            btnSampleDem.addEventListener('click', async () => {
+                const fn = window.sampleDEMElevationAsync || window.sampleDEMElevation;
+                const elev = fn ? await fn(el.lngLat) : null;
                 if (elev !== null && elev !== undefined) {
                     Net.updateProps(el.id, { invertEl: elev });
                     renderPropsPanel();
-                    window.showResultsWarning(`Updated ${el.id} invert elevation to ${elev} m from Mapbox DEM.`);
+                    window.showResultsWarning(`Updated ${el.id} elevation to ${elev} m.`);
                 } else {
-                    alert('DEM elevation unavailable. Ensure 3D View is enabled and try again.');
+                    alert('DEM elevation unavailable for this coordinate. Ensure 3D View is enabled or check API key.');
                 }
             });
         }

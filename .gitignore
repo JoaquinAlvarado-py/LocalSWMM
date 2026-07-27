@@ -3,3 +3,5 @@ public/config.js
 node_modules/
 
 .claude/
+__pycache__/
+*.pyc
