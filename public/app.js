@@ -361,6 +361,7 @@
         const demSource = demSelect ? demSelect.value : 'MAPBOX';
         const apiKey = (apiKeyInput && apiKeyInput.value.trim()) || (window.CONFIG && window.CONFIG.OPENTOPOGRAPHY_API_KEY) || '';
 
+        // Try OpenTopography API if selected
         if (demSource !== 'MAPBOX' && window.LandCoverModule) {
             try {
                 const url = window.LandCoverModule.getOpenTopographyPointUrl(lngLat[1], lngLat[0], demSource, apiKey);
@@ -371,12 +372,15 @@
                         const val = parseFloat(data.resource[0].elevation);
                         if (!isNaN(val)) return Math.round(val * 100) / 100;
                     }
+                } else if (res.status === 401 || res.status === 400) {
+                    console.warn(`OpenTopography API returned HTTP ${res.status}. Check API Key.`);
                 }
             } catch (err) {
                 console.warn('OpenTopography DEM fetch failed, falling back to Mapbox DEM', err);
             }
         }
 
+        // Fallback or default to Mapbox DEM
         try {
             if (!map.getSource('terrain-dem')) {
                 map.addSource('terrain-dem', {
@@ -385,18 +389,28 @@
                     tileSize: 512, maxzoom: 14
                 });
             }
+            let terrainWasSet = !!map.getTerrain();
+            if (!terrainWasSet) {
+                map.setTerrain({ source: 'terrain-dem', exaggeration: 1.0 });
+            }
+
+            let elev = null;
             if (typeof map.queryTerrainElevation === 'function') {
-                const elev = map.queryTerrainElevation(lngLat);
-                if (elev !== null && elev !== undefined) {
-                    return Math.round(elev * 100) / 100;
-                }
+                elev = map.queryTerrainElevation(lngLat);
+            }
+
+            if (!terrainWasSet && !window.App.is3D) {
+                map.setTerrain(null);
+            }
+
+            if (elev !== null && elev !== undefined) {
+                return Math.round(elev * 100) / 100;
             }
         } catch (e) { }
         return null;
     };
 
     window.sampleDEMElevation = function (lngLat) {
-        // Sync fallback for immediate query
         if (!map) return null;
         try {
             if (!map.getSource('terrain-dem')) {
@@ -406,11 +420,16 @@
                     tileSize: 512, maxzoom: 14
                 });
             }
-            if (typeof map.queryTerrainElevation === 'function') {
-                const elev = map.queryTerrainElevation(lngLat);
-                if (elev !== null && elev !== undefined) {
-                    return Math.round(elev * 100) / 100;
-                }
+            let terrainWasSet = !!map.getTerrain();
+            if (!terrainWasSet) {
+                map.setTerrain({ source: 'terrain-dem', exaggeration: 1.0 });
+            }
+            const elev = typeof map.queryTerrainElevation === 'function' ? map.queryTerrainElevation(lngLat) : null;
+            if (!terrainWasSet && !window.App.is3D) {
+                map.setTerrain(null);
+            }
+            if (elev !== null && elev !== undefined) {
+                return Math.round(elev * 100) / 100;
             }
         } catch (e) { }
         return null;
@@ -422,7 +441,7 @@
             return;
         }
         let count = 0;
-        window.showResultsWarning('Sampling DEM elevations...');
+        window.showResultsWarning('Sampling DEM elevations for all nodes...');
         for (const node of Net.nodes) {
             const elev = await window.sampleDEMElevationAsync(node.lngLat);
             if (elev !== null) {
@@ -433,9 +452,9 @@
         if (count > 0) {
             window.refreshNetworkData();
             if (window.renderProperties) window.renderProperties();
-            window.showResultsWarning(`Sampled DEM elevation for ${count} nodes.`);
+            window.showResultsWarning(`Successfully sampled DEM elevation for ${count} nodes.`);
         } else {
-            window.showResultsWarning('DEM elevation unavailable. Enable 3D View and try again.');
+            window.showResultsWarning('DEM elevation unavailable. Check your OpenTopography API Key or click 3D View.');
         }
     };
 
