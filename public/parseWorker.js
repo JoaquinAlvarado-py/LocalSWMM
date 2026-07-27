@@ -6,7 +6,7 @@
 
 'use strict';
 
-importScripts('inpParser.js');
+importScripts('inpParser.js?v=' + Date.now());
 
 self.onmessage = (e) => {
     const { text } = e.data || {};

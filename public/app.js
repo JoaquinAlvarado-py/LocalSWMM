@@ -703,7 +703,7 @@
         return new Promise((resolve, reject) => {
             let worker = null;
             try {
-                worker = new Worker('parseWorker.js');
+                worker = new Worker('parseWorker.js?v=' + Date.now());
             } catch (e) {
                 try { resolve(window.inpParser.parse(text)); }
                 catch (err) { reject(err); }

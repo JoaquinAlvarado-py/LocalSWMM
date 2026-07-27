@@ -236,9 +236,9 @@ class InpParser {
             return isNaN(n) ? v : n;
         };
         const linkById = {};
-        model.links.forEach(l => linkById[l.id] = l);
+        model.links.forEach(l => linkById[l.id.toUpperCase()] = l);
         (S['XSECTIONS'] || []).forEach(row => {
-            const l = linkById[row[0]];
+            const l = linkById[row[0].toUpperCase()];
             if (!l) return;
             l.props.xShape = (row[1] || 'CIRCULAR').toUpperCase();
             l.props.geom1 = geomVal(row[2], 1);
@@ -250,7 +250,7 @@ class InpParser {
 
         // --- Losses applied onto links ---
         (S['LOSSES'] || []).forEach(row => {
-            const l = linkById[row[0]];
+            const l = linkById[row[0].toUpperCase()];
             if (!l) return;
             l.props.entryLoss = this.num(row[1]);
             l.props.exitLoss = this.num(row[2]);
@@ -263,14 +263,25 @@ class InpParser {
         const polygons = {};
         (S['POLYGONS'] || []).forEach(row => {
             if (row.length < 3) return;
-            if (!polygons[row[0]]) polygons[row[0]] = [];
-            polygons[row[0]].push([this.num(row[1]), this.num(row[2])]);
+            const key = row[0].toUpperCase();
+            if (!polygons[key]) polygons[key] = [];
+            polygons[key].push([this.num(row[1]), this.num(row[2])]);
         });
 
         const subMap = {};
         (S['SUBCATCHMENTS'] || []).forEach(row => {
-            const ring = polygons[row[0]];
-            if (!ring || ring.length < 3) return;
+            const key = row[0].toUpperCase();
+            let ring = polygons[key];
+            if (!ring || ring.length < 3) {
+                const c = coords[row[0]] || coords[key] || defaultCoord;
+                const d = 0.001;
+                ring = [
+                    [c[0] - d, c[1] - d],
+                    [c[0] + d, c[1] - d],
+                    [c[0] + d, c[1] + d],
+                    [c[0] - d, c[1] + d]
+                ];
+            }
             const sub = {
                 id: row[0],
                 ring: ring,
@@ -285,13 +296,13 @@ class InpParser {
                     infilMaxRate: 3.0, infilMinRate: 0.5, infilDecay: 4.0, infilDryTime: 7.0, infilMaxInfil: 0
                 }
             };
-            subMap[row[0]] = sub;
+            subMap[key] = sub;
             model.subcatchments.push(sub);
         });
 
         // --- Subareas applied onto subcatchments ---
         (S['SUBAREAS'] || []).forEach(row => {
-            const s = subMap[row[0]];
+            const s = subMap[row[0].toUpperCase()];
             if (!s) return;
             s.props.nImperv = this.num(row[1], 0.01);
             s.props.nPerv = this.num(row[2], 0.1);
@@ -304,7 +315,7 @@ class InpParser {
 
         // --- Infiltration applied onto subcatchments ---
         (S['INFILTRATION'] || []).forEach(row => {
-            const s = subMap[row[0]];
+            const s = subMap[row[0].toUpperCase()];
             if (!s) return;
             s.props.infilMaxRate = this.num(row[1], 3.0);
             s.props.infilMinRate = this.num(row[2], 0.5);
@@ -314,11 +325,13 @@ class InpParser {
         });
 
         // --- Tags applied onto all elements ---
+        const nodeMap = {};
+        model.nodes.forEach(n => nodeMap[n.id.toUpperCase()] = n);
         (S['TAGS'] || []).forEach(row => {
             if (row.length >= 3) {
-                const id = row[1];
+                const key = row[1].toUpperCase();
                 const tag = row.slice(2).join(' ');
-                const el = model.nodes.find(n => n.id === id) || model.links.find(l => l.id === id) || subMap[id];
+                const el = nodeMap[key] || linkById[key] || subMap[key];
                 if (el && el.props) el.props.tag = tag;
             }
         });
