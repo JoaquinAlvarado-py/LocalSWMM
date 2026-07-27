@@ -354,12 +354,15 @@
         outData: null,    // binary out data parser
         nodeMinMax: { min: 0, max: 0.1 },
         linkMinMax: { min: 0, max: 0.1 },
+        mesh2DMinMax: { min: 0, max: 0.1 },
         currentStep: 0,
         activeNodeVar: 'depth',
         activeLinkVar: 'flow',
+        active2DVar: 'depth',   // 'depth' | 'head' | 'velocity'
         // dirty-tracking: last color pushed via setFeatureState, per element
         _appliedNode: new Map(),
         _appliedLink: new Map(),
+        _applied2D: new Map(),
 
         applyToMap() {
             Object.entries(this.nodeColors).forEach(([id, color]) => {
@@ -384,6 +387,28 @@
             const nMin = this.nodeMinMax.min, nMax = this.nodeMinMax.max;
             const lMin = this.linkMinMax.min, lMax = this.linkMinMax.max;
 
+            // ---- 2D mesh frame-based animation ----
+            const r2d = window.App && window.App.results2D;
+            if (r2d && r2d.frames && r2d.triangleIds) {
+                const frame = r2d.frames[step];
+                if (frame) {
+                    const varKey = this.active2DVar; // 'depth' | 'head' | 'velocity'
+                    const arr = frame[varKey];
+                    const mMin = this.mesh2DMinMax.min, mMax = this.mesh2DMinMax.max;
+                    if (arr) {
+                        const ids = r2d.triangleIds;
+                        for (let i = 0; i < ids.length; i++) {
+                            const val = arr[i] || 0;
+                            const t = mMax > mMin ? (val - mMin) / (mMax - mMin) : 0;
+                            const color = val > 0 ? rampColor(t) : 'rgba(0,0,0,0)';
+                            if (this._applied2D.get(ids[i]) === color) continue;
+                            this._applied2D.set(ids[i], color);
+                            try { map.setFeatureState({ source: 'swmm-2d-mesh', id: ids[i] }, { resultColor: color }); } catch (e) { }
+                        }
+                    }
+                }
+            }
+
             const outData = this.outData;
             if (outData && outData.parsed) {
                 // Highly optimized path: read only the current step's variables directly from outData
@@ -405,7 +430,6 @@
                         if (this._appliedNode.get(id) === color) return;
                         this._appliedNode.set(id, color);
                         try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: color }); } catch (e) { }
-                        try { map.setFeatureState({ source: 'swmm-2d-mesh', id }, { resultColor: color }); } catch (e) { }
                     });
                 }
 
@@ -420,8 +444,8 @@
                         try { map.setFeatureState({ source: 'swmm-links', id }, { resultColor: color }); } catch (e) { }
                     });
                 }
-            } else {
-                // Fallback to reading from parsed timeSeries arrays
+            } else if (!r2d) {
+                // Fallback to reading from parsed timeSeries arrays (1D-only runs)
                 Object.entries(ts.nodes).forEach(([id, values]) => {
                     const val = values[this.activeNodeVar] ? values[this.activeNodeVar][step] : undefined;
                     if (val !== undefined) {
@@ -430,7 +454,6 @@
                         if (this._appliedNode.get(id) === color) return;
                         this._appliedNode.set(id, color);
                         try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: color }); } catch (e) { }
-                        try { map.setFeatureState({ source: 'swmm-2d-mesh', id }, { resultColor: color }); } catch (e) { }
                     }
                 });
 
@@ -465,13 +488,17 @@
             const linkIds = new Set([...Object.keys(this.linkColors), ...this._appliedLink.keys()]);
             nodeIds.forEach(id => {
                 try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: null }); } catch (e) { }
-                try { map.setFeatureState({ source: 'swmm-2d-mesh', id }, { resultColor: null }); } catch (e) { }
             });
             linkIds.forEach(id => {
                 try { map.setFeatureState({ source: 'swmm-links', id }, { resultColor: null }); } catch (e) { }
             });
+            // Clear 2D mesh feature states
+            this._applied2D.forEach((_, id) => {
+                try { map.setFeatureState({ source: 'swmm-2d-mesh', id }, { resultColor: null }); } catch (e) { }
+            });
             this._appliedNode.clear();
             this._appliedLink.clear();
+            this._applied2D.clear();
             this.nodeColors = {};
             this.linkColors = {};
             this.timeSeries = null;
@@ -597,6 +624,8 @@
         if (hint) hint.classList.remove('hidden');
         window.App.lastRunReport = null;
         window.App.outData = null;
+        window.App.results2D = null;
+        window.App.resultFrame2D = null;
     };
 
     window.displayResults = function (rpt, outData) {
@@ -1093,6 +1122,190 @@
         note.textContent = hasAny
             ? 'Click a row to zoom to the element · full report in the browser console.'
             : 'No summary tables found in the report · full report in the browser console.';
+        container.appendChild(note);
+
+        if (window.openResultsPanel) window.openResultsPanel();
+    };
+
+    // ---------- 2D-specific results display ----------
+    window.display2DResults = function (result) {
+        const container = document.getElementById('results-content');
+        const hint = document.getElementById('results-hint');
+        const select = parkCategorySelect();
+
+        if (hint) hint.classList.add('hidden');
+        container.innerHTML = '';
+
+        const frames = result.frames || [];
+        const ids = result.triangleIds || [];
+        const diag = result.diagnostics || {};
+        const mb = diag.massBalance || {};
+        const report = result.report || '';
+
+        // ---- compute global min/max across all frames for the active 2D variable ----
+        function compute2DMinMax(varKey) {
+            let min = Infinity, max = -Infinity;
+            for (let f = 0; f < frames.length; f++) {
+                const arr = frames[f][varKey];
+                if (!arr) continue;
+                for (let i = 0; i < arr.length; i++) {
+                    const v = arr[i];
+                    if (v < min) min = v;
+                    if (v > max) max = v;
+                }
+            }
+            if (!isFinite(min)) min = 0;
+            if (!isFinite(max)) max = 0.1;
+            return { min: Math.max(0, min), max: Math.max(max, 0.001) };
+        }
+
+        const depthRange = compute2DMinMax('depth');
+        const headRange = compute2DMinMax('head');
+        const velRange = compute2DMinMax('velocity');
+
+        // ---- set up ResultStyling for 2D ----
+        ResultStyling.clear();
+        ResultStyling.active2DVar = 'depth';
+        ResultStyling.mesh2DMinMax = depthRange;
+
+        // Color-code mesh with last-frame depth values initially
+        const lastFrame = frames[frames.length - 1];
+        if (lastFrame) {
+            const dMin = depthRange.min, dMax = depthRange.max;
+            ids.forEach((id, i) => {
+                const val = lastFrame.depth[i] || 0;
+                const t = dMax > dMin ? (val - dMin) / (dMax - dMin) : 0;
+                const color = val > 0 ? rampColor(t) : 'rgba(0,0,0,0)';
+                ResultStyling.nodeColors[id] = color;
+            });
+        }
+
+        // Build synthetic timeSeries so AnimationUI can drive 2D scrubbing
+        const ts = { times: [], nodes: {}, links: {}, nodeMax: {}, linkMax: {} };
+        for (let f = 0; f < frames.length; f++) {
+            const ms = frames[f].elapsedMs || 0;
+            const totalSec = Math.round(ms / 1000);
+            const hrs = Math.floor(totalSec / 3600);
+            const mins = Math.floor((totalSec % 3600) / 60);
+            const secs = totalSec % 60;
+            ts.times.push(`${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`);
+        }
+
+        ResultStyling.timeSeries = ts;
+        ResultStyling.active = true;
+        ResultStyling.applyToMap();
+
+        if (window.AnimationUI && ts.times.length > 1) {
+            window.AnimationUI.setRange(ts.times.length);
+            window.AnimationUI.show();
+        }
+
+        // ---- continuity error ----
+        const contErr = Number.isFinite(mb.continuityError) ? mb.continuityError : null;
+        const contPct = contErr !== null ? (contErr * 100).toFixed(3) : null;
+        const statusCls = (contPct !== null && Math.abs(parseFloat(contPct)) >= 10) ? 'warn' : 'ok';
+        const statusTxt = 'OpenSWMM 1D–2D simulation complete';
+        const chips = contPct !== null
+            ? `<div class="rv-chips"><span class="rv-chip ${Math.abs(parseFloat(contPct)) < 5 ? 'ok' : Math.abs(parseFloat(contPct)) < 10 ? 'warn' : 'bad'}" title="2D surface continuity error">2D Continuity <b>${contPct}%</b></span></div>`
+            : '';
+
+        let html = `
+            <div class="rv-hero">
+                <div class="rv-hero-top">
+                    <span class="rv-dot ${statusCls}"></span>
+                    <div>
+                        <div class="rv-hero-title">${statusTxt}</div>
+                        <div class="rv-hero-sub">${ids.length} mesh cells · ${frames.length} result frames</div>
+                    </div>
+                </div>
+                ${chips}
+            </div>`;
+
+        // ---- KPI cards ----
+        const kpis = [];
+        // Peak depth across all frames
+        let peakDepth = 0, peakVel = 0;
+        for (const frame of frames) {
+            for (let i = 0; i < ids.length; i++) {
+                if ((frame.depth[i] || 0) > peakDepth) peakDepth = frame.depth[i];
+                if ((frame.velocity[i] || 0) > peakVel) peakVel = frame.velocity[i];
+            }
+        }
+        const isUS = (window.Net && Net.units === 'US');
+        const depthUnit = isUS ? 'ft' : 'm';
+        const velUnit = isUS ? 'ft/s' : 'm/s';
+
+        kpis.push(`<div class="rv-kpi"><div class="rv-kpi-label">Peak 2D depth</div><div class="rv-kpi-value">${fmtVal(peakDepth, 3)}<small>${esc(depthUnit)}</small></div></div>`);
+        kpis.push(`<div class="rv-kpi"><div class="rv-kpi-label">Peak 2D velocity</div><div class="rv-kpi-value">${fmtVal(peakVel, 3)}<small>${esc(velUnit)}</small></div></div>`);
+        kpis.push(`<div class="rv-kpi"><div class="rv-kpi-label">Mesh cells</div><div class="rv-kpi-value">${ids.length}</div></div>`);
+        kpis.push(`<div class="rv-kpi"><div class="rv-kpi-label">Time frames</div><div class="rv-kpi-value">${frames.length}</div></div>`);
+        html += `<div class="rv-kpis">${kpis.join('')}</div>`;
+
+        // ---- color ramp legend ----
+        const grad = `linear-gradient(90deg, ${RAMP.join(', ')})`;
+        html += `
+            <div class="rv-legend">
+                <div class="rv-legend-title"><span>2D Water depth</span><span class="rv-legend-unit">${esc(depthUnit)}</span></div>
+                <div class="rv-legend-bar" style="background:${grad}"></div>
+                <div class="rv-legend-scale"><span>${fmtVal(depthRange.min, 3)}</span><span>${fmtVal((depthRange.min + depthRange.max) / 2, 3)}</span><span>${fmtVal(depthRange.max, 3)}</span></div>
+            </div>`;
+
+        // ---- 2D variable selector ----
+        html += `
+            <div class="rv-explorer" style="margin-top:8px">
+                <div class="rv-exp-head">
+                    <select id="results-2d-var-select" style="flex:1">
+                        <option value="depth" selected>Water Depth</option>
+                        <option value="head">Hydraulic Head</option>
+                        <option value="velocity">Flow Velocity</option>
+                    </select>
+                </div>
+            </div>`;
+
+        // ---- report text (collapsible) ----
+        if (report) {
+            html += `
+                <details class="rv-details" style="margin-top:8px">
+                    <summary>Full simulation report</summary>
+                    <div class="rv-details-body"><pre style="white-space:pre-wrap;font-size:11px;max-height:300px;overflow:auto">${esc(report)}</pre></div>
+                </details>`;
+        }
+
+        // ---- mass balance details ----
+        if (mb.initialVolume !== undefined) {
+            const mbLines = [
+                `Initial storage: ${fmtVal(mb.initialVolume, 4)} m³`,
+                `Final storage: ${fmtVal(mb.finalVolume, 4)} m³`,
+                `Rainfall in: ${fmtVal(mb.rainfall, 4)} m³`,
+                `1D→2D coupling: ${fmtVal(mb.coupling1DTo2D, 4)} m³`,
+                `2D→1D coupling: ${fmtVal(mb.coupling2DTo1D, 4)} m³`,
+                `Evaporation: ${fmtVal(mb.evaporation, 4)} m³`
+            ].join('\n');
+            html += `
+                <details class="rv-details" style="margin-top:8px">
+                    <summary>2D mass balance</summary>
+                    <div class="rv-details-body"><pre style="white-space:pre-wrap;font-size:11px">${esc(mbLines)}</pre></div>
+                </details>`;
+        }
+
+        container.innerHTML = html;
+
+        // ---- wire up 2D variable selector ----
+        const varSelect = document.getElementById('results-2d-var-select');
+        if (varSelect) {
+            const rangeMap = { depth: depthRange, head: headRange, velocity: velRange };
+            varSelect.addEventListener('change', () => {
+                const varKey = varSelect.value;
+                ResultStyling.active2DVar = varKey;
+                ResultStyling.mesh2DMinMax = rangeMap[varKey] || depthRange;
+                ResultStyling._applied2D.clear(); // force full repaint
+                ResultStyling.applyToMapForStep(ResultStyling.currentStep);
+            });
+        }
+
+        const note = document.createElement('div');
+        note.className = 'rv-note';
+        note.textContent = 'Drag the timeline slider to animate 2D inundation over time.';
         container.appendChild(note);
 
         if (window.openResultsPanel) window.openResultsPanel();

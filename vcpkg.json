@@ -1,0 +1,10 @@
+{
+  "name": "swmm-3d-web-ui",
+  "version-string": "1.0.0",
+  "dependencies": [
+    "eigen3",
+    "hdf5",
+    "nlohmann-json",
+    "sundials"
+  ]
+}

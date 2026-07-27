@@ -7,8 +7,15 @@ PORT = 8080
 PUBLIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'public')
 
 class CustomHandler(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, format, *args):
+        print(f"{self.client_address[0]} - {format % args}", flush=True)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=PUBLIC_DIR, **kwargs)
+
+    def end_headers(self):
+        self.send_header('Cache-Control', 'no-store')
+        super().end_headers()
 
     def do_GET(self):
         if self.path == '/api/status':
@@ -27,8 +34,9 @@ if __name__ == '__main__':
     print(f"Starting server on http://localhost:{PORT}")
     print(f"Serving files from: {PUBLIC_DIR}")
     
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("", PORT), CustomHandler) as httpd:
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    socketserver.ThreadingTCPServer.daemon_threads = True
+    with socketserver.ThreadingTCPServer(("", PORT), CustomHandler) as httpd:
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:

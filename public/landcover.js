@@ -143,6 +143,85 @@
         },
 
         /**
+         * Classifies a map coordinate from the Mapbox features rendered at that point.
+         * Returns a VITO/ESA-compatible class code used by this application.
+         */
+        classifyPointLandCover(point, mapInstance) {
+            if (!mapInstance || typeof mapInstance.queryRenderedFeatures !== 'function') return 30;
+
+            try {
+                const pixel = mapInstance.project(point);
+                const features = mapInstance.queryRenderedFeatures(pixel);
+                let isBuilding = false;
+                let isRoad = false;
+                let isWater = false;
+                let mappedCode = 0;
+
+                features.forEach(feature => {
+                    const layerId = ((feature.layer && feature.layer.id) || '').toLowerCase();
+                    const sourceLayer = (feature.sourceLayer || '').toLowerCase();
+                    const props = feature.properties || {};
+                    const className = String(props.class || props.type || props.landuse || '').toLowerCase();
+
+                    if (layerId.includes('building') || sourceLayer.includes('building') || props.building) {
+                        isBuilding = true;
+                    }
+                    if (layerId.includes('road') || layerId.includes('street') || sourceLayer.includes('road') || props.highway) {
+                        isRoad = true;
+                    }
+                    if (layerId.includes('water') || sourceLayer.includes('water') || props.water || className.includes('water')) {
+                        isWater = true;
+                    }
+
+                    if (/wood|forest/.test(className)) mappedCode = mappedCode || 10;
+                    else if (/scrub|shrub/.test(className)) mappedCode = mappedCode || 20;
+                    else if (/grass|park|pitch|recreation/.test(className)) mappedCode = mappedCode || 30;
+                    else if (/agricultur|crop|farmland|orchard|vineyard/.test(className)) mappedCode = mappedCode || 40;
+                    else if (/wetland|marsh/.test(className)) mappedCode = mappedCode || 50;
+                    else if (/sand|bare|rock/.test(className)) mappedCode = mappedCode || 80;
+                    else if (/residential|commercial|industrial|school|hospital|parking/.test(className)) mappedCode = 90;
+                });
+
+                if (isBuilding || isRoad) return 90;
+                if (isWater) return 95;
+                return mappedCode || 30;
+            } catch (e) {
+                return 30;
+            }
+        },
+
+        /**
+         * Samples each triangle centroid and stores its detected class and Manning roughness.
+         */
+        classifyMeshCells(mapInstance, meshCells) {
+            const cells = Array.isArray(meshCells) ? meshCells : [];
+            const counts = {};
+            let classified = 0;
+
+            cells.forEach(cell => {
+                if (!cell.ring || cell.ring.length < 3) return;
+                const vertices = cell.ring.slice(0, 3);
+                const centroid = [
+                    vertices.reduce((sum, point) => sum + point[0], 0) / vertices.length,
+                    vertices.reduce((sum, point) => sum + point[1], 0) / vertices.length
+                ];
+                const code = this.classifyPointLandCover(centroid, mapInstance);
+                const roughness = this.getRoughness(code);
+
+                cell.landCoverClass = code;
+                cell.manningN = roughness.nPerv;
+                cell.props ||= {};
+                cell.props.landCoverClass = code;
+                cell.props.manningN = roughness.nPerv;
+                cell.props.parentSubcatch ||= cell.parentSubcatch || '';
+                counts[code] = (counts[code] || 0) + 1;
+                classified++;
+            });
+
+            return { classified, counts };
+        },
+
+        /**
          * Performs grid-cell sampling over a subcatchment polygon to detect land cover breakdown and compute weighted SWMM roughness.
          */
         sampleSubcatchmentLandCover(subcatchment, mapInstance) {
