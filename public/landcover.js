@@ -144,11 +144,8 @@
          * Performs grid-cell sampling over a subcatchment polygon to detect land cover breakdown and compute weighted SWMM roughness.
          */
         sampleSubcatchmentLandCover(subcatchment, mapInstance) {
-            if (!subcatchment || !subcatchment.geometry || !subcatchment.geometry.coordinates) {
-                return null;
-            }
-
-            const ring = subcatchment.geometry.coordinates[0];
+            if (!subcatchment) return null;
+            const ring = subcatchment.ring || (subcatchment.geometry && subcatchment.geometry.coordinates && subcatchment.geometry.coordinates[0]);
             if (!ring || ring.length < 3) return null;
 
             // Compute Bounding Box
