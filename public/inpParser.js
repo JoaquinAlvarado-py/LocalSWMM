@@ -41,8 +41,26 @@ class InpParser {
             links: [],
             subcatchments: [],
             mesh2D: [], // Added for 2D OpenSWMM engine
+            timeseries: {},
             rawSections: this.rawSections
         };
+
+        // --- TIMESERIES ---
+        (S['TIMESERIES'] || []).forEach(row => {
+            if (row.length < 3) return;
+            const tsName = row[0];
+            if (!model.timeseries[tsName]) model.timeseries[tsName] = [];
+            let date = '', time = '', val = 0;
+            if (row.length >= 4) {
+                date = row[1];
+                time = row[2];
+                val = this.num(row[3]);
+            } else {
+                time = row[1];
+                val = this.num(row[2]);
+            }
+            model.timeseries[tsName].push({ date, time, value: val });
+        });
 
         // --- OPTIONS ---
         // Every option is kept verbatim in options.raw so the exporter can

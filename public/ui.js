@@ -698,6 +698,12 @@
             </div>`;
         }
 
+        if (type === 'RAINGAGE') {
+            html += `<div class="prop-actions" style="margin-top:6px;margin-bottom:10px;">
+                <button class="tb-btn tb-btn-run" id="prop-edit-raindata" style="width:100%;font-size:11px;">🌧️ Edit Rain Data / Time Series</button>
+            </div>`;
+        }
+
         html += `<div class="prop-actions">
             <button class="tb-btn prop-btn-danger" id="prop-delete">Delete</button>
         </div>`;
@@ -738,6 +744,14 @@
             });
         }
 
+        const btnEditRain = document.getElementById('prop-edit-raindata');
+        if (btnEditRain) {
+            btnEditRain.addEventListener('click', () => {
+                const tsName = el.props.sourceName || 'TS1';
+                openRainDataEditor(tsName);
+            });
+        }
+
         document.getElementById('prop-id').addEventListener('change', (e) => {
             const newId = Net.renameElement(el.id, e.target.value);
             App.selection.delete(id);
@@ -748,6 +762,94 @@
 
         document.getElementById('prop-delete').addEventListener('click', () => Tools.deleteSelection());
     };
+
+    function openRainDataEditor(seriesName) {
+        if (!seriesName) seriesName = 'TS1';
+        const modal = document.getElementById('ts-data-editor-modal');
+        if (!modal) return;
+        document.getElementById('ts-data-title').innerText = `Edit Time Series Rain Data: ${seriesName}`;
+
+        if (!Net.timeseries) Net.timeseries = {};
+        if (!Net.timeseries[seriesName] || !Net.timeseries[seriesName].length) {
+            Net.timeseries[seriesName] = [
+                { date: '', time: '0:00', value: 0 },
+                { date: '', time: '1:00', value: 10 },
+                { date: '', time: '2:00', value: 20 },
+                { date: '', time: '3:00', value: 5 }
+            ];
+        }
+
+        let rows = JSON.parse(JSON.stringify(Net.timeseries[seriesName]));
+
+        function renderTable() {
+            const tbody = document.getElementById('ts-data-tbody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+            rows.forEach((r, idx) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><input type="text" class="ts-row-date" data-idx="${idx}" value="${r.date || ''}" placeholder="MM/DD/YYYY"></td>
+                    <td><input type="text" class="ts-row-time" data-idx="${idx}" value="${r.time || '0:00'}" placeholder="HH:MM"></td>
+                    <td><input type="number" step="any" class="ts-row-val" data-idx="${idx}" value="${r.value ?? 0}"></td>
+                    <td><button class="ts-btn-icon-del" data-idx="${idx}">&times;</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            tbody.querySelectorAll('.ts-row-date').forEach(inp => {
+                inp.onchange = (e) => { rows[+e.target.dataset.idx].date = e.target.value.trim(); };
+            });
+            tbody.querySelectorAll('.ts-row-time').forEach(inp => {
+                inp.onchange = (e) => { rows[+e.target.dataset.idx].time = e.target.value.trim(); };
+            });
+            tbody.querySelectorAll('.ts-row-val').forEach(inp => {
+                inp.onchange = (e) => { rows[+e.target.dataset.idx].value = parseFloat(e.target.value) || 0; };
+            });
+            tbody.querySelectorAll('.ts-btn-icon-del').forEach(btn => {
+                btn.onclick = (e) => {
+                    const idx = +e.target.dataset.idx;
+                    rows.splice(idx, 1);
+                    renderTable();
+                };
+            });
+        }
+
+        renderTable();
+
+        document.getElementById('btn-ts-data-add').onclick = () => {
+            const lastTime = rows.length > 0 ? rows[rows.length - 1].time : '0:00';
+            rows.push({ date: '', time: lastTime, value: 0 });
+            renderTable();
+        };
+
+        document.getElementById('btn-ts-data-clear').onclick = () => {
+            rows = [];
+            renderTable();
+        };
+
+        document.getElementById('btn-ts-data-scale').onclick = () => {
+            const factor = parseFloat(document.getElementById('ts-scale-factor').value) || 1.0;
+            rows.forEach(r => { r.value = +(r.value * factor).toFixed(4); });
+            renderTable();
+        };
+
+        document.getElementById('btn-ts-data-save').onclick = () => {
+            Net.timeseries[seriesName] = rows;
+            Net.commit();
+            modal.classList.add('hidden');
+            if (window.showResultsWarning) window.showResultsWarning(`Updated rain data for time series '${seriesName}'`);
+        };
+
+        document.getElementById('btn-ts-data-cancel').onclick = () => {
+            modal.classList.add('hidden');
+        };
+
+        document.getElementById('btn-ts-data-close').onclick = () => {
+            modal.classList.add('hidden');
+        };
+
+        modal.classList.remove('hidden');
+    }
 
     // Profile plot button: show when 2+ hydraulic nodes selected and results loaded
     const HYDRAULIC_TYPES = new Set(['JUNCTION', 'OUTFALL', 'STORAGE', 'DIVIDER']);

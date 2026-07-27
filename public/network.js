@@ -113,6 +113,7 @@
             this.links = [];
             this.subcatchments = [];
             this.mesh2D = []; // Added for 2D mesh
+            this.timeseries = {};
             this.options = defaultOptions();
             this.units = 'SI';
             this.title = 'Untitled SWMM Project';
@@ -430,6 +431,7 @@
                 links: this.links,
                 subcatchments: this.subcatchments,
                 mesh2D: this.mesh2D, // Added for 2D mesh
+                timeseries: this.timeseries,
                 rawSections: this.rawSections
             };
         }
@@ -443,6 +445,7 @@
             this.links = state.links || [];
             this.subcatchments = state.subcatchments || [];
             this.mesh2D = state.mesh2D || []; // Added for 2D mesh
+            this.timeseries = state.timeseries || {};
             this.rawSections = state.rawSections || {};
             this.rebuildIndexes();
             if (resetHistory) {

@@ -617,10 +617,45 @@
         renderChart();
     }
 
+    function onMapElementSelected(id) {
+        if (!id || typeof Net === 'undefined') return;
+        const isSelOpen = selectionModal && !selectionModal.classList.contains('hidden');
+        const isChartOpen = chartModal && !chartModal.classList.contains('hidden');
+
+        if (!isSelOpen && !isChartOpen) return;
+
+        let type = 'NODE';
+        if (Net.getNode(id)) type = 'NODE';
+        else if (Net.getLink(id)) type = 'LINK';
+        else if (Net.getSubcatchment(id)) type = 'SUBCATCHMENT';
+        else return;
+
+        const defaultVar = VAR_DEFINITIONS[type] ? VAR_DEFINITIONS[type][0] : null;
+        if (!defaultVar) return;
+
+        // Add if not already added
+        const exists = activeSeries.some(s => s.id === id && s.type === type && s.variable === defaultVar.key);
+        if (!exists) {
+            const isUS = Net.units === 'US';
+            activeSeries.push({
+                id,
+                type,
+                variable: defaultVar.key,
+                label: `${id} (${defaultVar.label})`,
+                color: COLORS[activeSeries.length % COLORS.length],
+                unit: isUS ? defaultVar.unitUS : defaultVar.unitSI
+            });
+        }
+
+        if (isSelOpen) renderSeriesList();
+        if (isChartOpen) renderChart();
+    }
+
     // Expose window API
     window.TimeSeriesPlot = {
         openSelectionModal,
-        openChartWindow
+        openChartWindow,
+        onMapElementSelected
     };
 
     // Auto-initialize when DOM ready

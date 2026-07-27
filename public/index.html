@@ -293,6 +293,42 @@
                 </div>
                 <div id="ts-chart-resize" class="ts-resize-handle" title="Drag to resize"></div>
             </div>
+
+            <!-- Time Series Rain Data Table Editor Modal -->
+            <div id="ts-data-editor-modal" class="ts-modal hidden">
+                <div id="ts-data-header" class="ts-modal-header">
+                    <span id="ts-data-title">Edit Time Series Rainfall Data</span>
+                    <button id="btn-ts-data-close" class="ts-close-btn">&times;</button>
+                </div>
+                <div class="ts-modal-body">
+                    <div class="ts-data-toolbar">
+                        <button id="btn-ts-data-add" class="tb-btn">+ Add Row</button>
+                        <button id="btn-ts-data-clear" class="tb-btn tb-btn-danger">Clear All</button>
+                        <div class="ts-scale-box">
+                            <label>Scale Factor:</label>
+                            <input type="number" id="ts-scale-factor" value="1.0" step="0.1" class="ts-input-num">
+                            <button id="btn-ts-data-scale" class="tb-btn">Apply Scale</button>
+                        </div>
+                    </div>
+                    <div class="ts-table-container">
+                        <table id="ts-data-table" class="ts-data-table">
+                            <thead>
+                                <tr>
+                                    <th>Date (MM/DD/YYYY)</th>
+                                    <th>Time (HH:MM)</th>
+                                    <th>Rainfall / Value</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ts-data-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="ts-modal-footer">
+                    <button id="btn-ts-data-save" class="tb-btn tb-btn-run">Save Changes</button>
+                    <button id="btn-ts-data-cancel" class="tb-btn">Cancel</button>
+                </div>
+            </div>
         </main>
 
         <!-- RIGHT PANEL (tabbed: Properties | Results) -->
