@@ -349,6 +349,14 @@
             App.landCoverVisible = !App.landCoverVisible;
             btnLandCover.classList.toggle('toggled', App.landCoverVisible);
             if (window.toggleLandCoverLayer) window.toggleLandCoverLayer(App.landCoverVisible);
+            if (App.landCoverVisible && Net.mesh2D.length > 0 && window.LandCoverModule && App.map) {
+                const classification = window.LandCoverModule.classifyMeshCells(App.map, Net.mesh2D);
+                if (window.refreshNetworkData) window.refreshNetworkData();
+                renderPropsPanel();
+                if (window.showResultsWarning) {
+                    window.showResultsWarning(`Land cover classified for ${classification.classified} mesh cells.`);
+                }
+            }
         });
     }
 
@@ -385,10 +393,20 @@
                         maxAreaM2,
                         assignLandCover: true
                     });
+                    let classification = null;
+                    if (window.LandCoverModule && App.map) {
+                        classification = window.LandCoverModule.classifyMeshCells(App.map, Net.mesh2D);
+                    }
 
                     if (window.refreshNetworkData) window.refreshNetworkData();
 
                     let msg = `🔺 2D Mesh: ${result.cells} triangular cells generated (${result.vertices} vertices).`;
+                    if (classification) {
+                        const breakdown = Object.entries(classification.counts)
+                            .map(([code, count]) => `${code}: ${count}`)
+                            .join(', ');
+                        msg += ` Land cover classified for ${classification.classified} cells${breakdown ? ` (${breakdown})` : ''}.`;
+                    }
                     if (result.errors.length > 0) {
                         msg += ` ⚠️ ${result.errors.length} warning(s): ${result.errors.join('; ')}`;
                     }
@@ -693,7 +711,10 @@
         MESH2D: () => [
             { key: 'parentSubcatch', label: 'Parent Subcatchment', type: 'text' },
             { key: 'landCoverClass', label: 'Land Cover Class', type: 'number' },
-            { key: 'manningN', label: 'Manning N Roughness', type: 'number', step: 0.001 }
+            { key: 'manningN', label: 'Manning N Roughness', type: 'number', step: 0.001 },
+            { key: 'depth', label: '2D Water Depth', unit: U('m', 'ft'), type: 'number', readonly: true },
+            { key: 'head', label: '2D Hydraulic Head', unit: U('m', 'ft'), type: 'number', readonly: true },
+            { key: 'velocity', label: '2D Velocity', unit: U('m/s', 'ft/s'), type: 'number', readonly: true }
         ]
     };
 
@@ -773,8 +794,9 @@
                     <select data-key="${f.key}" data-bool="${f.bool ? '1' : ''}">${opts}</select></div>`;
             } else {
                 const step = f.step ? ` step="${f.step}"` : (f.type === 'number' ? ' step="any"' : '');
+                const readonly = f.readonly ? ' readonly' : '';
                 html += `<div class="prop-row"><label>${esc(f.label)}${unitHint}</label>
-                    <input type="${f.type}"${step} data-key="${f.key}" value="${esc(val)}"></div>`;
+                    <input type="${f.type}"${step} data-key="${f.key}" value="${esc(val)}"${readonly}></div>`;
             }
         });
 

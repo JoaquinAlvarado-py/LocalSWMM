@@ -1003,6 +1003,53 @@
         return 3500;
     }
 
+    async function run2DSimulationInWorker(inpText, triangleIds) {
+        const wasmResponse = await fetch('openswmm2d.wasm');
+        if (!wasmResponse.ok) throw new Error(`OpenSWMM 2D WebAssembly could not be loaded (HTTP ${wasmResponse.status}).`);
+        const wasmBinary = await wasmResponse.arrayBuffer();
+        return new Promise((resolve, reject) => {
+            const worker = new Worker('openSwmm2dWorker.js?v=18');
+            worker.onmessage = event => {
+                const message = event.data || {};
+                if (message.type === 'stdout') console.log('OpenSWMM 2D:', message.text);
+                else if (message.type === 'stderr') console.warn('OpenSWMM 2D:', message.text);
+                else if (message.type === 'progress2d') console.debug('OpenSWMM 2D elapsed milliseconds:', message.elapsedMs);
+                else if (message.type === 'results2d') {
+                    worker.terminate();
+                    resolve(message);
+                } else if (message.type === 'error') {
+                    worker.terminate();
+                    reject(new Error(message.message));
+                }
+            };
+            worker.onerror = event => {
+                worker.terminate();
+                const missingBuild = /openswmm2d/i.test(event.message || '');
+                reject(new Error(missingBuild
+                    ? 'OpenSWMM 2D WebAssembly is not built. Run npm run build:2d-wasm, then reload the application.'
+                    : (event.message || 'OpenSWMM 2D worker failed to start.')));
+            };
+            worker.postMessage({ type: 'run2d', inp: inpText, triangleIds, frameIntervalMs: 60000, wasmBinary }, [wasmBinary]);
+        });
+    }
+
+    function apply2DResults(result) {
+        const finalFrame = result.frames && result.frames[result.frames.length - 1];
+        if (!finalFrame) throw new Error('The 2D engine returned no surface result frames.');
+        const ids = result.triangleIds || [];
+        ids.forEach((id, index) => {
+            const cell = Net.mesh2D.find(candidate => candidate.id === id);
+            if (!cell) return;
+            cell.props ||= {};
+            cell.props.depth = finalFrame.depth[index] || 0;
+            cell.props.head = finalFrame.head[index] || 0;
+            cell.props.velocity = finalFrame.velocity[index] || 0;
+        });
+        window.App.results2D = result;
+        window.App.resultFrame2D = result.frames.length - 1;
+        if (window.refreshNetworkData) window.refreshNetworkData();
+    }
+
     function runSimulationInWorker(inpText, targetDurationMs) {
         return new Promise((resolve, reject) => {
             let worker = null;
@@ -1149,14 +1196,23 @@
             window.showResultsWarning('The network needs at least one outfall node.');
             return;
         }
-        if (Net.mesh2D.length > 0) {
-            window.showResultsWarning(
-                '2D mesh simulation is not available in this browser build. The bundled SWMM WebAssembly engine and binary output parser support the 1D drainage network and lumped subcatchment runoff only; they do not solve or return cell-to-cell surface flow. Clear the 2D mesh to run the 1D model.'
-            );
-            return;
+        const has2DMesh = Net.mesh2D.length > 0;
+        const baseInpText = window.inpExporter.generateInp(Net);
+        let meshInput2D = null;
+        if (has2DMesh) {
+            if (!window.Mesh2DInp) {
+                window.showResultsWarning('The OpenSWMM 2D mesh serializer is not loaded. Reload the application and try again.');
+                return;
+            }
+            try {
+                meshInput2D = window.Mesh2DInp.buildInput(baseInpText, Net.mesh2D, map);
+            } catch (error) {
+                window.showResultsWarning('Cannot prepare the 2D model: ' + error.message);
+                return;
+            }
         }
 
-        const inpText = window.inpExporter.generateInp(Net);
+        const inpText = meshInput2D ? meshInput2D.inp : baseInpText;
         btnRun.disabled = true;
         btnRun.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg> Running…';
         
@@ -1171,30 +1227,50 @@
 
         try {
             let result;
-            try {
-                // Preferred: run in a worker so the UI stays interactive
-                result = await runSimulationInWorker(inpText, targetDuration);
-            } catch (workerErr) {
-                console.warn('Simulation worker unavailable, running on main thread:', workerErr);
-                result = await runSimulationOnMainThread(inpText);
-            }
-
-            const { rpt, outBuffer } = result;
-
-            if (outBuffer && window.SWMMOutParser) {
-                const outParser = new window.SWMMOutParser(outBuffer);
-                outParser.parse();
-                window.App.outData = outParser;
-            } else {
+            if (has2DMesh) {
+                if (runStatusModal) runStatusModal.classList.remove('hidden');
+                updateRunStatusUI(5, 0, '00:00');
+                result = await run2DSimulationInWorker(inpText, meshInput2D.triangleIds);
+                updateRunStatusUI(100, 0, '00:00');
+                apply2DResults(result);
                 window.App.outData = null;
+                window.App.lastRunReport = result.report || '';
+                // Display full 2D results panel with animation timeline
+                if (window.display2DResults) {
+                    window.display2DResults(result);
+                } else {
+                    const continuity = result.diagnostics && result.diagnostics.massBalance
+                        ? result.diagnostics.massBalance.continuityError
+                        : null;
+                    const suffix = Number.isFinite(continuity) ? ` Continuity error: ${(continuity * 100).toFixed(3)}%.` : '';
+                    window.showResultsWarning(`OpenSWMM 1D-2D simulation complete: ${meshInput2D.triangleCount} cells, ${result.frames.length} result frames.${suffix}`);
+                }
+            } else {
+                try {
+                    // Preferred: run in a worker so the UI stays interactive
+                    result = await runSimulationInWorker(inpText, targetDuration);
+                } catch (workerErr) {
+                    console.warn('Simulation worker unavailable, running on main thread:', workerErr);
+                    result = await runSimulationOnMainThread(inpText);
+                }
+
+                const { rpt, outBuffer } = result;
+
+                if (outBuffer && window.SWMMOutParser) {
+                    const outParser = new window.SWMMOutParser(outBuffer);
+                    outParser.parse();
+                    window.App.outData = outParser;
+                } else {
+                    window.App.outData = null;
+                }
+
+                window.App.lastRunReport = rpt;
+                console.log(rpt);
+                window.displayResults(rpt, window.App.outData);
             }
 
             // Save actual duration for subsequent runs
             window.App.lastSimDuration = Date.now() - simStartTime;
-
-            window.App.lastRunReport = rpt;
-            console.log(rpt);
-            window.displayResults(rpt, window.App.outData);
         } catch (err) {
             console.error('Simulation failed:', err);
             window.showResultsWarning('Simulation failed: ' + err.message);

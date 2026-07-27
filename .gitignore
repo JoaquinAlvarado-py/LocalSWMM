@@ -5,3 +5,8 @@ node_modules/
 .claude/
 __pycache__/
 *.pyc
+build/
+.tools/
+.tmp-openswmm/
+public/openswmm2d.js
+public/openswmm2d.wasm
