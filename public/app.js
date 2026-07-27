@@ -354,7 +354,49 @@
     window.apply3D = apply3D;
 
     // ---------- DEM Terrain Sampling Functions ----------
+    window.sampleDEMElevationAsync = async function (lngLat) {
+        if (!map) return null;
+        const demSelect = document.getElementById('dem-source-select');
+        const apiKeyInput = document.getElementById('opentopo-api-key');
+        const demSource = demSelect ? demSelect.value : 'MAPBOX';
+        const apiKey = (apiKeyInput && apiKeyInput.value.trim()) || (window.CONFIG && window.CONFIG.OPENTOPOGRAPHY_API_KEY) || '';
+
+        if (demSource !== 'MAPBOX' && window.LandCoverModule) {
+            try {
+                const url = window.LandCoverModule.getOpenTopographyPointUrl(lngLat[1], lngLat[0], demSource, apiKey);
+                const res = await fetch(url);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.resource && data.resource.length > 0 && data.resource[0].elevation !== undefined) {
+                        const val = parseFloat(data.resource[0].elevation);
+                        if (!isNaN(val)) return Math.round(val * 100) / 100;
+                    }
+                }
+            } catch (err) {
+                console.warn('OpenTopography DEM fetch failed, falling back to Mapbox DEM', err);
+            }
+        }
+
+        try {
+            if (!map.getSource('terrain-dem')) {
+                map.addSource('terrain-dem', {
+                    type: 'raster-dem',
+                    url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
+                    tileSize: 512, maxzoom: 14
+                });
+            }
+            if (typeof map.queryTerrainElevation === 'function') {
+                const elev = map.queryTerrainElevation(lngLat);
+                if (elev !== null && elev !== undefined) {
+                    return Math.round(elev * 100) / 100;
+                }
+            }
+        } catch (e) { }
+        return null;
+    };
+
     window.sampleDEMElevation = function (lngLat) {
+        // Sync fallback for immediate query
         if (!map) return null;
         try {
             if (!map.getSource('terrain-dem')) {
@@ -374,19 +416,20 @@
         return null;
     };
 
-    window.sampleAllNodesDEM = function () {
+    window.sampleAllNodesDEM = async function () {
         if (Net.nodes.length === 0) {
             window.showResultsWarning('No nodes in the network to sample.');
             return;
         }
         let count = 0;
-        Net.nodes.forEach(node => {
-            const elev = window.sampleDEMElevation(node.lngLat);
+        window.showResultsWarning('Sampling DEM elevations...');
+        for (const node of Net.nodes) {
+            const elev = await window.sampleDEMElevationAsync(node.lngLat);
             if (elev !== null) {
                 node.props.invertEl = elev;
                 count++;
             }
-        });
+        }
         if (count > 0) {
             window.refreshNetworkData();
             if (window.renderProperties) window.renderProperties();
