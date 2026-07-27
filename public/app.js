@@ -651,79 +651,10 @@
         return swmmModulePromise;
     }
 
-    // ---------- top middle progress bar helper ----------
-    let topProgressInterval = null;
-    window.showTopProgress = function (label, pct) {
-        if (topProgressInterval) {
-            clearInterval(topProgressInterval);
-            topProgressInterval = null;
-        }
-        const container = document.getElementById('top-progress-container');
-        const bar = document.getElementById('top-progress-bar');
-        const lbl = document.getElementById('top-progress-label');
-        if (container && bar && lbl) {
-            container.classList.remove('hidden');
-            lbl.textContent = label;
-            bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
-            bar.style.backgroundColor = '';
-        }
-    };
-
-    window.startSimulatedTopProgress = function (label, targetDuration = 3000) {
-        if (topProgressInterval) clearInterval(topProgressInterval);
-        const container = document.getElementById('top-progress-container');
-        const bar = document.getElementById('top-progress-bar');
-        const lbl = document.getElementById('top-progress-label');
-        if (!container || !bar || !lbl) return;
-
-        container.classList.remove('hidden');
-        bar.style.width = '0%';
-        bar.style.backgroundColor = '';
-        lbl.textContent = `${label} (0%) · ETA: ${(targetDuration / 1000).toFixed(1)}s`;
-
-        const startTime = Date.now();
-        topProgressInterval = setInterval(() => {
-            const elapsed = Date.now() - startTime;
-            let percent = (elapsed / targetDuration) * 100;
-            
-            if (percent < 98) {
-                const remainingSec = Math.max(0, (targetDuration - elapsed) / 1000).toFixed(1);
-                bar.style.width = percent.toFixed(1) + '%';
-                lbl.textContent = `${label} (${Math.floor(percent)}%) · ETA: ${remainingSec}s`;
-            } else {
-                // If it takes longer than estimated, slow down and show calculating status
-                percent = 98;
-                bar.style.width = '98%';
-                lbl.textContent = `${label} (98%) · Calculating...`;
-            }
-        }, 100);
-    };
-
-    window.hideTopProgress = function (success = true) {
-        if (topProgressInterval) {
-            clearInterval(topProgressInterval);
-            topProgressInterval = null;
-        }
-        const container = document.getElementById('top-progress-container');
-        const bar = document.getElementById('top-progress-bar');
-        const lbl = document.getElementById('top-progress-label');
-        if (!container || !bar || !lbl) return;
-
-        if (success) {
-            bar.style.width = '100%';
-            lbl.textContent = 'Complete';
-            setTimeout(() => {
-                container.classList.add('hidden');
-            }, 800);
-        } else {
-            lbl.textContent = 'Failed';
-            bar.style.backgroundColor = '#d32f2f'; // Red color
-            setTimeout(() => {
-                container.classList.add('hidden');
-                bar.style.backgroundColor = '';
-            }, 1500);
-        }
-    };
+    // ---------- top middle progress bar helper (deprecated: replaced by Run Status modal) ----------
+    window.showTopProgress = function () {};
+    window.startSimulatedTopProgress = function () {};
+    window.hideTopProgress = function () {};
 
     // ---------- loading overlay (parsing / simulation progress) ----------
     let loadingOverlayEl = null;
