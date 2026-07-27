@@ -343,6 +343,15 @@
         document.body.classList.toggle('hide-warnings', !App.warningsVisible);
     });
 
+    const btnLandCover = document.getElementById('btn-toggle-landcover');
+    if (btnLandCover) {
+        btnLandCover.addEventListener('click', () => {
+            App.landCoverVisible = !App.landCoverVisible;
+            btnLandCover.classList.toggle('toggled', App.landCoverVisible);
+            if (window.toggleLandCoverLayer) window.toggleLandCoverLayer(App.landCoverVisible);
+        });
+    }
+
     const btnSampleAllDem = document.getElementById('btn-sample-all-dem');
     if (btnSampleAllDem) {
         btnSampleAllDem.addEventListener('click', () => {
