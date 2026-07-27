@@ -158,17 +158,22 @@
                 ring = ring.slice().reverse();
             }
 
-            // Helper to build contour and triangulate with optional Steiner points or jitter
-            const attemptTriangulation = (useSteiner, useJitter) => {
+            // Helper to build contour and triangulate with optional Steiner points, jitter, or custom collinear tolerance
+            const attemptTriangulation = (useSteiner, useJitter, collinearTol = 1e-4) => {
+                let cleanRing = this._removeCollinearVertices(ring, collinearTol);
+                if (this._isClockwise(cleanRing)) {
+                    cleanRing = cleanRing.slice().reverse();
+                }
+
                 const seen = new Set();
                 const contour = [];
-                for (let i = 0; i < ring.length; i++) {
-                    const pt = ring[i];
+                for (let i = 0; i < cleanRing.length; i++) {
+                    const pt = cleanRing[i];
                     let x = pt[0], y = pt[1];
                     if (useJitter) {
-                        // Tiny deterministic ~0.1mm jitter to break collinearity
-                        x += ((i % 2 === 0 ? 1 : -1) * (1e-8 * ((i % 5) + 1)));
-                        y += ((i % 3 === 0 ? 1 : -1) * (1e-8 * ((i % 7) + 1)));
+                        // Deterministic ~0.1mm jitter in deg coordinates to break exact collinearity
+                        x += ((i % 2 === 0 ? 1 : -1) * (1e-6 * ((i % 5) + 1)));
+                        y += ((i % 3 === 0 ? 1 : -1) * (1e-6 * ((i % 7) + 1)));
                     }
                     const key = `${x.toFixed(8)}_${y.toFixed(8)}`;
                     if (seen.has(key)) continue;
@@ -183,7 +188,7 @@
                 const swctx = new poly2tri.SweepContext(contour);
 
                 if (useSteiner) {
-                    const steinerPoints = this._generateSteinerPoints(ring, maxAreaM2);
+                    const steinerPoints = this._generateSteinerPoints(cleanRing, maxAreaM2);
                     steinerPoints.forEach(sp => {
                         try {
                             swctx.addPoint(new poly2tri.Point(sp[0], sp[1]));
@@ -200,14 +205,19 @@
             let triangles;
             try {
                 // Attempt 1: Full triangulation with Steiner refinement points
-                triangles = attemptTriangulation(true, false);
+                triangles = attemptTriangulation(true, false, 1e-4);
             } catch (err1) {
                 try {
                     // Attempt 2: Fallback without Steiner points (avoids interior collinearity)
-                    triangles = attemptTriangulation(false, false);
+                    triangles = attemptTriangulation(false, false, 1e-4);
                 } catch (err2) {
-                    // Attempt 3: Fallback with tiny jitter to break boundary collinearity
-                    triangles = attemptTriangulation(false, true);
+                    try {
+                        // Attempt 3: Relaxed collinear tolerance + small jitter
+                        triangles = attemptTriangulation(false, true, 1e-3);
+                    } catch (err3) {
+                        // Attempt 4: Robust Ear-clipping / Fan fallback (guarantees non-failing triangulation)
+                        triangles = this._earclipTriangulate(ring);
+                    }
                 }
             }
 
@@ -217,14 +227,10 @@
             let cellId = startId;
 
             for (const tri of triangles) {
-                const p0 = tri.getPoint(0);
-                const p1 = tri.getPoint(1);
-                const p2 = tri.getPoint(2);
-
                 const triRing = [
-                    [p0.x, p0.y],
-                    [p1.x, p1.y],
-                    [p2.x, p2.y]
+                    [tri.getPoint(0).x, tri.getPoint(0).y],
+                    [tri.getPoint(1).x, tri.getPoint(1).y],
+                    [tri.getPoint(2).x, tri.getPoint(2).y]
                 ];
 
                 cells.push({
@@ -242,29 +248,122 @@
         },
 
         /**
-         * Remove consecutive collinear vertices from a polygon ring.
+         * Remove consecutive collinear vertices from a polygon ring across multiple passes.
          * Prevents poly2tri "EdgeEvent: Collinear not supported!" errors on GIS shapes.
          * @private
          */
-        _removeCollinearVertices(ring) {
+        _removeCollinearVertices(ring, tolerance = 1e-4) {
             if (ring.length < 3) return ring;
-            const cleaned = [];
-            const n = ring.length;
-            for (let i = 0; i < n; i++) {
-                const prev = ring[(i - 1 + n) % n];
-                const cur = ring[i];
-                const next = ring[(i + 1) % n];
-                const dx1 = cur[0] - prev[0], dy1 = cur[1] - prev[1];
-                const dx2 = next[0] - cur[0], dy2 = next[1] - cur[1];
-                const cross = Math.abs(dx1 * dy2 - dy1 * dx2);
-                const len1 = Math.hypot(dx1, dy1);
-                const len2 = Math.hypot(dx2, dy2);
-                if (len1 > 0 && len2 > 0 && cross / (len1 * len2) < 1e-6) {
-                    continue; // Skip collinear middle vertex
+            let current = [...ring];
+            let changed = true;
+            let pass = 0;
+
+            while (changed && current.length >= 3 && pass < 10) {
+                changed = false;
+                pass++;
+                const cleaned = [];
+                const n = current.length;
+
+                for (let i = 0; i < n; i++) {
+                    const prev = current[(i - 1 + n) % n];
+                    const cur = current[i];
+                    const next = current[(i + 1) % n];
+
+                    const dx1 = cur[0] - prev[0], dy1 = cur[1] - prev[1];
+                    const dx2 = next[0] - cur[0], dy2 = next[1] - cur[1];
+                    const len1 = Math.hypot(dx1, dy1);
+                    const len2 = Math.hypot(dx2, dy2);
+
+                    if (len1 < 1e-9 || len2 < 1e-9) {
+                        changed = true;
+                        continue; // Skip zero-distance duplicate points
+                    }
+
+                    const cross = Math.abs(dx1 * dy2 - dy1 * dx2);
+                    if (cross / (len1 * len2) < tolerance) {
+                        changed = true;
+                        continue; // Skip collinear middle vertex
+                    }
+
+                    cleaned.push(cur);
                 }
-                cleaned.push(cur);
+
+                if (cleaned.length >= 3) {
+                    current = cleaned;
+                } else {
+                    break;
+                }
             }
-            return cleaned.length >= 3 ? cleaned : ring;
+
+            return current.length >= 3 ? current : ring;
+        },
+
+        /**
+         * Simple Ear-clipping triangulation fallback when poly2tri fails on complex/collinear polygons.
+         * @private
+         */
+        _earclipTriangulate(ring) {
+            const pts = this._removeCollinearVertices(ring, 1e-3);
+            if (pts.length < 3) return [];
+            if (this._isClockwise(pts)) pts.reverse();
+
+            const polyTriangles = [];
+            const indices = pts.map((_, i) => i);
+
+            let passes = 0;
+            const maxPasses = indices.length * 5;
+
+            while (indices.length > 3 && passes < maxPasses) {
+                passes++;
+                let earFound = false;
+                for (let i = 0; i < indices.length; i++) {
+                    const iPrev = indices[(i - 1 + indices.length) % indices.length];
+                    const iCur = indices[i];
+                    const iNext = indices[(i + 1) % indices.length];
+
+                    const pPrev = pts[iPrev];
+                    const pCur = pts[iCur];
+                    const pNext = pts[iNext];
+
+                    // Check if convex
+                    const cross = (pCur[0] - pPrev[0]) * (pNext[1] - pCur[1]) - (pCur[1] - pPrev[1]) * (pNext[0] - pCur[0]);
+                    if (cross <= 0) continue;
+
+                    // Check if any other point lies inside triangle
+                    let pointInside = false;
+                    for (let j = 0; j < indices.length; j++) {
+                        const idx = indices[j];
+                        if (idx === iPrev || idx === iCur || idx === iNext) continue;
+                        if (pointInPolygon(pts[idx], [pPrev, pCur, pNext])) {
+                            pointInside = true;
+                            break;
+                        }
+                    }
+
+                    if (!pointInside) {
+                        polyTriangles.push({
+                            getPoint: k => k === 0 ? { x: pPrev[0], y: pPrev[1] } : k === 1 ? { x: pCur[0], y: pCur[1] } : { x: pNext[0], y: pNext[1] }
+                        });
+                        indices.splice(i, 1);
+                        earFound = true;
+                        break;
+                    }
+                }
+
+                if (!earFound) break; // Triangle fan fallback handles remainder
+            }
+
+            // Fan triangulation for remaining polygon vertices
+            for (let i = 1; i < indices.length - 1; i++) {
+                const p0 = pts[indices[0]];
+                const p1 = pts[indices[i]];
+                const p2 = pts[indices[i + 1]];
+                polyTriangles.push({
+                    getPoint: k => k === 0 ? { x: p0[0], y: p0[1] } : k === 1 ? { x: p1[0], y: p1[1] } : { x: p2[0], y: p2[1] }
+                });
+            }
+
+            return polyTriangles;
         },
 
         /**
