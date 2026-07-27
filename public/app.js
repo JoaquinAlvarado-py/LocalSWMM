@@ -772,7 +772,46 @@
         if (runStatusMinimized) runStatusMinimized.classList.add('hidden');
     }
 
+    let simProgressTimer = null;
+
+    function parseSimDurationInDays(inpText) {
+        let startDateStr = '01/01/2000', startTimeStr = '00:00:00';
+        let endDateStr = '01/02/2000', endTimeStr = '00:00:00';
+
+        const lines = (inpText || '').split(/\r?\n/);
+        let inOptions = false;
+        for (let line of lines) {
+            let clean = line.replace(/;.*$/, '').trim();
+            if (clean.startsWith('[') && clean.endsWith(']')) {
+                inOptions = (clean.toUpperCase() === '[OPTIONS]');
+                continue;
+            }
+            if (inOptions && clean) {
+                const parts = clean.split(/\s+/);
+                const key = (parts[0] || '').toUpperCase();
+                const val = parts.slice(1).join(' ');
+                if (key === 'START_DATE') startDateStr = val;
+                if (key === 'START_TIME') startTimeStr = val;
+                if (key === 'END_DATE') endDateStr = val;
+                if (key === 'END_TIME') endTimeStr = val;
+            }
+        }
+
+        try {
+            const startMs = Date.parse(`${startDateStr} ${startTimeStr}`);
+            const endMs = Date.parse(`${endDateStr} ${endTimeStr}`);
+            if (!isNaN(startMs) && !isNaN(endMs) && endMs > startMs) {
+                return (endMs - startMs) / (1000 * 60 * 60 * 24);
+            }
+        } catch (e) { }
+        return 1.0;
+    }
+
     function stopSimulationWorker() {
+        if (simProgressTimer) {
+            clearInterval(simProgressTimer);
+            simProgressTimer = null;
+        }
         if (simWorker) {
             try { simWorker.terminate(); } catch (e) { }
             simWorker = null;
@@ -823,6 +862,25 @@
             updateRunStatusUI(0, 0, '00:00');
             if (runStatusModal) runStatusModal.classList.remove('hidden');
 
+            const totalDays = parseSimDurationInDays(inpText);
+            const simStartTime = Date.now();
+
+            if (simProgressTimer) clearInterval(simProgressTimer);
+
+            simProgressTimer = setInterval(() => {
+                const elapsed = Date.now() - simStartTime;
+                let frac = Math.min(0.98, elapsed / (targetDurationMs || 3000));
+                let percent = Math.floor(frac * 100);
+                let currDaysFrac = frac * totalDays;
+                let days = Math.floor(currDaysFrac);
+                let remHoursFrac = (currDaysFrac - days) * 24;
+                let hours = Math.floor(remHoursFrac);
+                let minutes = Math.floor((remHoursFrac - hours) * 60);
+                let hrsMinStr = String(hours).padStart(2, '0') + ':' + String(minutes).padStart(2, '0');
+
+                updateRunStatusUI(percent, days, hrsMinStr);
+            }, 60);
+
             worker.onmessage = (ev) => {
                 const msg = ev.data || {};
                 if (msg.type === 'progress') {
@@ -832,14 +890,18 @@
                 } else if (msg.type === 'err') {
                     console.warn('SWMM Err:', msg.text);
                 } else if (msg.type === 'done') {
-                    hideRunStatusModals();
+                    if (simProgressTimer) { clearInterval(simProgressTimer); simProgressTimer = null; }
+                    updateRunStatusUI(100, Math.floor(totalDays), '23:59');
+                    setTimeout(() => hideRunStatusModals(), 250);
                     resolve({ rpt: msg.rpt, outBuffer: msg.outBuffer });
                 } else if (msg.type === 'error') {
+                    if (simProgressTimer) { clearInterval(simProgressTimer); simProgressTimer = null; }
                     hideRunStatusModals();
                     reject(new Error(msg.message));
                 }
             };
             worker.onerror = (e) => {
+                if (simProgressTimer) { clearInterval(simProgressTimer); simProgressTimer = null; }
                 hideRunStatusModals();
                 try { worker.terminate(); } catch (err) { }
                 if (simWorker === worker) simWorker = null;
