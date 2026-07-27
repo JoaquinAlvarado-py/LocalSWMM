@@ -722,6 +722,12 @@
             </div>`;
         }
 
+        if (type === 'SUBCATCHMENT') {
+            html += `<div class="prop-actions" style="margin-top:6px;margin-bottom:10px;">
+                <button class="tb-btn" id="prop-detect-landcover" style="width:100%;font-size:11px;" title="Sample land cover grid cells across this subcatchment polygon and compute weighted parameters">📊 Sample Land Cover & Compute % Imperv</button>
+            </div>`;
+        }
+
         if (type === 'RAINGAGE') {
             html += `<div class="prop-actions" style="margin-top:6px;margin-bottom:10px;">
                 <button class="tb-btn tb-btn-run" id="prop-edit-raindata" style="width:100%;font-size:11px;">🌧️ Edit Rain Data / Time Series</button>
@@ -762,6 +768,29 @@
                 }
             });
         });
+
+        const btnDetectLandcover = document.getElementById('prop-detect-landcover');
+        if (btnDetectLandcover && el.type === 'SUBCATCHMENT') {
+            btnDetectLandcover.addEventListener('click', () => {
+                if (window.LandCoverModule && window.LandCoverModule.sampleSubcatchmentLandCover) {
+                    const res = window.LandCoverModule.sampleSubcatchmentLandCover(el, window.map);
+                    if (res) {
+                        Net.updateProps(el.id, {
+                            imperv: res.impervPct,
+                            nPerv: res.nPervWeighted,
+                            nImperv: res.nImpervWeighted
+                        });
+                        renderPropsPanel();
+                        const summaryStr = res.breakdown.map(b => `${b.pct}% ${b.name}`).join(', ');
+                        if (window.showResultsWarning) {
+                            window.showResultsWarning(`Detected Land Cover for ${el.id}: ${res.impervPct}% Imperv (${summaryStr}).`);
+                        }
+                    } else {
+                        alert('Land cover sampling requires a valid subcatchment polygon.');
+                    }
+                }
+            });
+        }
 
         const btnSampleDem = document.getElementById('prop-sample-dem');
         if (btnSampleDem && el.lngLat) {
