@@ -145,42 +145,66 @@
                 throw new Error('Degenerate polygon (< 3 unique vertices)');
             }
 
+            // Clean collinear boundary vertices that cause poly2tri EdgeEvent errors
+            ring = this._removeCollinearVertices(ring);
+
             // Ensure counter-clockwise winding for poly2tri
             if (this._isClockwise(ring)) {
                 ring = ring.slice().reverse();
             }
 
-            // Create poly2tri contour points
-            // Use a small epsilon to avoid duplicate points which crash poly2tri
-            const seen = new Set();
-            const contour = [];
-            for (const pt of ring) {
-                // Round to ~0.1mm precision to avoid near-duplicate crashes
-                const key = `${pt[0].toFixed(8)}_${pt[1].toFixed(8)}`;
-                if (seen.has(key)) continue;
-                seen.add(key);
-                contour.push(new poly2tri.Point(pt[0], pt[1]));
-            }
-
-            if (contour.length < 3) {
-                throw new Error('Degenerate polygon after dedup (< 3 unique vertices)');
-            }
-
-            const swctx = new poly2tri.SweepContext(contour);
-
-            // Add Steiner points for mesh refinement
-            const steinerPoints = this._generateSteinerPoints(ring, maxAreaM2);
-            steinerPoints.forEach(sp => {
-                try {
-                    swctx.addPoint(new poly2tri.Point(sp[0], sp[1]));
-                } catch (e) {
-                    // Skip duplicate/collinear Steiner points
+            // Helper to build contour and triangulate with optional Steiner points or jitter
+            const attemptTriangulation = (useSteiner, useJitter) => {
+                const seen = new Set();
+                const contour = [];
+                for (let i = 0; i < ring.length; i++) {
+                    const pt = ring[i];
+                    let x = pt[0], y = pt[1];
+                    if (useJitter) {
+                        // Tiny deterministic ~0.1mm jitter to break collinearity
+                        x += ((i % 2 === 0 ? 1 : -1) * (1e-8 * ((i % 5) + 1)));
+                        y += ((i % 3 === 0 ? 1 : -1) * (1e-8 * ((i % 7) + 1)));
+                    }
+                    const key = `${x.toFixed(8)}_${y.toFixed(8)}`;
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    contour.push(new poly2tri.Point(x, y));
                 }
-            });
 
-            // Perform triangulation
-            swctx.triangulate();
-            const triangles = swctx.getTriangles();
+                if (contour.length < 3) {
+                    throw new Error('Degenerate polygon after dedup (< 3 unique vertices)');
+                }
+
+                const swctx = new poly2tri.SweepContext(contour);
+
+                if (useSteiner) {
+                    const steinerPoints = this._generateSteinerPoints(ring, maxAreaM2);
+                    steinerPoints.forEach(sp => {
+                        try {
+                            swctx.addPoint(new poly2tri.Point(sp[0], sp[1]));
+                        } catch (e) {
+                            // Skip duplicate/collinear Steiner points
+                        }
+                    });
+                }
+
+                swctx.triangulate();
+                return swctx.getTriangles();
+            };
+
+            let triangles;
+            try {
+                // Attempt 1: Full triangulation with Steiner refinement points
+                triangles = attemptTriangulation(true, false);
+            } catch (err1) {
+                try {
+                    // Attempt 2: Fallback without Steiner points (avoids interior collinearity)
+                    triangles = attemptTriangulation(false, false);
+                } catch (err2) {
+                    // Attempt 3: Fallback with tiny jitter to break boundary collinearity
+                    triangles = attemptTriangulation(false, true);
+                }
+            }
 
             // Convert to mesh2D cell format
             const cells = [];
@@ -208,6 +232,32 @@
             }
 
             return { cells, nextId: cellId, vertexCount };
+        },
+
+        /**
+         * Remove consecutive collinear vertices from a polygon ring.
+         * Prevents poly2tri "EdgeEvent: Collinear not supported!" errors on GIS shapes.
+         * @private
+         */
+        _removeCollinearVertices(ring) {
+            if (ring.length < 3) return ring;
+            const cleaned = [];
+            const n = ring.length;
+            for (let i = 0; i < n; i++) {
+                const prev = ring[(i - 1 + n) % n];
+                const cur = ring[i];
+                const next = ring[(i + 1) % n];
+                const dx1 = cur[0] - prev[0], dy1 = cur[1] - prev[1];
+                const dx2 = next[0] - cur[0], dy2 = next[1] - cur[1];
+                const cross = Math.abs(dx1 * dy2 - dy1 * dx2);
+                const len1 = Math.hypot(dx1, dy1);
+                const len2 = Math.hypot(dx2, dy2);
+                if (len1 > 0 && len2 > 0 && cross / (len1 * len2) < 1e-6) {
+                    continue; // Skip collinear middle vertex
+                }
+                cleaned.push(cur);
+            }
+            return cleaned.length >= 3 ? cleaned : ring;
         },
 
         /**
