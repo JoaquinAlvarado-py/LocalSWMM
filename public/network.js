@@ -166,7 +166,14 @@
         }
 
         findAny(id) {
-            return this._nodeMap.get(id) || this._linkMap.get(id) || this._subMap.get(id) || null;
+            if (!id) return null;
+            let el = this._nodeMap.get(id) || this._linkMap.get(id) || this._subMap.get(id);
+            if (el) return el;
+            if (this.mesh2D) {
+                const cell = this.mesh2D.find(m => m.id === id);
+                if (cell) return Object.assign({ type: 'MESH2D' }, cell);
+            }
+            return null;
         }
 
         // ---------- accessors ----------

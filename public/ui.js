@@ -689,6 +689,11 @@
             { key: 'infilDryTime', label: 'Infil. Dry Time (days)', type: 'number', step: 0.1 },
             { key: 'infilMaxInfil', label: 'Infil. Max Vol', unit: U('mm', 'in'), type: 'number', step: 0.1 },
             { key: 'curbLen', label: 'Curb length', type: 'number' }
+        ],
+        MESH2D: () => [
+            { key: 'parentSubcatch', label: 'Parent Subcatchment', type: 'text' },
+            { key: 'landCoverClass', label: 'Land Cover Class', type: 'number' },
+            { key: 'manningN', label: 'Manning N Roughness', type: 'number', step: 0.001 }
         ]
     };
 
@@ -696,7 +701,8 @@
         JUNCTION: 'Junction', OUTFALL: 'Outfall', STORAGE: 'Storage Unit', DIVIDER: 'Flow Divider',
         RAINGAGE: 'Rain Gage', CONDUIT: 'Conduit', PUMP: 'Pump', WEIR: 'Weir', ORIFICE: 'Orifice',
         OUTLET: 'Outlet',
-        SUBCATCHMENT: 'Subcatchment'
+        SUBCATCHMENT: 'Subcatchment',
+        MESH2D: '2D Surface Mesh Cell'
     };
 
     function esc(s) {
