@@ -19,7 +19,7 @@ https://github.com/user-attachments/assets/6ea0af51-125d-4b7d-a6ba-e0452cfae368
 
 ## System Requirements
 
-- A modern web browser with WebAssembly support. [check here if you can porperly use it on your browser](https://caniuse.com/wasm).
+- A modern web browser with WebAssembly support. [check here if you can properly use it on your browser](https://caniuse.com/wasm).
 - Python 3 installed on your computer (to run the local web server if you want to modify aspects of the program).
 
 ## Quick Start Guide
