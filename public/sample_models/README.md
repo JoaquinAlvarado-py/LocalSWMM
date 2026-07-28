@@ -26,8 +26,7 @@ Dynamic wave routing, 4 s routing step, 2-day simulation (29–30 June 2012).
 
 ### Coordinates (check on the map)
 
-- CRS: **ETRS89 / UTM zone 32N — EPSG:25832** (enter `EPSG:25832` in the UTM
-  reprojection prompt when importing).
+- CRS: **ETRS89 / UTM zone 32N — EPSG:25832** (`EPSG:25832` is automatically applied when loading sample models from the UI).
 - Network center: **55.34264 N, 10.31817 E** → <https://maps.google.com/?q=55.34264,10.31817>
 - Bounding box: SW 55.33070, 10.25831 → NE 55.35849, 10.36854
 

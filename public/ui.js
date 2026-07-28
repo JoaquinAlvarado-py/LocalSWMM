@@ -94,12 +94,18 @@
             const text = await res.text();
             window.updateLoadingOverlay(20, 'Parsing…');
             const model = await window.parseInpAsync(text);
-            window.hideLoadingOverlay();
             if (!model.nodes.length) {
+                window.hideLoadingOverlay();
                 alert('No nodes with coordinates found in the .inp file.');
                 return;
             }
-            window.openProjectionModal(model);
+            window.updateLoadingOverlay(60, 'Applying EPSG:25832 projection…');
+            if (window.applyProjectionAndLoad) {
+                await window.applyProjectionAndLoad(model, 'utm', 'EPSG:25832');
+            } else {
+                window.openProjectionModal(model);
+            }
+            window.hideLoadingOverlay();
         } catch (err) {
             window.hideLoadingOverlay();
             alert('Failed to load sample: ' + err.message);
