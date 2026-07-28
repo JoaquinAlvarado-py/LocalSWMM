@@ -16,6 +16,10 @@
     let viewMinD = 0, viewMaxD = 100;
     let viewMinEl = 0, viewMaxEl = 10;
 
+    // DEM terrain profile: array of {dist, elev} sampled along the path
+    let currentTerrainProfile = null;  // null = not yet sampled or unavailable
+    let terrainSamplingInProgress = false;
+
     const PAD = { top: 40, right: 24, bottom: 52, left: 68 };
 
     // 1. HAVERSINE (inline — no dependency on Net internals)
@@ -36,6 +40,88 @@
         let d = 0;
         for (let i = 1; i < coords.length; i++) d += haversineDist(coords[i - 1], coords[i]);
         return d;
+    }
+
+    // --- DEM Terrain Sampling ---
+    // Interpolate points along a polyline (array of [lng, lat]) at even intervals.
+    function interpolateAlongPolyline(coords, numPoints) {
+        if (coords.length < 2 || numPoints < 2) return coords.slice();
+        // Compute cumulative distances along the polyline
+        const cumDists = [0];
+        for (let i = 1; i < coords.length; i++) {
+            cumDists.push(cumDists[i - 1] + haversineDist(coords[i - 1], coords[i]));
+        }
+        const totalLen = cumDists[cumDists.length - 1];
+        if (totalLen <= 0) return [coords[0]];
+
+        const result = [];
+        for (let p = 0; p < numPoints; p++) {
+            const targetDist = (p / (numPoints - 1)) * totalLen;
+            // Find the segment containing targetDist
+            let seg = 0;
+            for (let i = 1; i < cumDists.length; i++) {
+                if (cumDists[i] >= targetDist) { seg = i - 1; break; }
+                seg = i - 1;
+            }
+            const segLen = cumDists[seg + 1] - cumDists[seg];
+            const t = segLen > 0 ? (targetDist - cumDists[seg]) / segLen : 0;
+            result.push([
+                coords[seg][0] + t * (coords[seg + 1][0] - coords[seg][0]),
+                coords[seg][1] + t * (coords[seg + 1][1] - coords[seg][1])
+            ]);
+        }
+        return result;
+    }
+
+    // Sample DEM terrain along the entire profile path.
+    // Returns array of {dist, elev} or null on failure.
+    async function sampleTerrainAlongPath() {
+        if (!currentPath || !window.sampleDEMElevationAsync) return null;
+        const terrainPoints = [];
+        let cumDist = 0;
+
+        for (const edge of currentPath.edges) {
+            const fromNode = Net.getNode(edge.from);
+            const toNode   = Net.getNode(edge.to);
+            if (!fromNode || !toNode) continue;
+
+            const lnk = edge.conduit;
+            // Build the actual coordinate path along this conduit
+            let segCoords;
+            if (edge.reversed) {
+                segCoords = [toNode.lngLat, ...(lnk.vertices || []).slice().reverse(), fromNode.lngLat];
+                segCoords.reverse(); // now from edge.from → edge.to
+            } else {
+                segCoords = [fromNode.lngLat, ...(lnk.vertices || []), toNode.lngLat];
+            }
+
+            // Compute segment length
+            let segLen = 0;
+            for (let i = 1; i < segCoords.length; i++) segLen += haversineDist(segCoords[i - 1], segCoords[i]);
+            if (segLen <= 0) { cumDist += segLen; continue; }
+
+            // Adaptive point count: 1 per 50m, min 3, max 15
+            const nPts = Math.max(3, Math.min(15, Math.ceil(segLen / 50)));
+            const sampleCoords = interpolateAlongPolyline(segCoords, nPts);
+
+            for (let i = 0; i < sampleCoords.length; i++) {
+                // Skip the first point of non-first segments (it's the same as last point of previous)
+                if (terrainPoints.length > 0 && i === 0) continue;
+                const frac = i / (sampleCoords.length - 1);
+                const ptDist = cumDist + frac * segLen;
+                try {
+                    const elev = await window.sampleDEMElevationAsync(sampleCoords[i]);
+                    if (elev !== null && elev !== undefined && !isNaN(elev)) {
+                        terrainPoints.push({ dist: ptDist, elev });
+                    }
+                } catch (e) {
+                    // skip failed points
+                }
+            }
+            cumDist += segLen;
+        }
+
+        return terrainPoints.length >= 2 ? terrainPoints : null;
     }
 
     // 2. PATH TRACING (BFS through conduits only)
@@ -112,9 +198,11 @@
             const upCrown = upInv + diam;
             const dnCrown = dnInv + diam;
 
-            // Ground elevation = invert + maxDepth at junction
-            const upGround = fromInv + (fromNode.props.maxDepth || diam * 2);
-            const dnGround = toInv   + (toNode.props.maxDepth   || diam * 2);
+            // Ground elevation = invert + maxDepth at junction (rim elevation)
+            const upRim = fromInv + (fromNode.props.maxDepth || diam * 2);
+            const dnRim = toInv   + (toNode.props.maxDepth   || diam * 2);
+            const upGround = upRim;
+            const dnGround = dnRim;
 
             // Hydraulic head (water surface elevation) from time series
             let upHead = upInv;
@@ -184,6 +272,13 @@
         for (const s of geo.segments) {
             minEl = Math.min(minEl, s.upInv,   s.dnInv,   s.upHead,   s.dnHead);
             maxEl = Math.max(maxEl, s.upCrown,  s.dnCrown,  s.upGround, s.dnGround, s.upHead, s.dnHead);
+        }
+        // Include DEM terrain points in elevation bounds
+        if (currentTerrainProfile) {
+            for (const pt of currentTerrainProfile) {
+                minEl = Math.min(minEl, pt.elev);
+                maxEl = Math.max(maxEl, pt.elev);
+            }
         }
         if (!isFinite(minEl)) { minEl = 0; maxEl = 10; }
         const pad   = Math.max((maxEl - minEl) * 0.12, 0.5);
@@ -283,7 +378,34 @@
         ctx.rect(PAD.left, PAD.top, plotW, plotH);
         ctx.clip();
 
-        // Ground surface line (dashed green)
+        // DEM Terrain surface (filled earth-tone area + solid line)
+        const hasTerrain = currentTerrainProfile && currentTerrainProfile.length >= 2;
+        if (hasTerrain) {
+            // Filled area under terrain
+            ctx.beginPath();
+            ctx.moveTo(cx(currentTerrainProfile[0].dist), cy(currentTerrainProfile[0].elev));
+            for (let i = 1; i < currentTerrainProfile.length; i++) {
+                ctx.lineTo(cx(currentTerrainProfile[i].dist), cy(currentTerrainProfile[i].elev));
+            }
+            // Close down to bottom of plot and back
+            ctx.lineTo(cx(currentTerrainProfile[currentTerrainProfile.length - 1].dist), cy(minEl));
+            ctx.lineTo(cx(currentTerrainProfile[0].dist), cy(minEl));
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(139,115,85,0.12)';
+            ctx.fill();
+
+            // Terrain line
+            ctx.beginPath();
+            ctx.moveTo(cx(currentTerrainProfile[0].dist), cy(currentTerrainProfile[0].elev));
+            for (let i = 1; i < currentTerrainProfile.length; i++) {
+                ctx.lineTo(cx(currentTerrainProfile[i].dist), cy(currentTerrainProfile[i].elev));
+            }
+            ctx.strokeStyle = '#8B6914';
+            ctx.lineWidth = 1.8;
+            ctx.stroke();
+        }
+
+        // Ground/Rim level line (dashed green) — node rim elevations connected by straight lines
         ctx.beginPath();
         ctx.setLineDash([5, 4]);
         ctx.strokeStyle = '#16a34a';
@@ -451,8 +573,11 @@
         const items = [
             { fill: 'rgba(0,188,212,0.72)',   stroke: '#0284c7',  label: 'Water Surface' },
             { fill: 'rgba(148,163,184,0.25)', stroke: '#334155',  label: 'Pipe Section' },
-            { fill: null,                      stroke: '#16a34a',  dash: true, label: 'Ground Level' },
+            { fill: null,                      stroke: '#16a34a',  dash: true, label: 'Rim Level' },
         ];
+        if (currentTerrainProfile && currentTerrainProfile.length >= 2) {
+            items.push({ fill: 'rgba(139,115,85,0.12)', stroke: '#8B6914', label: 'DEM Terrain' });
+        }
         if (hasNearFull)  items.push({ fill: 'rgba(245,158,11,0.70)', stroke: '#b45309', label: 'Near Full (≥85%)' });
         if (hasSurcharged) items.push({ fill: 'rgba(220,38,38,0.65)', stroke: '#b91c1c', label: 'Surcharged' });
 
@@ -516,6 +641,7 @@
 
         currentPath = path;
         isViewModified = false;
+        currentTerrainProfile = null; // reset before new sampling
 
         // Update modal title
         const titleEl = document.getElementById('profile-title');
@@ -525,6 +651,21 @@
 
         // Small delay so layout is computed before sizing
         setTimeout(resizeCanvas, 50);
+
+        // Start async DEM terrain sampling in background
+        if (!terrainSamplingInProgress) {
+            terrainSamplingInProgress = true;
+            sampleTerrainAlongPath().then(profile => {
+                currentTerrainProfile = profile;
+                terrainSamplingInProgress = false;
+                // Redraw with terrain data
+                if (!modalEl.classList.contains('hidden')) {
+                    draw(currentStep);
+                }
+            }).catch(() => {
+                terrainSamplingInProgress = false;
+            });
+        }
     }
 
     function update(step) {

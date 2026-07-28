@@ -802,13 +802,13 @@
 
         if (el.lngLat) {
             html += `<div class="prop-actions" style="margin-top:6px;margin-bottom:10px;">
-                <button class="tb-btn" id="prop-sample-dem" style="width:100%;font-size:11px;" title="Sample terrain elevation at this node coordinate">⛰️ Sample DEM Elevation</button>
+                <button class="tb-btn" id="prop-sample-dem" style="width:100%;font-size:11px;" title="Set this node's invert elevation from the selected DEM source (approximate)">Set Elevation from DEM</button>
             </div>`;
         }
 
         if (type === 'SUBCATCHMENT') {
             html += `<div class="prop-actions" style="margin-top:6px;margin-bottom:10px;">
-                <button class="tb-btn" id="prop-detect-landcover" style="width:100%;font-size:11px;" title="Sample land cover grid cells across this subcatchment polygon and compute weighted parameters">📊 Sample Land Cover & Compute % Imperv</button>
+                <button class="tb-btn" id="prop-detect-landcover" style="width:100%;font-size:11px;" title="Sample land cover grid cells across this subcatchment polygon and compute weighted parameters">Sample Land Cover & Compute % Imperv</button>
             </div>`;
         }
 

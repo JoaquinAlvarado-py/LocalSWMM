@@ -243,6 +243,16 @@ html, body {
     border: 1px solid var(--border);
     border-radius: 4px;
 }
+.settings-group-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+}
+.settings-group-grid .tb-pill {
+    text-align: center;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
 #map-settings-card .tb-pills {
     width: 100%;
     display: flex;
