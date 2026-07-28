@@ -336,10 +336,7 @@ class InpExporter {
         L.push(';;Reporting Options');
         L.push('INPUT      NO');
         L.push('CONTROLS   NO');
-        // In this engine the selection below also controls the binary .out:
-        // the results viewer reads node/link series only, and subcatchment
-        // series made the .out ~7x larger on city-scale models.
-        L.push('SUBCATCHMENTS NONE');
+        L.push(`SUBCATCHMENTS ${rawOr('SUBCATCHMENTS', net.subcatchments && net.subcatchments.length ? 'ALL' : 'NONE')}`);
         L.push('NODES ALL');
         L.push('LINKS ALL');
         

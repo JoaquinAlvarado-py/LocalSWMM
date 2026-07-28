@@ -713,6 +713,7 @@
                 nodes: model.nodes || [],
                 links: model.links || [],
                 subcatchments: model.subcatchments || [],
+                timeseries: model.timeseries || {},
                 rawSections: model.rawSections || {}
             };
             Net.loadState(state, true);
@@ -734,6 +735,9 @@
                 Net.subcatchments.push(s);
                 Net._subMap.set(s.id, s);
             });
+            if (model.timeseries) {
+                Net.timeseries = Object.assign({}, Net.timeseries, model.timeseries);
+            }
             Net.commit();
             Net.emit('bulk');
         }
