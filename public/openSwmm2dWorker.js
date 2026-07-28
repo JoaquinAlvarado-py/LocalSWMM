@@ -25,17 +25,51 @@ function getModule() {
             self.postMessage({ type: 'status2d', stage: `wasm-loaded-${wasmBinary.byteLength}` });
             const wasmModule = new WebAssembly.Module(wasmBinary);
             self.postMessage({ type: 'status2d', stage: 'wasm-compiled' });
+            const createThrottledPrintErr = () => {
+                const counts = new Map();
+                const MAX_DISTINCT_PRINTS = 3;
+                const MAX_TOTAL_WARNINGS = 50;
+                let totalSent = 0;
+
+                return text => {
+                    const str = String(text);
+                    const key = str
+                        .replace(/t\s*=\s*[\d.e+-]+/gi, 't = <val>')
+                        .replace(/h\s*=\s*[\d.e+-]+/gi, 'h = <val>')
+                        .replace(/Rank\s+\d+/gi, 'Rank <id>');
+
+                    const entry = counts.get(key) || { printed: 0, suppressed: 0 };
+                    entry.printed++;
+
+                    if (entry.printed <= MAX_DISTINCT_PRINTS && totalSent < MAX_TOTAL_WARNINGS) {
+                        totalSent++;
+                        counts.set(key, entry);
+                        self.postMessage({ type: 'stderr', text: str });
+                    } else {
+                        entry.suppressed++;
+                        counts.set(key, entry);
+                        if (entry.suppressed % 100 === 0 && totalSent < MAX_TOTAL_WARNINGS + 10) {
+                            totalSent++;
+                            self.postMessage({
+                                type: 'stderr',
+                                text: `[OpenSWMM 2D] Suppressed ${entry.suppressed} repeated log messages matching: "${key.slice(0, 100)}..."`
+                            });
+                        }
+                    }
+                };
+            };
+
             return factory({
-            wasmBinary,
-            instantiateWasm(imports, receiveInstance) {
-                const instance = new WebAssembly.Instance(wasmModule, imports);
-                receiveInstance(instance, wasmModule);
-                return instance.exports;
-            },
-            locateFile: file => file.endsWith('.wasm') ? 'openswmm2d.wasm' : file,
-            print: text => self.postMessage({ type: 'stdout', text: String(text) }),
-            printErr: text => self.postMessage({ type: 'stderr', text: String(text) })
-        });
+                wasmBinary,
+                instantiateWasm(imports, receiveInstance) {
+                    const instance = new WebAssembly.Instance(wasmModule, imports);
+                    receiveInstance(instance, wasmModule);
+                    return instance.exports;
+                },
+                locateFile: file => file.endsWith('.wasm') ? 'openswmm2d.wasm' : file,
+                print: text => self.postMessage({ type: 'stdout', text: String(text) }),
+                printErr: createThrottledPrintErr()
+            });
             });
     }
     return modulePromise;

@@ -121,7 +121,12 @@
         if (btnCancelSel) btnCancelSel.onclick = hideSelectionModal;
         if (btnOkSel) btnOkSel.onclick = () => { hideSelectionModal(); openChartWindow(); };
 
-        if (btnAddSeries) btnAddSeries.onclick = () => openSeriesEditor(-1);
+        if (btnAddSeries) btnAddSeries.onclick = () => {
+            const added = addSelectedMapObjectToSeries();
+            if (!added) {
+                openSeriesEditor(-1);
+            }
+        };
         if (btnEditSeries) btnEditSeries.onclick = editSelectedSeries;
         if (btnDeleteSeries) btnDeleteSeries.onclick = deleteSelectedSeries;
 
@@ -310,6 +315,47 @@
         renderSeriesList();
     }
 
+    function addSelectedMapObjectToSeries(selectedId = null) {
+        const id = selectedId || (window.App && window.App.selectedId);
+        if (!id || typeof Net === 'undefined') return false;
+
+        let type = null;
+        if (Net.getNode(id)) type = 'NODE';
+        else if (Net.getLink(id)) type = 'LINK';
+        else if (Net.getSubcatchment(id)) type = 'SUBCATCHMENT';
+
+        if (!type) return false;
+
+        const varDefs = VAR_DEFINITIONS[type] || [];
+        if (!varDefs.length) return false;
+
+        // Find the first variable for this element that isn't added yet
+        let targetVar = varDefs.find(v => !activeSeries.some(s => s.id === id && s.type === type && s.variable === v.key));
+        if (!targetVar) return false;
+
+        const isUS = Net.units === 'US';
+        const newEntry = {
+            id,
+            type,
+            variable: targetVar.key,
+            label: `${id} (${targetVar.label})`,
+            color: COLORS[activeSeries.length % COLORS.length],
+            unit: isUS ? targetVar.unitUS : targetVar.unitSI
+        };
+
+        activeSeries.push(newEntry);
+        renderSeriesList();
+
+        // Select newly added series in the list
+        const items = document.querySelectorAll('.ts-series-item');
+        if (items.length > 0) {
+            items.forEach(el => el.classList.remove('selected'));
+            items[items.length - 1].classList.add('selected');
+        }
+
+        return true;
+    }
+
     // Series Editor Sub-dialog
     function openSeriesEditor(index = -1) {
         editingSeriesIndex = index;
@@ -321,10 +367,20 @@
         if (!selType || !selId || !selVar) return;
 
         const isEdit = (index >= 0 && index < activeSeries.length);
+
+        let defaultType = 'NODE';
+        let defaultId = (Net.nodes[0] && Net.nodes[0].id) || '';
+        const mapSelId = window.App && window.App.selectedId;
+        if (mapSelId) {
+            if (Net.getNode(mapSelId)) { defaultType = 'NODE'; defaultId = mapSelId; }
+            else if (Net.getLink(mapSelId)) { defaultType = 'LINK'; defaultId = mapSelId; }
+            else if (Net.getSubcatchment(mapSelId)) { defaultType = 'SUBCATCHMENT'; defaultId = mapSelId; }
+        }
+
         const current = isEdit ? activeSeries[index] : {
-            type: 'NODE',
-            id: (Net.nodes[0] && Net.nodes[0].id) || '',
-            variable: 'depth',
+            type: defaultType,
+            id: defaultId,
+            variable: (VAR_DEFINITIONS[defaultType] && VAR_DEFINITIONS[defaultType][0].key) || 'depth',
             color: COLORS[activeSeries.length % COLORS.length]
         };
 
