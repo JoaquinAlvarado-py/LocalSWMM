@@ -1012,11 +1012,19 @@
         if (!wasmResponse.ok) throw new Error(`OpenSWMM 2D WebAssembly could not be loaded (HTTP ${wasmResponse.status}).`);
         const wasmBinary = await wasmResponse.arrayBuffer();
         return new Promise((resolve, reject) => {
-            const worker = new Worker('openSwmm2dWorker.js?v=18');
+            const worker = new Worker('openSwmm2dWorker.js?v=19');
+            let stderrCount = 0;
             worker.onmessage = event => {
                 const message = event.data || {};
                 if (message.type === 'stdout') console.log('OpenSWMM 2D:', message.text);
-                else if (message.type === 'stderr') console.warn('OpenSWMM 2D:', message.text);
+                else if (message.type === 'stderr') {
+                    stderrCount++;
+                    if (stderrCount <= 50) {
+                        console.warn('OpenSWMM 2D:', message.text);
+                    } else if (stderrCount === 51) {
+                        console.warn('OpenSWMM 2D: Throttling excessive console warnings (>50 messages received).');
+                    }
+                }
                 else if (message.type === 'progress2d') console.debug('OpenSWMM 2D elapsed milliseconds:', message.elapsedMs);
                 else if (message.type === 'results2d') {
                     worker.terminate();

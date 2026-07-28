@@ -16,7 +16,7 @@
         if (!inpResponse.ok) throw new Error(`Could not load eight-cell model: HTTP ${inpResponse.status}`);
         const inp = await inpResponse.text();
         const wasmBinary = await fetch('openswmm2d.wasm').then(response => response.arrayBuffer());
-        const worker = new Worker('openSwmm2dWorker.js?v=18');
+        const worker = new Worker('openSwmm2dWorker.js?v=19');
         const result = await new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 worker.terminate();
