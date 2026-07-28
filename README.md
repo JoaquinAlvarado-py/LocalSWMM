@@ -1,26 +1,32 @@
 # Local SWMM Documentation
-
-Local SWMM is a web application for 3D modeling and hydraulic simulation of stormwater and wastewater networks.
+ 
+Local SWMM is a web application for 2D modeling and hydraulic simulation of stormwater and wastewater networks, check it by yourselft at https://swmm6.is-local.org
 
 ## Overview
 
 Local SWMM provides an interactive map interface to build, edit, and simulate urban drainage systems.
 It uses Mapbox GL JS for 3D terrain and building visualization.
-It uses the HydroCouple OpenSWMM WebAssembly engine to execute hydraulic simulations directly in your web browser.
+It uses the [HydroCouple OpenSWMM engine](https://github.com/HydroCouple/openswmm.engine) to execute hydraulic simulations directly in your web browser thanks to WebAssembly.
+
+
+
+https://github.com/user-attachments/assets/6ea0af51-125d-4b7d-a6ba-e0452cfae368
+
+
 
 ## System Requirements
 
-- A modern web browser with WebAssembly support (Google Chrome, Mozilla Firefox, Microsoft Edge, or Apple Safari).
-- Python 3 installed on your computer (to run the local web server).
+- A modern web browser with WebAssembly support. [check here if you can porperly use it on your browser](https://caniuse.com/wasm).
+- Python 3 installed on your computer (to run the local web server if you want to modify aspects of the program).
 
 ## Quick Start Guide
 
-Follow these steps to start the application on your computer:
+Follow these steps if you want to start the application on your computer instead of the web version:
 
 1. Open your terminal or command prompt.
 2. Clone this repository:
    ```bash
-   git clone https://github.com/JoaquinAlvarado-py/OpenSWMM6-3D.git
+   git clone https://github.com/JoaquinAlvarado-py/LocalSWMM.git
    ```
 3. Navigate to the project directory:
    ```bash
