@@ -645,6 +645,9 @@
     };
 
     async function fetchProjDef(epsgCode) {
+        if (epsgCode === 'EPSG:25832') {
+            return '+proj=utm +zone=32 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs';
+        }
         const code = epsgCode.split(':')[1];
         if (!code) return null;
         try {
@@ -701,6 +704,7 @@
 
         window.loadModelIntoNetwork(model);
     }
+    window.applyProjectionAndLoad = applyProjectionAndLoad;
 
     // Load a parsed model (from INP / importers) into the live Network
     window.loadModelIntoNetwork = function (model, merge = false) {
