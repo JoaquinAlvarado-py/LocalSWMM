@@ -1012,6 +1012,10 @@
     }
 
     async function run2DSimulationInWorker(inpText, triangleIds) {
+        fetch('openswmm2d.version.json')
+            .then(r => r.ok ? r.json() : null)
+            .then(v => { if (v) console.info('OpenSWMM 2D engine build:', v.engineDescribe || v.engineCommit, '| built', v.builtAtUtc); })
+            .catch(() => { });
         const wasmResponse = await fetch('openswmm2d.wasm');
         if (!wasmResponse.ok) throw new Error(`OpenSWMM 2D WebAssembly could not be loaded (HTTP ${wasmResponse.status}).`);
         const wasmBinary = await wasmResponse.arrayBuffer();

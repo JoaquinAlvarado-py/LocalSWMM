@@ -214,12 +214,15 @@ async function run(payload) {
             report
         });
     } finally {
-        if (started) api.end(engine);
-        api.close(engine);
-        api.destroy(engine);
-        Module._free(elapsedPtr);
+        // After a WASM trap the runtime is dead and every call below throws;
+        // swallow those so cleanup failures don't mask the original error.
+        const safely = fn => { try { fn(); } catch (e) { /* cleanup only */ } };
+        if (started) safely(() => api.end(engine));
+        safely(() => api.close(engine));
+        safely(() => api.destroy(engine));
+        safely(() => Module._free(elapsedPtr));
         [inputPath, reportPath, outputPath].forEach(path => {
-            try { if (Module.FS.analyzePath(path).exists) Module.FS.unlink(path); } catch (e) { /* cleanup only */ }
+            safely(() => { if (Module.FS.analyzePath(path).exists) Module.FS.unlink(path); });
         });
     }
 }
@@ -228,6 +231,9 @@ self.onmessage = event => {
     if (!event.data || event.data.type !== 'run2d') return;
     self.pendingWasmBinary = event.data.wasmBinary || null;
     run(event.data).catch(error => {
+        // The failed instance may be an aborted runtime with stale MEMFS state
+        // (EXH recovery is MSVC-only); never reuse it for a later run.
+        modulePromise = null;
         self.postMessage({ type: 'error', message: error && error.message ? error.message : String(error) });
     });
 };

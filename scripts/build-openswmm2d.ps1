@@ -75,4 +75,16 @@ if (-not (Test-Path (Join-Path $Root 'public/openswmm2d.wasm'))) {
     throw 'The build finished without producing public/openswmm2d.wasm.'
 }
 
+# Record the exact engine source the .wasm was built from — benchmark numbers
+# are meaningless without the commit SHA (and a dirty flag for local edits).
+$EngineCommit = (& git -C $Source rev-parse HEAD).Trim()
+$EngineDescribe = (& git -C $Source describe --always --dirty --tags 2>$null)
+$Stamp = [ordered]@{
+    engineCommit   = $EngineCommit
+    engineDescribe = if ($EngineDescribe) { $EngineDescribe.Trim() } else { $EngineCommit }
+    builtAtUtc     = (Get-Date).ToUniversalTime().ToString('o')
+}
+$Stamp | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $Root 'public/openswmm2d.version.json')
+
 Write-Host 'Built public/openswmm2d.js and public/openswmm2d.wasm'
+Write-Host "Engine source: $($Stamp.engineDescribe) ($EngineCommit)"
