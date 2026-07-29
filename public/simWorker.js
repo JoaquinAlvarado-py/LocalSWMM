@@ -161,8 +161,15 @@ self.onmessage = async (e) => {
             }
             if (!ran) throw new Error('No entry point found in SWMM WebAssembly module.');
         } catch (err) {
-            // Emscripten's exit() throws — a report may still exist
-            self.postMessage({ type: 'err', text: 'SWMM engine exit: ' + (err.message || err) });
+            // Emscripten's exit() throws ExitStatus — a report may still exist.
+            // Anything else is a genuine trap: the engine's exception handling
+            // (EXH) is MSVC-only and compiles to nothing under Emscripten, so a
+            // partial .rpt/.out must not be read back as this run's result.
+            if (err && err.name === 'ExitStatus') {
+                self.postMessage({ type: 'err', text: 'SWMM engine exit: ' + (err.message || err) });
+            } else {
+                throw new Error('SWMM engine crashed: ' + ((err && err.message) || err));
+            }
         }
 
         if (progressTimer) clearInterval(progressTimer);
