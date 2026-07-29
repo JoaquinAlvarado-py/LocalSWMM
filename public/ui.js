@@ -237,6 +237,8 @@
             tab.classList.add('active');
             const target = document.getElementById('tab-' + tab.dataset.tab);
             if (target) target.classList.add('active');
+            const badge = tab.querySelector('.tab-badge');
+            if (badge) badge.classList.add('hidden');
         });
     });
 
@@ -279,6 +281,18 @@
         if (resultsContent) resultsContent.classList.add('active');
         // Show badge
         const badge = document.getElementById('results-badge');
+        if (badge) badge.classList.remove('hidden');
+    };
+
+    window.openReportPanel = () => {
+        setRightPanel(true);
+        document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.panel-tab-content').forEach(c => c.classList.remove('active'));
+        const reportTab = document.querySelector('.panel-tab[data-tab="report"]');
+        const reportContent = document.getElementById('tab-report');
+        if (reportTab) reportTab.classList.add('active');
+        if (reportContent) reportContent.classList.add('active');
+        const badge = document.getElementById('report-badge');
         if (badge) badge.classList.remove('hidden');
     };
 
