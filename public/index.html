@@ -356,13 +356,16 @@
             </div>
         </main>
 
-        <!-- RIGHT PANEL (tabbed: Properties | Results) -->
+        <!-- RIGHT PANEL (tabbed: Properties | Results | Report) -->
         <aside id="panel-right" class="side-panel">
             <div id="panel-resizer"></div>
             <div class="panel-tabs">
                 <button class="panel-tab active" data-tab="props">Properties</button>
                 <button class="panel-tab" data-tab="results">Results
                     <span class="tab-badge hidden" id="results-badge"></span>
+                </button>
+                <button class="panel-tab" data-tab="report">Report
+                    <span class="tab-badge hidden" id="report-badge"></span>
                 </button>
                 <button class="panel-collapse-btn" id="btn-collapse-right" title="Hide panel">▸</button>
             </div>
@@ -378,6 +381,19 @@
                     <div id="results-content"></div>
                 </div>
             </div>
+            <div class="panel-tab-content" id="tab-report">
+                <div class="panel-body" id="report-body">
+                    <p class="panel-empty" id="report-hint">Run a simulation to view the SWMM status report.</p>
+                    <div id="report-toolbar" class="rv-toolbar hidden" style="margin-bottom: 10px; display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap;">
+                        <select id="report-section-select" class="rv-select" title="Jump to report section" style="flex: 1; min-width: 140px;"></select>
+                        <div style="display: flex; gap: 6px;">
+                            <button id="btn-copy-report" class="tb-btn" title="Copy report to clipboard" style="font-size: 11px; padding: 3px 8px;">Copy</button>
+                            <button id="btn-download-report" class="tb-btn" title="Download .rpt file" style="font-size: 11px; padding: 3px 8px;">Download</button>
+                        </div>
+                    </div>
+                    <pre id="report-content" class="report-pre hidden"></pre>
+                </div>
+            </div>
         </aside>
         <button id="reopen-right" class="panel-reopen panel-reopen-right hidden" title="Show panel">◂</button>
 
@@ -386,12 +402,16 @@
         <div class="hidden">
             <div id="panel-props"></div>
             <div id="panel-results"></div>
+            <div id="panel-report"></div>
             <button id="reopen-props"></button>
             <button id="reopen-results"></button>
+            <button id="reopen-report"></button>
             <button id="btn-toggle-props"></button>
             <button id="btn-toggle-results"></button>
+            <button id="btn-toggle-report"></button>
             <button id="btn-collapse-props"></button>
             <button id="btn-collapse-results"></button>
+            <button id="btn-collapse-report"></button>
         </div>
 
         <footer id="statusbar">

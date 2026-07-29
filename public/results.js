@@ -613,6 +613,119 @@
         if (window.openResultsPanel) window.openResultsPanel();
     };
 
+    window.displayStatusReport = function (rpt) {
+        const reportContent = document.getElementById('report-content');
+        const reportHint = document.getElementById('report-hint');
+        const reportToolbar = document.getElementById('report-toolbar');
+        const sectionSelect = document.getElementById('report-section-select');
+        const copyBtn = document.getElementById('btn-copy-report');
+        const downloadBtn = document.getElementById('btn-download-report');
+
+        if (!reportContent) return;
+
+        if (!rpt || !String(rpt).trim()) {
+            if (reportHint) reportHint.classList.remove('hidden');
+            if (reportToolbar) reportToolbar.classList.add('hidden');
+            reportContent.classList.add('hidden');
+            reportContent.innerHTML = '';
+            return;
+        }
+
+        if (reportHint) reportHint.classList.add('hidden');
+        if (reportToolbar) reportToolbar.classList.remove('hidden');
+        reportContent.classList.remove('hidden');
+
+        const lines = String(rpt).split('\n');
+        const htmlLines = [];
+        const sections = [];
+
+        const isDivider = (str) => /^\s*[*=\-]{4,}\s*$/.test(str);
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const prevLine = i > 0 ? lines[i - 1] : '';
+            const nextLine = i < lines.length - 1 ? lines[i + 1] : '';
+            const isText = line.trim().length > 0 && !isDivider(line);
+
+            // Detect section headers (surrounded by asterisks/dashes or underlined by dashes/asterisks)
+            const isBoxedHeader = isText && isDivider(prevLine) && isDivider(nextLine);
+            const isUnderlinedHeader = isText && !isDivider(prevLine) && isDivider(nextLine) && line.trim().length > 3;
+
+            if (isBoxedHeader || isUnderlinedHeader) {
+                const secId = 'rpt-sec-' + sections.length;
+                const title = line.trim().replace(/^[*=\-\s]+|[*=\-\s]+$/g, '');
+                if (title && title.length > 2) {
+                    sections.push({ id: secId, title: title });
+                    htmlLines.push(`<span id="${secId}" class="report-section-header">${esc(line)}</span>`);
+                    continue;
+                }
+            }
+            htmlLines.push(esc(line));
+        }
+
+        reportContent.innerHTML = htmlLines.join('\n');
+
+        // Populate section navigation dropdown
+        if (sectionSelect) {
+            sectionSelect.innerHTML = '';
+            const defaultOpt = document.createElement('option');
+            defaultOpt.value = '';
+            defaultOpt.textContent = sections.length > 0 ? '-- Jump to section --' : '(Entire Report)';
+            sectionSelect.appendChild(defaultOpt);
+
+            sections.forEach(sec => {
+                const opt = document.createElement('option');
+                opt.value = sec.id;
+                opt.textContent = sec.title;
+                sectionSelect.appendChild(opt);
+            });
+
+            sectionSelect.onchange = () => {
+                const targetId = sectionSelect.value;
+                if (!targetId) return;
+                const targetEl = document.getElementById(targetId);
+                if (targetEl) {
+                    targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            };
+        }
+
+        // Copy button handler
+        if (copyBtn) {
+            copyBtn.onclick = () => {
+                navigator.clipboard.writeText(String(rpt)).then(() => {
+                    const origText = copyBtn.textContent;
+                    copyBtn.textContent = 'Copied!';
+                    setTimeout(() => { copyBtn.textContent = origText; }, 1500);
+                }).catch(err => {
+                    console.warn('Failed to copy report:', err);
+                });
+            };
+        }
+
+        // Download button handler
+        if (downloadBtn) {
+            downloadBtn.onclick = () => {
+                const blob = new Blob([String(rpt)], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'SWMM_Status_Report.rpt';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            };
+        }
+
+        // Show badge on Report tab if it is not currently active
+        const reportTab = document.querySelector('.panel-tab[data-tab="report"]');
+        const reportBadge = document.getElementById('report-badge');
+        if (reportTab && reportBadge && !reportTab.classList.contains('active')) {
+            reportBadge.classList.remove('hidden');
+        }
+    };
+
     window.clearResults = function () {
         ResultStyling.clear();
         if (sparkObserver) sparkObserver.disconnect();
@@ -626,6 +739,7 @@
         window.App.outData = null;
         window.App.results2D = null;
         window.App.resultFrame2D = null;
+        if (window.displayStatusReport) window.displayStatusReport(null);
     };
 
     window.displayResults = function (rpt, outData) {
@@ -1120,10 +1234,11 @@
         const note = document.createElement('div');
         note.className = 'rv-note';
         note.textContent = hasAny
-            ? 'Click a row to zoom to the element · full report in the browser console.'
-            : 'No summary tables found in the report · full report in the browser console.';
+            ? 'Click a row to zoom to the element · full report in the Report tab.'
+            : 'No summary tables found in the report · full report in the Report tab.';
         container.appendChild(note);
 
+        if (window.displayStatusReport) window.displayStatusReport(rpt);
         if (window.openResultsPanel) window.openResultsPanel();
     };
 
@@ -1308,6 +1423,7 @@
         note.textContent = 'Drag the timeline slider to animate 2D inundation over time.';
         container.appendChild(note);
 
+        if (window.displayStatusReport) window.displayStatusReport(result && result.report ? result.report : '');
         if (window.openResultsPanel) window.openResultsPanel();
     };
 })();
