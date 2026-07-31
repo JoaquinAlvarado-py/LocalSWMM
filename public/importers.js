@@ -337,6 +337,16 @@
             const coordType = document.querySelector('input[name="coord-type"]:checked').value;
             const epsgCode = document.getElementById('epsg-code-input').value.trim() || 'EPSG:32719';
 
+            // see applyProjectionAndLoad in app.js — a missing proj4 must not
+            // silently import projected coordinates as lon/lat
+            if (coordType === 'utm' && !window.proj4) {
+                alert('Cannot reproject: the proj4 library did not load.\n\n' +
+                    'Check that https://cdnjs.cloudflare.com is reachable and reload the page, ' +
+                    'or re-import using the "Local coordinates" option, which needs no external library.\n\n' +
+                    'Import cancelled to avoid placing the layer at the wrong location.');
+                return;
+            }
+
             if (coordType === 'utm' && window.proj4) {
                 try {
                     const code = epsgCode.split(':')[1];
