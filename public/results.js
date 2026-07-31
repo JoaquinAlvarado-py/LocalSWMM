@@ -647,14 +647,20 @@
             const nextLine = i < lines.length - 1 ? lines[i + 1] : '';
             const isText = line.trim().length > 0 && !isDivider(line);
 
-            // Detect section headers (surrounded by asterisks/dashes or underlined by dashes/asterisks)
+            // Detect section headers (surrounded by asterisks/dashes or preceded by blank/divider and underlined by dashes/asterisks)
             const isBoxedHeader = isText && isDivider(prevLine) && isDivider(nextLine);
-            const isUnderlinedHeader = isText && !isDivider(prevLine) && isDivider(nextLine) && line.trim().length > 3;
+            const isUnderlinedHeader = isText && (prevLine.trim() === '' || isDivider(prevLine)) && isDivider(nextLine) && line.trim().length > 3;
 
             if (isBoxedHeader || isUnderlinedHeader) {
-                const secId = 'rpt-sec-' + sections.length;
                 const title = line.trim().replace(/^[*=\-\s]+|[*=\-\s]+$/g, '');
-                if (title && title.length > 2) {
+                
+                // Exclude engine header banners, table column unit headers, and explanatory notes
+                const isEngineBanner = /OPENSWMM\s+ENGINE|VERSION/i.test(title);
+                const hasMultipleUnits = (title.match(/\b(mm|cm|m|m3|ft|in|ltr|gal|sec|min|hr|days|CMS|CFS|GPM|MGD|Pcnt|Percent|hr:min|Meters|Full|Loss)\b/gi) || []).length >= 2;
+                const isNote = /^(Flooding|Note|Units|Warning|Error refers)/i.test(title);
+
+                if (title && title.length > 2 && !isEngineBanner && !hasMultipleUnits && !isNote) {
+                    const secId = 'rpt-sec-' + sections.length;
                     sections.push({ id: secId, title: title });
                     htmlLines.push(`<span id="${secId}" class="report-section-header">${esc(line)}</span>`);
                     continue;
