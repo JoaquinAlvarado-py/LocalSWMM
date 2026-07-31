@@ -24,6 +24,8 @@
     const HISTORY_LIMIT = 100;
     const SNAPSHOT_EVERY = 25; // checkpoint snapshot every N delta commands
 
+    const STORAGE_KEY = 'openswmm3d.project';
+
     function defaultNodeProps(type) {
         switch (type) {
             case 'JUNCTION': return { description: '', tag: '', invertEl: 0, maxDepth: 2, initDepth: 0, surDepth: 0, aponded: 0 };
@@ -99,6 +101,7 @@
         constructor() {
             this.listeners = [];
             this._saveTimer = null;
+            this._idbHasCopy = false; // autosave overflowed to IndexedDB
             this.reset(false);
             // history entries: { t:'snap', json } — full state after a bulk op
             //                  { t:'cmd', op, snapAfter? } — a small delta
@@ -632,10 +635,22 @@
                 let json;
                 try {
                     json = JSON.stringify(this.serialize());
-                    localStorage.setItem('openswmm3d.project', json);
+                    localStorage.setItem(STORAGE_KEY, json);
+                    // an earlier save may have overflowed to IndexedDB; that copy
+                    // is now older than this one, and restore prefers localStorage
+                    if (this._idbHasCopy) {
+                        this._idbHasCopy = false;
+                        this._clearIndexedDB();
+                    }
                 } catch (e) {
-                    // storage full/unavailable — fall back to IndexedDB (no ~5MB cap)
-                    if (json) this._saveToIndexedDB(json);
+                    // storage full/unavailable — fall back to IndexedDB (no ~5MB cap).
+                    // Discard the localStorage copy: it predates what we are about
+                    // to write, and leaving it would make restore load the old one.
+                    if (json) {
+                        try { localStorage.removeItem(STORAGE_KEY); } catch (err) { }
+                        this._idbHasCopy = true;
+                        this._saveToIndexedDB(json);
+                    }
                 }
             }, 2000);
         }
@@ -657,14 +672,31 @@
             } catch (e) { /* give up silently, same as before */ }
         }
 
+        async _clearIndexedDB() {
+            try {
+                const db = await this._idb();
+                db.transaction('kv', 'readwrite').objectStore('kv').delete('project');
+            } catch (e) { /* nothing to clean up */ }
+        }
+
+        _isRestorable(state) {
+            if (!state) return false;
+            return !!((state.nodes && state.nodes.length) || (state.links && state.links.length));
+        }
+
+        // Restore the autosaved project from wherever it was written: normally
+        // localStorage, or IndexedDB for models that exceeded its ~5MB quota.
+        async restoreAutosave() {
+            if (this.loadFromLocalStorage()) return true;
+            return await this.loadFromIndexedDB();
+        }
+
         loadFromLocalStorage() {
             try {
-                const raw = localStorage.getItem('openswmm3d.project');
+                const raw = localStorage.getItem(STORAGE_KEY);
                 if (!raw) return false;
                 const state = JSON.parse(raw);
-                if (!state.nodes || !state.nodes.length) {
-                    if (!state.links || !state.links.length) return false;
-                }
+                if (!this._isRestorable(state)) return false;
                 this.loadState(state, true);
                 return true;
             } catch (e) {
@@ -681,7 +713,8 @@
                     rq.onsuccess = () => {
                         try {
                             const state = rq.result ? JSON.parse(rq.result) : null;
-                            if (!state || !state.nodes || !state.nodes.length) return resolve(false);
+                            if (!this._isRestorable(state)) return resolve(false);
+                            this._idbHasCopy = true;
                             this.loadState(state, true);
                             resolve(true);
                         } catch (e) { resolve(false); }
