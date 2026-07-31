@@ -1,4 +1,4 @@
-﻿// inpExporter.js â€” Generate a SWMM .inp file from the Network model
+// inpExporter.js â€” Generate a SWMM .inp file from the Network model
 
 class InpExporter {
 
@@ -14,9 +14,35 @@ class InpExporter {
             : (net.units === 'US' ? 'CFS' : 'LPS');
         const L = [];
 
-        // Determine REPORT_STEP dynamically based on first RAINGAGE interval, if available
+        // Determine all RAINGAGES (explicit nodes, imported raw lines, or referenced by subcatchments)
         const gages = net.nodes.filter(n => n.type === 'RAINGAGE');
-        const needDefaultGage = !gages.length && net.subcatchments.length > 0;
+        const gageIds = new Set(gages.map(g => g.id));
+        const extraGageRows = [];
+        const extraGageIds = new Set();
+
+        if (net.rawSections && net.rawSections['RAINGAGES']) {
+            net.rawSections['RAINGAGES'].forEach(line => {
+                const clean = line.trim();
+                if (clean && !clean.startsWith(';')) {
+                    const parts = clean.split(/\s+/);
+                    const gId = parts[0];
+                    if (gId && !gageIds.has(gId)) {
+                        extraGageIds.add(gId);
+                        extraGageRows.push(line);
+                    }
+                }
+            });
+        }
+
+        (net.subcatchments || []).forEach(s => {
+            const rg = s.props && s.props.raingage;
+            if (rg && !gageIds.has(rg) && !extraGageIds.has(rg) && rg !== '*') {
+                extraGageIds.add(rg);
+                extraGageRows.push(`${this.pad(rg, 16)} INTENSITY 1:00     1.0      TIMESERIES TS1`);
+            }
+        });
+
+        const needDefaultGage = (!gages.length && !extraGageRows.length && (net.subcatchments || []).length > 0);
         
         // Options precedence: value edited in the UI (structured opt.* field)
         // â†’ value imported with the model (opt.raw) â†’ app default. Without the
@@ -101,7 +127,7 @@ class InpExporter {
             L.push('');
         }
 
-        if (gages.length || needDefaultGage) {
+        if (gages.length || extraGageRows.length || needDefaultGage) {
             L.push('[RAINGAGES]');
             L.push(';;Name           Format    Interval SCF      Source');
             if (needDefaultGage) {
@@ -118,6 +144,7 @@ class InpExporter {
                     L.push(`${this.pad(g.id, 16)} ${this.pad(p.format || 'INTENSITY', 9)} ${this.pad(p.interval || '1:00', 8)} ${this.pad(p.scf || 1.0, 8)} TIMESERIES ${p.sourceName || 'TS1'}`);
                 }
             });
+            extraGageRows.forEach(row => L.push(row));
             L.push('');
         }
 
@@ -320,8 +347,12 @@ class InpExporter {
                 });
             });
             L.push('');
-        } else if (!net.rawSections || !net.rawSections['TIMESERIES']) {
-            const usesTS1 = needDefaultGage || gages.some(g => g.props.sourceType === 'TIMESERIES' && g.props.sourceName === 'TS1');
+        } else if (net.rawSections && net.rawSections['TIMESERIES'] && net.rawSections['TIMESERIES'].length > 0) {
+            L.push('[TIMESERIES]');
+            net.rawSections['TIMESERIES'].forEach(line => L.push(line));
+            L.push('');
+        } else {
+            const usesTS1 = needDefaultGage || extraGageRows.length > 0 || gages.some(g => g.props.sourceType === 'TIMESERIES' && g.props.sourceName === 'TS1');
             if (usesTS1) {
                 L.push('[TIMESERIES]');
                 L.push(';;Name           Date       Time       Value');
@@ -468,6 +499,10 @@ class InpExporter {
                 c.data.forEach(pt => L.push(' ' + pt.x.toFixed(6).toString().padStart(15) + ' ' + pt.y.toFixed(6).toString().padStart(15)));
                 L.push('');
             });
+        } else if (net.rawSections && net.rawSections['CURVES'] && net.rawSections['CURVES'].length > 0) {
+            L.push('[CURVES]');
+            net.rawSections['CURVES'].forEach(line => L.push(line));
+            L.push('');
         }
 
         // --- LID Controls ---
@@ -491,11 +526,15 @@ class InpExporter {
                 }
                 L.push('');
             });
+        } else if (net.rawSections && net.rawSections['LID_CONTROLS'] && net.rawSections['LID_CONTROLS'].length > 0) {
+            L.push('[LID_CONTROLS]');
+            net.rawSections['LID_CONTROLS'].forEach(line => L.push(line));
+            L.push('');
         }
 
         // --- LID Usage ---
+        let hasLidUsage = false;
         if (net.subcatchments) {
-            let hasLidUsage = false;
             net.subcatchments.forEach(sub => {
                 if (sub.lidUsages && sub.lidUsages.length > 0) {
                     if (!hasLidUsage) { L.push('[LID_USAGE]'); L.push(';;Subcatchment     LID Control     Number  Area    Width   InitSat FromImp ToPerv'); hasLidUsage = true; }
@@ -504,6 +543,11 @@ class InpExporter {
             });
             if (hasLidUsage) L.push('');
         }
+        if (!hasLidUsage && net.rawSections && net.rawSections['LID_USAGE'] && net.rawSections['LID_USAGE'].length > 0) {
+            L.push('[LID_USAGE]');
+            net.rawSections['LID_USAGE'].forEach(line => L.push(line));
+            L.push('');
+        }
 
         // --- Pollutants ---
         if (net.pollutants && net.pollutants.length > 0) {
@@ -511,7 +555,12 @@ class InpExporter {
             L.push(';;Name              Units    Rain    GW      I&I     Decay   SnowOnly CoPollutant CoFrac');
             net.pollutants.forEach(p => L.push((p.name||p.id).padEnd(18) + ' ' + p.units.padEnd(8) + ' ' + String(p.rainConcentration).padStart(7) + ' ' + String(p.gwConcentration).padStart(7) + ' ' + String(p.iiConcentration).padStart(7) + ' ' + String(p.decayCoeff).padStart(7) + ' ' + (p.snowOnly?'*':'-').padEnd(9) + ' ' + (p.coPollutant||'*').padEnd(12) + ' ' + String(p.coFraction).padStart(7)));
             L.push('');
+        } else if (net.rawSections && net.rawSections['POLLUTANTS'] && net.rawSections['POLLUTANTS'].length > 0) {
+            L.push('[POLLUTANTS]');
+            net.rawSections['POLLUTANTS'].forEach(line => L.push(line));
+            L.push('');
         }
+
         // --- Land Uses, Buildup, Washoff ---
         if (net.landUses && net.landUses.length > 0) {
             L.push('[LANDUSES]');
@@ -532,24 +581,51 @@ class InpExporter {
                 L.push((lu.name||lu.id).padEnd(18) + ' ' + pn.padEnd(18) + ' ' + (w.type||'EXPONENTIAL').padEnd(12) + ' ' + String(w.coeff1||0).padStart(7) + ' ' + String(w.coeff2||0).padStart(7) + ' ' + String(w.coeff3||0).padStart(7) + ' ' + String(w.bmpRemoval||0).padStart(7));
             });});
             L.push('');
+        } else {
+            if (net.rawSections && net.rawSections['LANDUSES'] && net.rawSections['LANDUSES'].length > 0) {
+                L.push('[LANDUSES]');
+                net.rawSections['LANDUSES'].forEach(line => L.push(line));
+                L.push('');
+            }
+            if (net.rawSections && net.rawSections['BUILDUP'] && net.rawSections['BUILDUP'].length > 0) {
+                L.push('[BUILDUP]');
+                net.rawSections['BUILDUP'].forEach(line => L.push(line));
+                L.push('');
+            }
+            if (net.rawSections && net.rawSections['WASHOFF'] && net.rawSections['WASHOFF'].length > 0) {
+                L.push('[WASHOFF]');
+                net.rawSections['WASHOFF'].forEach(line => L.push(line));
+                L.push('');
+            }
         }
+
         // --- Treatment ---
         if (net.treatments && net.treatments.length > 0) {
             L.push('[TREATMENT]');
             L.push(';;Node              Pollutant        Function');
             net.treatments.forEach(t => L.push(t.node.padEnd(18) + ' ' + t.pollutant.padEnd(18) + ' ' + (t.function||'')));
             L.push('');
+        } else if (net.rawSections && net.rawSections['TREATMENT'] && net.rawSections['TREATMENT'].length > 0) {
+            L.push('[TREATMENT]');
+            net.rawSections['TREATMENT'].forEach(line => L.push(line));
+            L.push('');
         }
+
         // --- Aquifers ---
         if (net.aquifers && net.aquifers.length > 0) {
             L.push('[AQUIFERS]');
             L.push(';;Name              Poros   WP      FC      K       Ks      Tslope  UEvap   LEvap   BtmEl   WtEl    UZones  EvFrac  ETUD    ETLD    ETLF');
             net.aquifers.forEach(a => L.push((a.name||a.id).padEnd(18) + ' ' + String(a.porosity).padStart(7) + ' ' + String(a.wiltingPoint).padStart(7) + ' ' + String(a.fieldCapacity).padStart(7) + ' ' + String(a.conductivity).padStart(7) + ' ' + String(a.conductivitySlope).padStart(7) + ' ' + String(a.tensionSlope).padStart(7) + ' ' + String(a.upperEvapFrac).padStart(7) + ' ' + String(a.lowerEvapDepth).padStart(7) + ' ' + String(a.bottomElevation).padStart(7) + ' ' + String(a.waterTableElevation).padStart(7) + ' ' + String(a.unsaturatedZone).padStart(7) + ' ' + String(a.evapSurfaceFrac).padStart(7) + ' ' + String(a.etUpperDepth).padStart(7) + ' ' + String(a.etLowerDepth).padStart(7) + ' ' + String(a.etLowerFrac).padStart(7)));
             L.push('');
+        } else if (net.rawSections && net.rawSections['AQUIFERS'] && net.rawSections['AQUIFERS'].length > 0) {
+            L.push('[AQUIFERS]');
+            net.rawSections['AQUIFERS'].forEach(line => L.push(line));
+            L.push('');
         }
+
         // --- Groundwater ---
+        let hasGW = false;
         if (net.subcatchments) {
-            let hasGW = false;
             net.subcatchments.forEach(sub => {
                 if (sub.groundwater) {
                     if (!hasGW) { L.push('[GROUNDWATER]'); L.push(';;Subcatchment     Aquifer          Node            SurfEl    GWEl     BtmEl    Ksat     A1      B1      A2      B2      A3      TW'); hasGW = true; }
@@ -559,6 +635,12 @@ class InpExporter {
             });
             if (hasGW) L.push('');
         }
+        if (!hasGW && net.rawSections && net.rawSections['GROUNDWATER'] && net.rawSections['GROUNDWATER'].length > 0) {
+            L.push('[GROUNDWATER]');
+            net.rawSections['GROUNDWATER'].forEach(line => L.push(line));
+            L.push('');
+        }
+
         // --- Snowpacks ---
         if (net.snowpacks && net.snowpacks.length > 0) {
             L.push('[SNOWPACKS]');
@@ -573,7 +655,19 @@ class InpExporter {
                 }
             });
             if (hasSnow) L.push('');
+        } else {
+            if (net.rawSections && net.rawSections['SNOWPACKS'] && net.rawSections['SNOWPACKS'].length > 0) {
+                L.push('[SNOWPACKS]');
+                net.rawSections['SNOWPACKS'].forEach(line => L.push(line));
+                L.push('');
+            }
+            if (net.rawSections && net.rawSections['SNOWPACK_ASSIGNMENT'] && net.rawSections['SNOWPACK_ASSIGNMENT'].length > 0) {
+                L.push('[SNOWPACK_ASSIGNMENT]');
+                net.rawSections['SNOWPACK_ASSIGNMENT'].forEach(line => L.push(line));
+                L.push('');
+            }
         }
+
         // --- Append any raw sections that we did not parse explicitly ---
         if (net.rawSections) {
             const handledSections = new Set([
