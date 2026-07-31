@@ -959,9 +959,11 @@
             tbody.innerHTML = '';
             rows.forEach((r, idx) => {
                 const tr = document.createElement('tr');
+                // date/time are raw strings from the imported .inp — escape
+                // them so a crafted token can't break out of the value="" attr
                 tr.innerHTML = `
-                    <td><input type="text" class="ts-row-date" data-idx="${idx}" value="${r.date || ''}" placeholder="MM/DD/YYYY"></td>
-                    <td><input type="text" class="ts-row-time" data-idx="${idx}" value="${r.time || '0:00'}" placeholder="HH:MM"></td>
+                    <td><input type="text" class="ts-row-date" data-idx="${idx}" value="${esc(r.date || '')}" placeholder="MM/DD/YYYY"></td>
+                    <td><input type="text" class="ts-row-time" data-idx="${idx}" value="${esc(r.time || '0:00')}" placeholder="HH:MM"></td>
                     <td><input type="number" step="any" class="ts-row-val" data-idx="${idx}" value="${r.value ?? 0}"></td>
                     <td><button class="ts-btn-icon-del" data-idx="${idx}">&times;</button></td>
                 `;
