@@ -89,15 +89,13 @@
 
         inp = appendSection(inp, '2D_OPTIONS', [
             `MAX_TIMESTEP         ${finite(options.maxTimestep, 2.0)}`,
-            `MIN_TIMESTEP         ${finite(options.minTimestep, 0.01)}`,
-            `REL_TOLERANCE        ${finite(options.relativeTolerance, 1e-4)}`,
-            `ABS_TOLERANCE        ${finite(options.absoluteTolerance, 1e-6)}`,
             `DRY_DEPTH            ${finite(options.dryDepth, 0.001)}`,
-            `COUPLING_INTERVAL    ${finite(options.couplingInterval, 1.0)}`,
-            'LINEAR_SOLVER        GMRES',
-            'PRECONDITIONER       JACOBI',
-            'RAINFALL_MODE        SYSTEM',
-            'REPORT_2D            NO'
+            `COUPLING_SYNC        ${finite(options.couplingInterval, 1.0)}`,
+            `THETA                0.5`,
+            `CFL_NUMBER           0.8`,
+            `H_MOVE               0.001`,
+            `FROUDE_MAX           1.0`,
+            `LTS_TIERS            0`
         ]);
 
         inp = appendSection(inp, '2D_VERTICES', [

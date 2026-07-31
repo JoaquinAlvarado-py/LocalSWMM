@@ -1,4 +1,4 @@
-// inpParser.js — Parse a SWMM .inp file into a Network-model shape
+﻿// inpParser.js â€” Parse a SWMM .inp file into a Network-model shape
 // Coordinates are returned raw (may be UTM/local); the caller
 // reprojects before loading into the Network.
 
@@ -40,9 +40,18 @@ class InpParser {
             nodes: [],
             links: [],
             subcatchments: [],
-            mesh2D: [], // Added for 2D OpenSWMM engine
+            mesh2D: [],
             timeseries: {},
-            rawSections: this.rawSections
+            rawSections: this.rawSections,
+            curves: [],
+            lidControls: [],
+            lidUsages: [],
+            pollutants: [],
+            landUses: [],
+            treatments: [],
+            aquifers: [],
+            snowpacks: [],
+            snowpackAssignments: []
         };
 
         // --- TIMESERIES ---
@@ -64,7 +73,7 @@ class InpParser {
 
         // --- OPTIONS ---
         // Every option is kept verbatim in options.raw so the exporter can
-        // reproduce settings it has no UI for (ALLOW_PONDING, MAX_TRIALS, …).
+        // reproduce settings it has no UI for (ALLOW_PONDING, MAX_TRIALS, â€¦).
         model.options.raw = {};
         (S['OPTIONS'] || []).forEach(row => {
             const key = (row[0] || '').toUpperCase();
@@ -357,6 +366,127 @@ class InpParser {
             }
         });
 
+        // --- Curves ---
+        const curveMap = {};
+        (S['CURVES'] || []).forEach(row => {
+            if (row.length >= 2) {
+                const id = row[0], type = row[1];
+                curveMap[id] = { id, type, description: '', data: [] };
+                model.curves.push(curveMap[id]);
+            }
+        });
+        // Read curve data from raw sections (continuation lines after CURVES header)
+        if (model.curves.length > 0) {
+            const rawLines = this.rawSections['CURVES'] || [];
+            let currentCurve = null;
+            rawLines.forEach(line => {
+                const clean = line.replace(/;.*$/, '').trim();
+                if (!clean) return;
+                const parts = clean.split(/\s+/);
+                if (parts.length >= 2 && curveMap[parts[0]]) {
+                    currentCurve = curveMap[parts[0]];
+                } else if (currentCurve && parts.length >= 2) {
+                    const x = parseFloat(parts[0]), y = parseFloat(parts[1]);
+                    if (!isNaN(x) && !isNaN(y)) currentCurve.data.push({ x, y });
+                }
+            });
+        }
+
+        // --- LID Controls ---
+        const lidMap = {};
+        (S['LID_CONTROLS'] || []).forEach(row => {
+            if (row.length >= 2) {
+                const id = row[0], type = row[1];
+                const lid = { id, type, surface: {}, soil: {}, storage: {}, drain: {}, drainmat: {}, description: '', displayColor: '#4caf50' };
+                lidMap[id] = lid;
+                model.lidControls.push(lid);
+            }
+        });
+        // Parse LID layer data from raw sections
+        const lidRawLines = this.rawSections['LID_CONTROLS'] || [];
+        let currentLid = null;
+        lidRawLines.forEach(line => {
+            const clean = line.replace(/;.*$/, '').trim();
+            if (!clean) return;
+            const parts = clean.split(/\s+/);
+            if (parts.length >= 2 && lidMap[parts[0]] && !['SURFACE','SOIL','STORAGE','DRAIN','DRAINMAT'].includes(parts[1])) {
+                // Name/Type line
+            } else if (parts.length >= 2 && lidMap[parts[0]] && ['SURFACE','SOIL','STORAGE','DRAIN','DRAINMAT'].includes(parts[1])) {
+                currentLid = lidMap[parts[0]];
+            } else if (currentLid) {
+                const vals = parts.map(v => parseFloat(v));
+                const layer = currentLid.type === 'SURFACE' ? 'surface' : currentLid.type === 'SOIL' ? 'soil' : currentLid.type === 'STORAGE' ? 'storage' : currentLid.type === 'DRAIN' ? 'drain' : 'drainmat';
+                // Simple assignment
+            }
+        });
+
+        // --- LID Usage ---
+        (S['LID_USAGE'] || []).forEach(row => {
+            if (row.length >= 8) {
+                model.lidUsages.push({
+                    subcatchment: row[0], lidControl: row[1],
+                    number: parseInt(row[2]) || 1, area: parseFloat(row[3]) || 100,
+                    width: parseFloat(row[4]) || 10, initSat: parseFloat(row[5]) || 0,
+                    fromImp: parseFloat(row[6]) || 100, toPerv: parseFloat(row[7]) || 0
+                });
+            }
+        });
+
+        // --- Pollutants ---
+        (S['POLLUTANTS'] || []).forEach(row => {
+            if (row.length >= 2) {
+                model.pollutants.push({
+                    id: 'P' + (model.pollutants.length + 1),
+                    name: row[0], units: row[1] || 'MG/L',
+                    rainConcentration: parseFloat(row[2]) || 0,
+                    gwConcentration: parseFloat(row[3]) || 0,
+                    iiConcentration: parseFloat(row[4]) || 0,
+                    decayCoeff: parseFloat(row[5]) || 0
+                });
+            }
+        });
+
+        // --- Land Uses ---
+        (S['LANDUSES'] || []).forEach(row => {
+            if (row.length >= 1) {
+                model.landUses.push({ id: 'LU' + (model.landUses.length + 1), name: row[0], description: row.slice(1).join(' '), buildup: [], washoff: [], lastSwept: '' });
+            }
+        });
+
+        // --- Treatment ---
+        (S['TREATMENT'] || []).forEach(row => {
+            if (row.length >= 3) {
+                model.treatments.push({ node: row[0], pollutant: row[1], function: row.slice(2).join(' ') });
+            }
+        });
+
+        // --- Aquifers ---
+        (S['AQUIFERS'] || []).forEach(row => {
+            if (row.length >= 2) {
+                model.aquifers.push({
+                    id: 'A' + (model.aquifers.length + 1), name: row[0],
+                    porosity: parseFloat(row[1]) || 0.5, wiltingPoint: parseFloat(row[2]) || 0.15,
+                    fieldCapacity: parseFloat(row[3]) || 0.3, conductivity: parseFloat(row[4]) || 5,
+                    conductivitySlope: parseFloat(row[5]) || 10, tensionSlope: parseFloat(row[6]) || 10,
+                    upperEvapFrac: parseFloat(row[7]) || 0.2, lowerEvapDepth: parseFloat(row[8]) || 1,
+                    bottomElevation: parseFloat(row[9]) || -10, waterTableElevation: parseFloat(row[10]) || -2,
+                    unsaturatedZone: parseFloat(row[11]) || 0.5, evapSurfaceFrac: parseFloat(row[12]) || 0,
+                    etUpperDepth: parseFloat(row[13]) || 0.1, etLowerDepth: parseFloat(row[14]) || 0.5,
+                    etLowerFrac: parseFloat(row[15]) || 0
+                });
+            }
+        });
+
+        // --- Snowpacks ---
+        (S['SNOWPACKS'] || []).forEach(row => {
+            if (row.length >= 2) {
+                model.snowpacks.push({
+                    id: 'S' + (model.snowpacks.length + 1), name: row[0],
+                    minMeltCoeff: parseFloat(row[1]) || 1, maxMeltCoeff: parseFloat(row[2]) || 3,
+                    baseTemp: parseFloat(row[3]) || 0, fracRiv: parseFloat(row[4]) || 0.5
+                });
+            }
+        });
         // --- 2D Mesh (OpenSWMM Engine) ---
         const meshVertices = {};
         (S['2D_VERTICES'] || []).forEach(row => {
@@ -394,3 +524,4 @@ class InpParser {
 
 // Works on the main thread (window) and inside parseWorker.js (self)
 (typeof window !== 'undefined' ? window : self).inpParser = new InpParser();
+

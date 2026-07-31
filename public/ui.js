@@ -19,12 +19,41 @@
     // Save / Load / Export / Clear
     document.getElementById('btn-save').addEventListener('click', () => Net.downloadProject());
 
-    const loadDropdown = document.querySelector('.tb-dropdown');
+    // Load / Import dropdown
+    const loadDropdown = document.querySelector('#load-menu').parentElement;
     document.getElementById('btn-load').addEventListener('click', (e) => {
         e.stopPropagation();
         loadDropdown.classList.toggle('open');
     });
     document.addEventListener('click', () => loadDropdown.classList.remove('open'));
+
+    // Data menu dropdown
+    const dataMenuToggle = document.getElementById('btn-data-menu');
+    const dataMenu = document.getElementById('data-menu');
+    if (dataMenuToggle) {
+        dataMenuToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dataMenu.parentElement.classList.toggle('open');
+        });
+        document.addEventListener('click', () => dataMenu.parentElement.classList.remove('open'));
+    }
+
+    // Data menu items
+    document.getElementById('btn-curves')?.addEventListener('click', () => {
+        if (window.CurveEditor) window.CurveEditor.openEditor();
+    });
+    document.getElementById('btn-lid')?.addEventListener('click', () => {
+        if (window.LIDControls) window.LIDControls.openEditor();
+    });
+    document.getElementById('btn-quality')?.addEventListener('click', () => {
+        if (window.QualityEditor) window.QualityEditor.openEditor();
+    });
+    document.getElementById('btn-aquifer')?.addEventListener('click', () => {
+        if (window.AquiferEditor) window.AquiferEditor.openEditor();
+    });
+    document.getElementById('btn-snowpack')?.addEventListener('click', () => {
+        if (window.SnowpackEditor) window.SnowpackEditor.openEditor();
+    });
 
     const projectInput = document.getElementById('project-file-input');
     document.getElementById('btn-load-file').addEventListener('click', () => projectInput.click());
