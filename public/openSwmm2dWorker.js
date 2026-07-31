@@ -2,7 +2,7 @@
 
 // Load the generated runtime before accepting a transferred WASM payload.
 // Importing it after a large ArrayBuffer message can stall Chromium workers.
-importScripts('openswmm2d.js?v=17');
+importScripts('openswmm2d.js?v=19');
 
 let modulePromise = null;
 
@@ -112,15 +112,11 @@ function readFrame(Module, api, engine, count, elapsedMs) {
         check(api.depths(engine, depthPtr), 'Reading 2D depths');
         check(api.heads(engine, headPtr), 'Reading 2D heads');
         check(api.maxVelocities(engine, velocityPtr), 'Reading 2D velocities');
-        const readValues = pointer => Array.from(
-            { length: count },
-            (_, index) => Module.getValue(pointer + index * Float64Array.BYTES_PER_ELEMENT, 'double')
-        );
         return {
             elapsedMs,
-            depth: readValues(depthPtr),
-            head: readValues(headPtr),
-            velocity: readValues(velocityPtr)
+            depth: Array.from(new Float64Array(Module.HEAPF64.buffer, depthPtr, count)),
+            head: Array.from(new Float64Array(Module.HEAPF64.buffer, headPtr, count)),
+            velocity: Array.from(new Float64Array(Module.HEAPF64.buffer, velocityPtr, count))
         };
     } finally {
         Module._free(depthPtr);
@@ -187,8 +183,13 @@ async function run(payload) {
         const count = Module.getValue(countPtr, 'i32');
         Module._free(countPtr);
         if (count <= 0) throw new Error('OpenSWMM loaded no 2D triangles from the generated input.');
+        if (payload.triangleIds && count !== payload.triangleIds.length) {
+            throw new Error(`2D engine cell count (${count}) does not match mesh triangle count (${payload.triangleIds.length}).`);
+        }
 
         let elapsedDays = 0;
+        let iteration = 0;
+        const MAX_ITERATIONS = 10000000;
         do {
             check(api.stride(engine, stepsPerYield, elapsedPtr), 'Advancing the 1D-2D model');
             elapsedDays = Module.getValue(elapsedPtr, 'double');
@@ -197,6 +198,10 @@ async function run(payload) {
                 frames.push(readFrame(Module, api, engine, count, elapsedMs));
                 nextFrameMs = elapsedMs + frameIntervalMs;
                 self.postMessage({ type: 'progress2d', elapsedMs });
+            }
+            iteration++;
+            if (iteration > MAX_ITERATIONS) {
+                throw new Error('2D simulation exceeded maximum iteration safety limit.');
             }
         } while (elapsedDays > 0);
 

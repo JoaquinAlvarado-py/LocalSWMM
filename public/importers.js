@@ -98,18 +98,27 @@
             return id;
         }
 
+        function sanitizeSwmmId(val) {
+            if (!val) return '';
+            return String(val)
+                .replace(/[;\r\n\[\]"']/g, '')
+                .replace(/\s+/g, '_')
+                .slice(0, 64);
+        }
+
         (geojson.features || []).forEach(f => {
             const g = f.geometry;
             if (!g) return;
             const props = f.properties || {};
-            const name = props.name || props.Name || props.ID || props.id || null;
+            const rawName = props.name || props.Name || props.ID || props.id || null;
+            const cleanName = sanitizeSwmmId(rawName);
 
             const addLine = (coords) => {
                 if (coords.length < 2) return;
                 const from = ensureNode(coords[0]);
                 const to = ensureNode(coords[coords.length - 1]);
-                const linkId = name && !usedLinkIds.has(String(name).replace(/\s+/g, '_'))
-                    ? String(name).replace(/\s+/g, '_') : 'IMP_C' + (++li);
+                const linkId = cleanName && !usedLinkIds.has(cleanName)
+                    ? cleanName : 'IMP_C' + (++li);
                 usedLinkIds.add(linkId);
                 model.links.push({
                     id: linkId,
@@ -130,8 +139,8 @@
                 // drop closing dup
                 const open = [...ring];
                 if (open.length > 3 && nodeKey(open[0]) === nodeKey(open[open.length - 1])) open.pop();
-                const subId = name && !usedSubIds.has(String(name).replace(/\s+/g, '_'))
-                    ? String(name).replace(/\s+/g, '_') : 'IMP_S' + (++si);
+                const subId = cleanName && !usedSubIds.has(cleanName)
+                    ? cleanName : 'IMP_S' + (++si);
                 usedSubIds.add(subId);
                 model.subcatchments.push({
                     id: subId,
