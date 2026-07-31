@@ -69,6 +69,17 @@
                     Run
                 </button>
                 <button id="btn-clear" class="tb-btn">Clear</button>
+                <div class="tb-separator"></div>
+                <div class="tb-dropdown">
+                    <button id="btn-data-menu" class="tb-btn">Data <span class="caret">▾</span></button>
+                    <div class="tb-dropdown-menu" id="data-menu" style="left:auto;right:0;min-width:200px;">
+                        <button id="btn-curves" class="tb-menu-item">Curves…</button>
+                        <button id="btn-lid" class="tb-menu-item">LID Controls…</button>
+                        <button id="btn-quality" class="tb-menu-item">Water Quality…</button>
+                        <button id="btn-aquifer" class="tb-menu-item">Groundwater &amp; Aquifer…</button>
+                        <button id="btn-snowpack" class="tb-menu-item">Snowpack…</button>
+                    </div>
+                </div>
             </div>
         </header>
 
@@ -618,6 +629,11 @@
     <script src="mesh2d.js?v=11"></script>
     <script src="mesh2dInp.js?v=11"></script>
     <script src="landcover.js?v=11"></script>
+    <script src="curves.js?v=11"></script>
+    <script src="lid.js?v=11"></script>
+    <script src="quality.js?v=11"></script>
+    <script src="aquifer.js?v=11"></script>
+    <script src="snowpack.js?v=11"></script>
     <script src="ui.js?v=11"></script>
 </body>
 </html>

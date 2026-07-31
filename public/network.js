@@ -116,13 +116,20 @@
             this.nodes = [];
             this.links = [];
             this.subcatchments = [];
-            this.mesh2D = []; // Added for 2D mesh
+            this.mesh2D = [];
             this.timeseries = {};
             this.options = defaultOptions();
             this.units = 'SI';
             this.title = 'Untitled SWMM Project';
             this.counters = {};
             this.rawSections = {};
+            this.curves = [];
+            this.lidControls = [];
+            this.pollutants = [];
+            this.landUses = [];
+            this.treatments = [];
+            this.aquifers = [];
+            this.snowpacks = [];
             this.rebuildIndexes();
             if (notify) this.emit('bulk');
         }
@@ -441,7 +448,7 @@
         // ---------- undo / redo (command pattern with checkpoints) ----------
         serialize() {
             return {
-                version: 1,
+                version: 2,
                 title: this.title,
                 units: this.units,
                 options: this.options,
@@ -449,9 +456,16 @@
                 nodes: this.nodes,
                 links: this.links,
                 subcatchments: this.subcatchments,
-                mesh2D: this.mesh2D, // Added for 2D mesh
+                mesh2D: this.mesh2D,
                 timeseries: this.timeseries,
-                rawSections: this.rawSections
+                rawSections: this.rawSections,
+                curves: this.curves,
+                lidControls: this.lidControls,
+                pollutants: this.pollutants,
+                landUses: this.landUses,
+                treatments: this.treatments,
+                aquifers: this.aquifers,
+                snowpacks: this.snowpacks
             };
         }
 
@@ -463,9 +477,16 @@
             this.nodes = state.nodes || [];
             this.links = state.links || [];
             this.subcatchments = state.subcatchments || [];
-            this.mesh2D = state.mesh2D || []; // Added for 2D mesh
+            this.mesh2D = state.mesh2D || [];
             this.timeseries = state.timeseries || {};
             this.rawSections = state.rawSections || {};
+            this.curves = state.curves || [];
+            this.lidControls = state.lidControls || [];
+            this.pollutants = state.pollutants || [];
+            this.landUses = state.landUses || [];
+            this.treatments = state.treatments || [];
+            this.aquifers = state.aquifers || [];
+            this.snowpacks = state.snowpacks || [];
             this.rebuildIndexes();
             if (resetHistory) {
                 this.history = [{ t: 'snap', json: JSON.stringify(this.serialize()) }];
