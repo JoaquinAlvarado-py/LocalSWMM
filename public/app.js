@@ -289,7 +289,7 @@
         if (Net.getNode(id)) return 'swmm-nodes';
         if (Net.getLink(id)) return 'swmm-links';
         if (Net.getSubcatchment(id)) return 'swmm-subcatchments';
-        if (Net.mesh2D && Net.mesh2D.find(m => m.id === id)) return 'swmm-2d-mesh';
+        if (Net._meshCell(id)) return 'swmm-2d-mesh';
         return null;
     }
 
@@ -1091,7 +1091,7 @@
             throw new Error(`2D result array length (${finalFrame.depth.length}) does not match triangle IDs count (${ids.length}).`);
         }
         ids.forEach((id, index) => {
-            const cell = Net.mesh2D.find(candidate => candidate.id === id);
+            const cell = Net._meshCell(id);
             if (!cell) return;
             cell.props ||= {};
             const d = finalFrame.depth[index];
