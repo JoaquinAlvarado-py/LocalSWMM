@@ -176,21 +176,33 @@
             return id;
         }
 
+        // O(1) mesh-cell lookup by id. mesh2D has no incremental index like
+        // _nodeMap/_linkMap/_subMap because mesh generation mutates the array
+        // directly (mesh2d.js pushes/clears without rebuildIndexes), so the map
+        // is rebuilt lazily and only when the array identity or length changed —
+        // cells are only ever pushed or cleared, never replaced in place by id.
+        _meshCell(id) {
+            const mesh = this.mesh2D || [];
+            if (!this._meshMap || this._meshMapSrc !== mesh || this._meshMap.size !== mesh.length) {
+                this._meshMap = new Map(mesh.map(c => [c.id, c]));
+                this._meshMapSrc = mesh;
+            }
+            return this._meshMap.get(id);
+        }
+
         findAny(id) {
             if (!id) return null;
             let el = this._nodeMap.get(id) || this._linkMap.get(id) || this._subMap.get(id);
             if (el) return el;
-            if (this.mesh2D) {
-                const cell = this.mesh2D.find(m => m.id === id);
-                if (cell) {
-                    cell.type = 'MESH2D';
-                    cell.props ||= {
-                        parentSubcatch: cell.parentSubcatch || '',
-                        landCoverClass: cell.landCoverClass || 0,
-                        manningN: cell.manningN || 0.10
-                    };
-                    return cell;
-                }
+            const cell = this._meshCell(id);
+            if (cell) {
+                cell.type = 'MESH2D';
+                cell.props ||= {
+                    parentSubcatch: cell.parentSubcatch || '',
+                    landCoverClass: cell.landCoverClass || 0,
+                    manningN: cell.manningN || 0.10
+                };
+                return cell;
             }
             return null;
         }
