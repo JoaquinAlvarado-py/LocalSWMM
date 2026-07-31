@@ -18,7 +18,8 @@
 
     const ID_PREFIX = {
         JUNCTION: 'J', OUTFALL: 'O', STORAGE: 'ST', DIVIDER: 'D', RAINGAGE: 'RG',
-        CONDUIT: 'C', PUMP: 'P', WEIR: 'W', ORIFICE: 'OR', OUTLET: 'OL', SUBCATCHMENT: 'S'
+        CONDUIT: 'C', PUMP: 'P', WEIR: 'W', ORIFICE: 'OR', OUTLET: 'OL', SUBCATCHMENT: 'S',
+        MESH2D: 'M2D_'
     };
 
     const HISTORY_LIMIT = 100;
