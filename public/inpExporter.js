@@ -1,4 +1,4 @@
-// inpExporter.js — Generate a SWMM .inp file from the Network model
+﻿// inpExporter.js â€” Generate a SWMM .inp file from the Network model
 
 class InpExporter {
 
@@ -6,7 +6,7 @@ class InpExporter {
 
     generateInp(net) {
         const opt = net.options || {};
-        // Keep the imported flow unit (CMS ≠ LPS: DWF baselines etc. scale
+        // Keep the imported flow unit (CMS â‰  LPS: DWF baselines etc. scale
         // with it) unless the UI unit system no longer matches it.
         const impliedUS = ['CFS', 'GPM', 'MGD'].includes((opt.flowUnits || '').toUpperCase());
         const units = opt.flowUnits && ((net.units === 'US') === impliedUS)
@@ -19,9 +19,9 @@ class InpExporter {
         const needDefaultGage = !gages.length && net.subcatchments.length > 0;
         
         // Options precedence: value edited in the UI (structured opt.* field)
-        // → value imported with the model (opt.raw) → app default. Without the
+        // â†’ value imported with the model (opt.raw) â†’ app default. Without the
         // raw layer, imported models silently ran with different numerics
-        // (ALLOW_PONDING, FORCE_MAIN_EQUATION, MAX_TRIALS, HEAD_TOLERANCE, …).
+        // (ALLOW_PONDING, FORCE_MAIN_EQUATION, MAX_TRIALS, HEAD_TOLERANCE, â€¦).
         const raw = opt.raw || {};
         const rawOr = (key, dflt) => raw[key] !== undefined ? raw[key] : dflt;
 
@@ -87,7 +87,7 @@ class InpExporter {
         if (opt.nodeContinuity) emitOpt('NODE_CONTINUITY', opt.nodeContinuity);
         if (opt.andersonAccel) emitOpt('ANDERSON_ACCEL', opt.andersonAccel);
         // engine options the app has no field for (MINIMUM_STEP, THREADS,
-        // RULE_STEP, SURCHARGE_METHOD, …) pass through unchanged
+        // RULE_STEP, SURCHARGE_METHOD, â€¦) pass through unchanged
         for (const [key, value] of Object.entries(raw)) {
             if (!emitted.has(key)) emitOpt(key, value);
         }
@@ -456,6 +456,124 @@ class InpExporter {
             L.push('');
         }
 
+        // --- Curves ---
+        if (net.curves && net.curves.length > 0) {
+            L.push('[CURVES]');
+            L.push(';;Name              Type');
+            net.curves.forEach(c => L.push(c.id.padEnd(18) + ' ' + c.type));
+            L.push('');
+            net.curves.forEach(c => {
+                L.push(';; ' + c.id + (c.description ? ' - ' + c.description : ''));
+                L.push(';;X                Y');
+                c.data.forEach(pt => L.push(' ' + pt.x.toFixed(6).toString().padStart(15) + ' ' + pt.y.toFixed(6).toString().padStart(15)));
+                L.push('');
+            });
+        }
+
+        // --- LID Controls ---
+        if (net.lidControls && net.lidControls.length > 0) {
+            L.push('[LID_CONTROLS]');
+            L.push(';;Name              Type');
+            net.lidControls.forEach(lid => L.push(lid.id.padEnd(18) + ' ' + lid.type));
+            L.push('');
+            net.lidControls.forEach(lid => {
+                L.push(lid.id.padEnd(18) + ' SURFACE');
+                L.push(''.padEnd(6) + String(lid.surface.bermHt).padStart(10) + String(lid.surface.vegVolFrac).padStart(10) + String(lid.surface.roughness).padStart(10) + String(lid.surface.surfaceSlope).padStart(10) + String(lid.surface.swaleSideSlope).padStart(10));
+                L.push(lid.id.padEnd(18) + ' SOIL');
+                L.push(''.padEnd(6) + String(lid.soil.thickness).padStart(10) + String(lid.soil.porosity).padStart(10) + String(lid.soil.fieldCapacity).padStart(10) + String(lid.soil.wiltingPoint).padStart(10) + String(lid.soil.conductivity).padStart(10) + String(lid.soil.conductivitySlope).padStart(10) + String(lid.soil.suctionHead).padStart(10));
+                L.push(lid.id.padEnd(18) + ' STORAGE');
+                L.push(''.padEnd(6) + String(lid.storage.thickness).padStart(10) + String(lid.storage.voidRatio).padStart(10) + String(lid.storage.seepageRate).padStart(10) + String(lid.storage.clogFactor).padStart(10));
+                L.push(lid.id.padEnd(18) + ' DRAIN');
+                L.push(''.padEnd(6) + String(lid.drain.flowCoeff).padStart(10) + String(lid.drain.flowExpon).padStart(10) + String(lid.drain.offsetHeight).padStart(10) + String(lid.drain.delay).padStart(10) + String(lid.drain.headLevel).padStart(10));
+                if (lid.drainmat.thickness > 0) {
+                    L.push(lid.id.padEnd(18) + ' DRAINMAT');
+                    L.push(''.padEnd(6) + String(lid.drainmat.thickness).padStart(10) + String(lid.drainmat.voidFrac).padStart(10) + String(lid.drainmat.roughness).padStart(10));
+                }
+                L.push('');
+            });
+        }
+
+        // --- LID Usage ---
+        if (net.subcatchments) {
+            let hasLidUsage = false;
+            net.subcatchments.forEach(sub => {
+                if (sub.lidUsages && sub.lidUsages.length > 0) {
+                    if (!hasLidUsage) { L.push('[LID_USAGE]'); L.push(';;Subcatchment     LID Control     Number  Area    Width   InitSat FromImp ToPerv'); hasLidUsage = true; }
+                    sub.lidUsages.forEach(u => L.push(sub.id.padEnd(16) + ' ' + u.lidControl.padEnd(16) + ' ' + String(u.number).padStart(7) + ' ' + String(u.area).padStart(7) + ' ' + String(u.width).padStart(7) + ' ' + String(u.initSat).padStart(7) + ' ' + String(u.fromImp).padStart(7) + ' ' + String(u.toPerv).padStart(7)));
+                }
+            });
+            if (hasLidUsage) L.push('');
+        }
+
+        // --- Pollutants ---
+        if (net.pollutants && net.pollutants.length > 0) {
+            L.push('[POLLUTANTS]');
+            L.push(';;Name              Units    Rain    GW      I&I     Decay   SnowOnly CoPollutant CoFrac');
+            net.pollutants.forEach(p => L.push((p.name||p.id).padEnd(18) + ' ' + p.units.padEnd(8) + ' ' + String(p.rainConcentration).padStart(7) + ' ' + String(p.gwConcentration).padStart(7) + ' ' + String(p.iiConcentration).padStart(7) + ' ' + String(p.decayCoeff).padStart(7) + ' ' + (p.snowOnly?'*':'-').padEnd(9) + ' ' + (p.coPollutant||'*').padEnd(12) + ' ' + String(p.coFraction).padStart(7)));
+            L.push('');
+        }
+        // --- Land Uses, Buildup, Washoff ---
+        if (net.landUses && net.landUses.length > 0) {
+            L.push('[LANDUSES]');
+            L.push(';;Name              Description');
+            net.landUses.forEach(lu => L.push((lu.name||lu.id).padEnd(18) + ' ' + (lu.description||'')));
+            L.push('');
+            L.push('[BUILDUP]');
+            L.push(';;LandUse           Pollutant        Type        C1      C2      C3     PerUnit');
+            net.landUses.forEach(lu => { lu.buildup.forEach(b => {
+                const pn = b.pollutant ? (net.pollutants?(net.pollutants.find(p=>p.id===b.pollutant)?.name||b.pollutant):b.pollutant) : '*';
+                L.push((lu.name||lu.id).padEnd(18) + ' ' + pn.padEnd(18) + ' ' + (b.type||'NONE').padEnd(12) + ' ' + String(b.coeff1||0).padStart(7) + ' ' + String(b.coeff2||0).padStart(7) + ' ' + String(b.coeff3||0).padStart(7) + ' ' + (b.perUnitArea!==false?'AREA':'CURB'));
+            });});
+            L.push('');
+            L.push('[WASHOFF]');
+            L.push(';;LandUse           Pollutant        Type        C1      C2      C3     BMP');
+            net.landUses.forEach(lu => { lu.washoff.forEach(w => {
+                const pn = w.pollutant ? (net.pollutants?(net.pollutants.find(p=>p.id===w.pollutant)?.name||w.pollutant):w.pollutant) : '*';
+                L.push((lu.name||lu.id).padEnd(18) + ' ' + pn.padEnd(18) + ' ' + (w.type||'EXPONENTIAL').padEnd(12) + ' ' + String(w.coeff1||0).padStart(7) + ' ' + String(w.coeff2||0).padStart(7) + ' ' + String(w.coeff3||0).padStart(7) + ' ' + String(w.bmpRemoval||0).padStart(7));
+            });});
+            L.push('');
+        }
+        // --- Treatment ---
+        if (net.treatments && net.treatments.length > 0) {
+            L.push('[TREATMENT]');
+            L.push(';;Node              Pollutant        Function');
+            net.treatments.forEach(t => L.push(t.node.padEnd(18) + ' ' + t.pollutant.padEnd(18) + ' ' + (t.function||'')));
+            L.push('');
+        }
+        // --- Aquifers ---
+        if (net.aquifers && net.aquifers.length > 0) {
+            L.push('[AQUIFERS]');
+            L.push(';;Name              Poros   WP      FC      K       Ks      Tslope  UEvap   LEvap   BtmEl   WtEl    UZones  EvFrac  ETUD    ETLD    ETLF');
+            net.aquifers.forEach(a => L.push((a.name||a.id).padEnd(18) + ' ' + String(a.porosity).padStart(7) + ' ' + String(a.wiltingPoint).padStart(7) + ' ' + String(a.fieldCapacity).padStart(7) + ' ' + String(a.conductivity).padStart(7) + ' ' + String(a.conductivitySlope).padStart(7) + ' ' + String(a.tensionSlope).padStart(7) + ' ' + String(a.upperEvapFrac).padStart(7) + ' ' + String(a.lowerEvapDepth).padStart(7) + ' ' + String(a.bottomElevation).padStart(7) + ' ' + String(a.waterTableElevation).padStart(7) + ' ' + String(a.unsaturatedZone).padStart(7) + ' ' + String(a.evapSurfaceFrac).padStart(7) + ' ' + String(a.etUpperDepth).padStart(7) + ' ' + String(a.etLowerDepth).padStart(7) + ' ' + String(a.etLowerFrac).padStart(7)));
+            L.push('');
+        }
+        // --- Groundwater ---
+        if (net.subcatchments) {
+            let hasGW = false;
+            net.subcatchments.forEach(sub => {
+                if (sub.groundwater) {
+                    if (!hasGW) { L.push('[GROUNDWATER]'); L.push(';;Subcatchment     Aquifer          Node            SurfEl    GWEl     BtmEl    Ksat     A1      B1      A2      B2      A3      TW'); hasGW = true; }
+                    const gw = sub.groundwater;
+                    L.push(sub.id.padEnd(16) + ' ' + (gw.aquifer||'*').padEnd(16) + ' ' + (gw.node||'*').padEnd(16) + ' ' + String(gw.surfaceElevation||0).padStart(9) + ' ' + String(gw.gwElevation||0).padStart(9) + ' ' + String(gw.bottomElevation||0).padStart(9) + ' ' + String(gw.ksat||0).padStart(9) + ' ' + String(gw.a1||0).padStart(7) + ' ' + String(gw.b1||0).padStart(7) + ' ' + String(gw.a2||0).padStart(7) + ' ' + String(gw.b2||0).padStart(7) + ' ' + String(gw.a3||0).padStart(7) + ' ' + String(gw.tw||0).padStart(7));
+                }
+            });
+            if (hasGW) L.push('');
+        }
+        // --- Snowpacks ---
+        if (net.snowpacks && net.snowpacks.length > 0) {
+            L.push('[SNOWPACKS]');
+            L.push(';;Name              MinMelt MaxMelt BaseTemp FracRiv SnowDpth SnowTemp SnowDens Albedo  Sublim  ATISnow ATIRain ATI     ColdCnt');
+            net.snowpacks.forEach(s => L.push((s.name||s.id).padEnd(18) + ' ' + String(s.minMeltCoeff).padStart(8) + ' ' + String(s.maxMeltCoeff).padStart(8) + ' ' + String(s.baseTemp).padStart(8) + ' ' + String(s.fracRiv).padStart(8) + ' ' + String(s.snowDepth).padStart(8) + ' ' + String(s.snowTemp).padStart(8) + ' ' + String(s.snowDensity).padStart(8) + ' ' + String(s.albedo).padStart(8) + ' ' + String(s.sublimation).padStart(8) + ' ' + String(s.atiSnow).padStart(8) + ' ' + String(s.atiRain).padStart(8) + ' ' + String(s.antecedentTempIndex).padStart(8) + ' ' + String(s.coldContent).padStart(8)));
+            L.push('');
+            let hasSnow = false;
+            net.subcatchments.forEach(sub => {
+                if (sub.snowpackId) {
+                    if (!hasSnow) { L.push('[SNOWPACK_ASSIGNMENT]'); L.push(';;Subcatchment     Snowpack'); hasSnow = true; }
+                    L.push(sub.id.padEnd(16) + ' ' + sub.snowpackId.padEnd(16));
+                }
+            });
+            if (hasSnow) L.push('');
+        }
         // --- Append any raw sections that we did not parse explicitly ---
         if (net.rawSections) {
             const handledSections = new Set([
@@ -463,7 +581,7 @@ class InpExporter {
                 'JUNCTIONS', 'OUTFALLS', 'STORAGE',
                 'DIVIDERS', 'CONDUITS', 'PUMPS', 'WEIRS', 'ORIFICES', 'OUTLETS', 'XSECTIONS', 'LOSSES', 'TAGS',
                 'COORDINATES', 'VERTICES', 'POLYGONS', 'SYMBOLS', 'REPORT', 'TIMESERIES',
-                '2D_VERTICES', '2D_CELLS'
+                '2D_VERTICES', '2D_CELLS', '2D_OPTIONS', '2D_TRIANGLES','CURVES', 'LID_CONTROLS', 'LID_USAGE','POLLUTANTS', 'LANDUSES', 'BUILDUP', 'WASHOFF', 'TREATMENT','AQUIFERS', 'GROUNDWATER', 'SNOWPACKS', 'SNOWPACK_ASSIGNMENT'
             ]);
             for (const [secName, lines] of Object.entries(net.rawSections)) {
                 if (!handledSections.has(secName)) {
@@ -491,3 +609,4 @@ class InpExporter {
 
 window.InpExporter = InpExporter;
 window.inpExporter = new InpExporter();
+
