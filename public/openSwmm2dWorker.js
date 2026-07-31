@@ -92,6 +92,7 @@ function bindApi(Module) {
         heads: Module.cwrap('swmm_2d_get_heads_bulk', 'number', ['number', 'number']),
         maxVelocities: Module.cwrap('swmm_2d_get_stat_max_velocities', 'number', ['number', 'number']),
         continuityError: Module.cwrap('swmm_2d_get_continuity_error', 'number', ['number', 'number']),
+        solverSteps: Module.cwrap('swmm_2d_get_solver_steps', 'number', ['number', 'number']),
         cvodeSteps: Module.cwrap('swmm_2d_get_cvode_steps', 'number', ['number', 'number']),
         massBalance: Module.cwrap('swmm_2d_get_mass_balance', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'])
     };
@@ -134,7 +135,8 @@ function readDiagnostics(Module, api, engine) {
     try {
         const massCode = api.massBalance(engine, ...values.slice(0, 10));
         const continuityCode = api.continuityError(engine, values[10]);
-        const stepsCode = api.cvodeSteps(engine, stepsPtr);
+        const getSteps = api.solverSteps || api.cvodeSteps;
+        const stepsCode = getSteps ? getSteps(engine, stepsPtr) : -1;
         const value = pointer => Module.getValue(pointer, 'double');
         return {
             massBalance: massCode === 0 ? {
