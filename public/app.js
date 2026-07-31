@@ -668,6 +668,7 @@
         model.nodes.forEach(n => { n.lngLat = fn(n.lngLat); });
         model.links.forEach(l => { l.vertices = (l.vertices || []).map(fn); });
         model.subcatchments.forEach(s => { s.ring = s.ring.map(fn); });
+        (model.mesh2D || []).forEach(m => { m.ring = (m.ring || []).map(fn); });
     }
 
     function normalizeLocalCoords(model) {
@@ -681,6 +682,7 @@
         };
         model.nodes.forEach(n => scan(n.lngLat));
         model.subcatchments.forEach(s => s.ring.forEach(scan));
+        (model.mesh2D || []).forEach(m => (m.ring || []).forEach(scan));
         if (!isFinite(minX)) return;
 
         const center = map.getCenter();
@@ -722,6 +724,10 @@
                 nodes: model.nodes || [],
                 links: model.links || [],
                 subcatchments: model.subcatchments || [],
+                // loadState() resets mesh2D from the state it is given, so
+                // omitting this both dropped an imported [2D_CELLS] mesh and
+                // wiped whatever mesh was already loaded
+                mesh2D: model.mesh2D || [],
                 timeseries: model.timeseries || {},
                 rawSections: model.rawSections || {}
             };
@@ -743,6 +749,10 @@
                 if (Net.findAny(s.id)) s.id = Net.nextId('SUBCATCHMENT');
                 Net.subcatchments.push(s);
                 Net._subMap.set(s.id, s);
+            });
+            (model.mesh2D || []).forEach(m => {
+                if (Net.findAny(m.id)) m.id = Net.nextId('MESH2D');
+                Net.mesh2D.push(m);
             });
             if (model.timeseries) {
                 Net.timeseries = Object.assign({}, Net.timeseries, model.timeseries);
