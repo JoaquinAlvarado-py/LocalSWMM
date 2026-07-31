@@ -57,10 +57,8 @@ emcmake cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
 
 cmake --build "$BUILD" --target openswmm2d_wasm --parallel
 
-if [ ! -f "$ROOT/public/openswmm2d.wasm" ]; then
-    echo "Error: The build finished without producing public/openswmm2d.wasm."
-    exit 1
-fi
+cp -f "$ROOT/public/openswmm2d.wasm" "$ROOT/public/swmm6wasm.wasm"
+cp -f "$ROOT/public/openswmm2d.js" "$ROOT/public/swmm6wasm.js"
 
 ENGINE_COMMIT=$(git -C "$SOURCE" rev-parse HEAD || echo "unknown")
 ENGINE_DESCRIBE=$(git -C "$SOURCE" describe --always --dirty --tags 2>/dev/null || echo "$ENGINE_COMMIT")
@@ -74,5 +72,14 @@ cat <<EOF > "$ROOT/public/openswmm2d.version.json"
 }
 EOF
 
-echo "Built public/openswmm2d.js and public/openswmm2d.wasm"
+cat <<EOF > "$ROOT/public/swmm6wasm.version.json"
+{
+  "engineCommit": "$ENGINE_COMMIT",
+  "engineDescribe": "$ENGINE_DESCRIBE",
+  "builtAtUtc": "$DATE_NOW"
+}
+EOF
+
+echo "Built public/openswmm2d.js, public/openswmm2d.wasm, public/swmm6wasm.js, public/swmm6wasm.wasm"
 echo "Engine source: $ENGINE_DESCRIBE ($ENGINE_COMMIT)"
+

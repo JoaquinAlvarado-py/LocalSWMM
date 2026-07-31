@@ -42,9 +42,11 @@ async function createEngine() {
         print: (text) => self.postMessage({ type: 'log', text }),
         printErr: (text) => self.postMessage({ type: 'err', text })
     };
+    const factory = (typeof createModule === 'function') ? createModule : (typeof createOpenSwmm2D === 'function' ? createOpenSwmm2D : null);
+    if (!factory) throw new Error('No WASM module factory function found.');
     try {
         const wasmModule = await getCompiledWasm();
-        return await createModule({
+        return await factory({
             ...opts,
             instantiateWasm: (imports, onSuccess) => {
                 WebAssembly.instantiate(wasmModule, imports)
@@ -56,7 +58,7 @@ async function createEngine() {
     } catch (e) {
         // glue without instantiateWasm support, or compile failure — let
         // Emscripten fetch and instantiate the binary itself
-        return createModule(opts);
+        return factory(opts);
     }
 }
 
@@ -143,8 +145,33 @@ self.onmessage = async (e) => {
 
         try {
             let ran = false;
-            // Try callMain first since it's the standard Emscripten way now
-            if (typeof Module.callMain === 'function') {
+            let hasEngineCreate = false;
+            try { hasEngineCreate = typeof Module._swmm_engine_create === 'function' || typeof Module.cwrap === 'function'; } catch (err) { }
+            if (hasEngineCreate && typeof Module.cwrap === 'function') {
+                const create = Module.cwrap('swmm_engine_create', 'number', []);
+                const open = Module.cwrap('swmm_engine_open', 'number', ['number', 'string', 'string', 'string', 'number']);
+                const initialize = Module.cwrap('swmm_engine_initialize', 'number', ['number']);
+                const start = Module.cwrap('swmm_engine_start', 'number', ['number', 'number']);
+                const stride = Module.cwrap('swmm_engine_stride', 'number', ['number', 'number', 'number']);
+                const end = Module.cwrap('swmm_engine_end', 'number', ['number']);
+                const report = Module.cwrap('swmm_engine_report', 'number', ['number']);
+                const close = Module.cwrap('swmm_engine_close', 'number', ['number']);
+                const destroy = Module.cwrap('swmm_engine_destroy', null, ['number']);
+
+                const engine = create();
+                const openRes = open(engine, '/in.inp', '/rpt.rpt', '/out.out', 0);
+                if (openRes !== 0) throw new Error('SWMM engine open failed with status code ' + openRes);
+                initialize(engine);
+                start(engine, 1);
+                const elapsedPtr = Module._malloc(8);
+                stride(engine, 10000000, elapsedPtr);
+                if (typeof Module._free === 'function') Module._free(elapsedPtr);
+                end(engine);
+                report(engine);
+                close(engine);
+                destroy(engine);
+                ran = true;
+            } else if (typeof Module.callMain === 'function') {
                 Module.callMain(['/in.inp', '/rpt.rpt', '/out.out']);
                 ran = true;
             } else {
