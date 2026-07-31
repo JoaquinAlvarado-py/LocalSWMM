@@ -64,39 +64,6 @@ async function createEngine() {
 
 let busy = false;
 
-function parseSimDurationInDays(inpText) {
-    let startDateStr = '01/01/2000', startTimeStr = '00:00:00';
-    let endDateStr = '01/02/2000', endTimeStr = '00:00:00';
-
-    const lines = inpText.split(/\r?\n/);
-    let inOptions = false;
-    for (let line of lines) {
-        let clean = line.replace(/;.*$/, '').trim();
-        if (clean.startsWith('[') && clean.endsWith(']')) {
-            inOptions = (clean.toUpperCase() === '[OPTIONS]');
-            continue;
-        }
-        if (inOptions && clean) {
-            const parts = clean.split(/\s+/);
-            const key = (parts[0] || '').toUpperCase();
-            const val = parts.slice(1).join(' ');
-            if (key === 'START_DATE') startDateStr = val;
-            if (key === 'START_TIME') startTimeStr = val;
-            if (key === 'END_DATE') endDateStr = val;
-            if (key === 'END_TIME') endTimeStr = val;
-        }
-    }
-
-    try {
-        const startMs = Date.parse(`${startDateStr} ${startTimeStr}`);
-        const endMs = Date.parse(`${endDateStr} ${endTimeStr}`);
-        if (!isNaN(startMs) && !isNaN(endMs) && endMs > startMs) {
-            return (endMs - startMs) / (1000 * 60 * 60 * 24); // days
-        }
-    } catch (e) { }
-    return 1.0; // fallback 1 day
-}
-
 self.onmessage = async (e) => {
     const msg = e.data || {};
     if (msg.type !== 'run') return;
@@ -105,33 +72,13 @@ self.onmessage = async (e) => {
         return;
     }
     busy = true;
-    let progressTimer = null;
 
     try {
-        const totalDays = parseSimDurationInDays(msg.inpText || '');
-        const targetDurationMs = msg.targetDurationMs || 2500;
-        const simStartTime = Date.now();
-
-        // Start progress ticker to post real progress updates to the UI
-        progressTimer = setInterval(() => {
-            const elapsedMs = Date.now() - simStartTime;
-            const frac = Math.min(0.99, elapsedMs / targetDurationMs);
-            const percent = Math.floor(frac * 100);
-            const currDaysFraction = frac * totalDays;
-            const days = Math.floor(currDaysFraction);
-            const remainingHoursFrac = (currDaysFraction - days) * 24;
-            const hours = Math.floor(remainingHoursFrac);
-            const minutes = Math.floor((remainingHoursFrac - hours) * 60);
-            const hrsMinStr = String(hours).padStart(2, '0') + ':' + String(minutes).padStart(2, '0');
-
-            self.postMessage({
-                type: 'progress',
-                percent,
-                days,
-                hrsMin: hrsMinStr
-            });
-        }, 80);
-
+        // No progress ticker here: the engine runs as a single blocking
+        // stride()/callMain and reports nothing incremental, and app.js drives
+        // the UI progress bar from its own timer while explicitly ignoring any
+        // 'progress' message from this worker. So we post only
+        // ready/log/err/done/error.
         const Module = await createEngine();
         Module.FS.writeFile('/in.inp', msg.inpText);
 
@@ -202,16 +149,6 @@ self.onmessage = async (e) => {
             }
         }
 
-        if (progressTimer) clearInterval(progressTimer);
-
-        // Send final 100% progress before completing
-        self.postMessage({
-            type: 'progress',
-            percent: 100,
-            days: Math.floor(totalDays),
-            hrsMin: '23:59'
-        });
-
         let rpt = '';
         try {
             rpt = Module.FS.readFile('/rpt.rpt', { encoding: 'utf8' });
@@ -234,7 +171,6 @@ self.onmessage = async (e) => {
             self.postMessage({ type: 'done', rpt, outBuffer: null });
         }
     } catch (err) {
-        if (progressTimer) clearInterval(progressTimer);
         busy = false;
         self.postMessage({ type: 'error', message: err.message || String(err) });
     }
