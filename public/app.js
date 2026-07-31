@@ -695,6 +695,16 @@
     }
 
     async function applyProjectionAndLoad(model, coordType, epsgCode) {
+        // proj4 comes from a CDN. When it fails to load (CSP, offline, blocker)
+        // projected coordinates used to fall through untransformed, dropping the
+        // network thousands of km away with nothing shown to the user.
+        if (coordType === 'utm' && !window.proj4) {
+            alert('Cannot reproject: the proj4 library did not load.\n\n' +
+                'Check that https://cdnjs.cloudflare.com is reachable and reload the page, ' +
+                'or re-import using the "Local coordinates" option, which needs no external library.\n\n' +
+                'Import cancelled to avoid placing the network at the wrong location.');
+            return;
+        }
         if (coordType === 'utm' && window.proj4) {
             const projDef = await fetchProjDef(epsgCode);
             if (projDef) proj4.defs(epsgCode, projDef);
