@@ -176,8 +176,16 @@ class InpExporter {
             L.push(';;Name           Elevation  Type       Stage Data       Gated');
             outfalls.forEach(n => {
                 const p = n.props;
-                const stage = (p.outfallType === 'FIXED') ? this.pad(p.stageData || 0, 16) : this.pad('', 16);
-                L.push(`${this.pad(n.id, 16)} ${this.pad(p.invertEl, 10)} ${this.pad(p.outfallType || 'FREE', 10)} ${stage} ${p.gated || 'NO'}`);
+                const type = (p.outfallType || 'FREE').toUpperCase();
+                // FIXED carries a stage elevation, TIDAL a curve name and
+                // TIMESERIES a series name. Leaving the column blank for those
+                // shifts Gated into it, so the boundary condition reads back as
+                // a curve called "NO".
+                const needsStage = type === 'FIXED' || type === 'TIDAL' || type === 'TIMESERIES';
+                const stage = needsStage
+                    ? this.pad(type === 'FIXED' ? (p.stageData ?? 0) : (p.stageData || '*'), 16)
+                    : this.pad('', 16);
+                L.push(`${this.pad(n.id, 16)} ${this.pad(p.invertEl, 10)} ${this.pad(type, 10)} ${stage} ${p.gated || 'NO'}`);
             });
             L.push('');
         }
@@ -246,10 +254,18 @@ class InpExporter {
 
         if (weirs.length) {
             L.push('[WEIRS]');
-            L.push(';;Name           From Node        To Node          Type         CrestHt    Qcoeff     Gated    EndCon   EndCoeff Surcharge');
+            L.push(';;Name           From Node        To Node          Type         CrestHt    Qcoeff     Gated    EndCon   EndCoeff Surcharge  RoadWidth  RoadSurf   CoeffCurve');
             weirs.forEach(l => {
                 const p = l.props;
-                L.push(`${this.pad(l.id, 16)} ${this.pad(l.from, 16)} ${this.pad(l.to, 16)} ${this.pad(p.weirType || 'TRANSVERSE', 12)} ${this.pad(p.crestHt || p.offset || 0, 10)} ${this.pad(p.qCoeff, 10)} ${this.pad(p.gated || 'NO', 8)} ${this.pad(p.endCon ?? 0, 8)} ${this.pad(p.endCoeff ?? 0, 8)} ${p.surcharge || 'YES'}`);
+                const weirType = (p.weirType || 'TRANSVERSE').toUpperCase();
+                // ROADWAY weirs need the road pair, and a coefficient curve can
+                // only be positioned after it
+                let tail = '';
+                if (weirType === 'ROADWAY' || p.coeffCurve) {
+                    tail = ` ${this.pad(p.roadWidth ?? 0, 10)} ${this.pad(p.roadSurface || 'PAVED', 10)}`;
+                    if (p.coeffCurve) tail += ` ${p.coeffCurve}`;
+                }
+                L.push(`${this.pad(l.id, 16)} ${this.pad(l.from, 16)} ${this.pad(l.to, 16)} ${this.pad(weirType, 12)} ${this.pad(p.crestHt || p.offset || 0, 10)} ${this.pad(p.qCoeff, 10)} ${this.pad(p.gated || 'NO', 8)} ${this.pad(p.endCon ?? 0, 8)} ${this.pad(p.endCoeff ?? 0, 8)} ${this.pad(p.surcharge || 'YES', 10)}${tail}`);
             });
             L.push('');
         }
@@ -443,7 +459,7 @@ class InpExporter {
         // --- Append any raw sections that we did not parse explicitly ---
         if (net.rawSections) {
             const handledSections = new Set([
-                'TITLE', 'OPTIONS', 'RAINGAGES', 'SUBCATCHMENTS', 'SUBAREAS', 'INFILTRATION',
+                'TITLE', 'OPTIONS', 'RAINGAGES', 'RDII_DECAY', 'SUBCATCHMENTS', 'SUBAREAS', 'INFILTRATION',
                 'JUNCTIONS', 'OUTFALLS', 'STORAGE',
                 'DIVIDERS', 'CONDUITS', 'PUMPS', 'WEIRS', 'ORIFICES', 'OUTLETS', 'XSECTIONS', 'LOSSES', 'TAGS',
                 'COORDINATES', 'VERTICES', 'POLYGONS', 'SYMBOLS', 'REPORT', 'TIMESERIES',
