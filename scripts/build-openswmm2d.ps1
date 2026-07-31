@@ -71,12 +71,9 @@ $EmscriptenToolchain = Join-Path $LocalEmsdk 'upstream/emscripten/cmake/Modules/
 
 & cmake --build $Build --target openswmm2d_wasm --parallel
 
-if (-not (Test-Path (Join-Path $Root 'public/openswmm2d.wasm'))) {
-    throw 'The build finished without producing public/openswmm2d.wasm.'
-}
+Copy-Item -Force (Join-Path $Root 'public/openswmm2d.wasm') (Join-Path $Root 'public/swmm6wasm.wasm')
+Copy-Item -Force (Join-Path $Root 'public/openswmm2d.js') (Join-Path $Root 'public/swmm6wasm.js')
 
-# Record the exact engine source the .wasm was built from — benchmark numbers
-# are meaningless without the commit SHA (and a dirty flag for local edits).
 $EngineCommit = (& git -C $Source rev-parse HEAD).Trim()
 $EngineDescribe = (& git -C $Source describe --always --dirty --tags 2>$null)
 $Stamp = [ordered]@{
@@ -85,6 +82,8 @@ $Stamp = [ordered]@{
     builtAtUtc     = (Get-Date).ToUniversalTime().ToString('o')
 }
 $Stamp | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $Root 'public/openswmm2d.version.json')
+$Stamp | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $Root 'public/swmm6wasm.version.json')
 
-Write-Host 'Built public/openswmm2d.js and public/openswmm2d.wasm'
+Write-Host 'Built public/openswmm2d.js, public/openswmm2d.wasm, public/swmm6wasm.js, public/swmm6wasm.wasm'
 Write-Host "Engine source: $($Stamp.engineDescribe) ($EngineCommit)"
+
