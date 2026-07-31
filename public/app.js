@@ -882,7 +882,7 @@
     let sim2DWorker = null;
     function getSimWorker() {
         if (!simWorker) {
-            simWorker = new Worker('simWorker.js?v=19');
+            simWorker = new Worker('simWorker.js?v=' + Date.now());
             simWorker.onerror = () => {
                 try { simWorker.terminate(); } catch (e) { }
                 simWorker = null;
@@ -1051,7 +1051,7 @@
             if (sim2DWorker) {
                 try { sim2DWorker.terminate(); } catch (e) { }
             }
-            sim2DWorker = new Worker('openSwmm2dWorker.js?v=19');
+            sim2DWorker = new Worker('openSwmm2dWorker.js?v=' + Date.now());
             let stderrCount = 0;
             sim2DWorker.onmessage = event => {
                 const message = event.data || {};

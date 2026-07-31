@@ -2,7 +2,7 @@
 
 // Load the generated runtime before accepting a transferred WASM payload.
 // Importing it after a large ArrayBuffer message can stall Chromium workers.
-importScripts('openswmm2d.js?v=19');
+importScripts('openswmm2d.js?v=' + Date.now());
 
 let modulePromise = null;
 
@@ -17,7 +17,7 @@ function getModule() {
         self.postMessage({ type: 'status2d', stage: self.pendingWasmBinary ? 'using-transferred-wasm' : 'fetching-wasm' });
         const loadBinary = self.pendingWasmBinary
             ? Promise.resolve(self.pendingWasmBinary)
-            : fetch('openswmm2d.wasm').then(response => {
+            : fetch('openswmm2d.wasm?v=' + Date.now()).then(response => {
                 if (!response.ok) throw new Error(`Could not load openswmm2d.wasm: HTTP ${response.status}`);
                 return response.arrayBuffer();
             });
@@ -98,8 +98,53 @@ function bindApi(Module) {
     };
 }
 
-function check(code, operation) {
-    if (code !== 0) throw new Error(`${operation} failed with OpenSWMM error ${code}.`);
+function check(code, operation, Module, reportPath, payload) {
+    if (code !== 0) {
+        let msg = `${operation} failed with OpenSWMM error ${code}.`;
+        let rptContent = '';
+        if (Module && reportPath) {
+            try {
+                if (Module.FS.analyzePath(reportPath).exists) {
+                    rptContent = Module.FS.readFile(reportPath, { encoding: 'utf8' });
+                }
+            } catch (e) {
+                // ignore
+            }
+        }
+        if (rptContent && rptContent.trim()) {
+            const lines = rptContent.split('\n').map(l => l.trim());
+            const errLines = lines.filter(l => 
+                l.includes('ERROR') || l.includes('error') || l.includes('failed') || 
+                l.includes('invalid') || l.includes('2D') || l.includes('1D') || 
+                l.includes('unknown') || l.includes('Unknown')
+            );
+            if (errLines.length > 0) {
+                msg += `\n\nEngine Error Details:\n- ` + errLines.join('\n- ');
+            } else {
+                msg += `\n\nEngine Report:\n` + rptContent.trim().slice(-1500);
+            }
+            try {
+                self.postMessage({ type: 'stderr', text: `[OpenSWMM 2D Report]\n` + rptContent });
+            } catch (e) {}
+        }
+        if (payload && payload.inp) {
+            try {
+                self.postMessage({ type: 'stderr', text: `[OpenSWMM 2D INP Snippet]\n` + payload.inp.slice(0, 3000) });
+            } catch (e) {}
+        }
+        console.error('OpenSWMM 2D check failed:', msg);
+        if (rptContent) console.error('Full RPT Content:\n', rptContent);
+        if (payload && payload.inp) console.error('Full INP Content:\n', payload.inp);
+        throw new Error(msg);
+    }
+}
+
+function readDoubleArray(Module, ptr, count) {
+    const arr = new Array(count);
+    for (let i = 0; i < count; i++) {
+        arr[i] = Module.getValue(ptr + (i * 8), 'double');
+    }
+    return arr;
 }
 
 function readFrame(Module, api, engine, count, elapsedMs) {
@@ -114,9 +159,9 @@ function readFrame(Module, api, engine, count, elapsedMs) {
         check(api.maxVelocities(engine, velocityPtr), 'Reading 2D velocities');
         return {
             elapsedMs,
-            depth: Array.from(new Float64Array(Module.HEAPF64.buffer, depthPtr, count)),
-            head: Array.from(new Float64Array(Module.HEAPF64.buffer, headPtr, count)),
-            velocity: Array.from(new Float64Array(Module.HEAPF64.buffer, velocityPtr, count))
+            depth: readDoubleArray(Module, depthPtr, count),
+            head: readDoubleArray(Module, headPtr, count),
+            velocity: readDoubleArray(Module, velocityPtr, count)
         };
     } finally {
         Module._free(depthPtr);
@@ -170,16 +215,16 @@ async function run(payload) {
     try {
         Module.FS.writeFile(inputPath, payload.inp);
         self.postMessage({ type: 'status2d', stage: 'input-written' });
-        check(api.open(engine, inputPath, reportPath, outputPath, 0), 'Opening the 1D-2D model');
+        check(api.open(engine, inputPath, reportPath, outputPath, 0), 'Opening the 1D-2D model', Module, reportPath, payload);
         self.postMessage({ type: 'status2d', stage: 'model-opened' });
-        check(api.initialize(engine), 'Initializing the 1D-2D model');
+        check(api.initialize(engine), 'Initializing the 1D-2D model', Module, reportPath, payload);
         self.postMessage({ type: 'status2d', stage: 'model-initialized' });
-        check(api.start(engine, 1), 'Starting the 1D-2D model');
+        check(api.start(engine, 1), 'Starting the 1D-2D model', Module, reportPath, payload);
         self.postMessage({ type: 'status2d', stage: 'model-started' });
         started = true;
 
         const countPtr = Module._malloc(4);
-        check(api.cellCount(engine, countPtr), 'Reading the 2D triangle count');
+        check(api.cellCount(engine, countPtr), 'Reading the 2D triangle count', Module, reportPath, payload);
         const count = Module.getValue(countPtr, 'i32');
         Module._free(countPtr);
         if (count <= 0) throw new Error('OpenSWMM loaded no 2D triangles from the generated input.');
@@ -191,7 +236,7 @@ async function run(payload) {
         let iteration = 0;
         const MAX_ITERATIONS = 10000000;
         do {
-            check(api.stride(engine, stepsPerYield, elapsedPtr), 'Advancing the 1D-2D model');
+            check(api.stride(engine, stepsPerYield, elapsedPtr), 'Advancing the 1D-2D model', Module, reportPath, payload);
             elapsedDays = Module.getValue(elapsedPtr, 'double');
             const elapsedMs = elapsedDays * 86400000;
             if (elapsedMs >= nextFrameMs || elapsedDays <= 0) {
@@ -208,9 +253,9 @@ async function run(payload) {
         const finalFrame = readFrame(Module, api, engine, count, elapsedDays * 86400000);
         if (!frames.length || frames[frames.length - 1].elapsedMs !== finalFrame.elapsedMs) frames.push(finalFrame);
         const diagnostics = readDiagnostics(Module, api, engine);
-        check(api.end(engine), 'Ending the 1D-2D model');
+        check(api.end(engine), 'Ending the 1D-2D model', Module, reportPath, payload);
         started = false;
-        check(api.report(engine), 'Writing the 1D-2D report');
+        check(api.report(engine), 'Writing the 1D-2D report', Module, reportPath, payload);
 
         const report = Module.FS.analyzePath(reportPath).exists ? Module.FS.readFile(reportPath, { encoding: 'utf8' }) : '';
         self.postMessage({

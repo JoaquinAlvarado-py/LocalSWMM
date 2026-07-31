@@ -13,13 +13,13 @@
 
 'use strict';
 
-importScripts('swmm6wasm.js?v=19');
+importScripts('swmm6wasm.js?v=' + Date.now());
 
 let compiledWasmPromise = null;
 function getCompiledWasm() {
     if (!compiledWasmPromise) {
         compiledWasmPromise = (async () => {
-            const resp = await fetch('swmm6wasm.wasm?v=19');
+            const resp = await fetch('swmm6wasm.wasm?v=' + Date.now());
             try {
                 return await WebAssembly.compileStreaming(resp.clone());
             } catch (e) {
