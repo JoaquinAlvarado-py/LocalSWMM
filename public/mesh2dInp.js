@@ -81,11 +81,14 @@
         const mesh = buildMesh(cells, mapInstance);
         if (!mesh.triangles.length) throw new Error('The 2D mesh contains no valid triangles.');
 
-        let inp = String(baseInp || '')
-            .replace(/^(?!;; UNITS: SI \(m\)$)/m, ';; UNITS: SI (m)\n')
-            .replace(/\n\[2D_OPTIONS\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '')
-            .replace(/\n\[2D_VERTICES\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '')
-            .replace(/\n\[2D_TRIANGLES\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '');
+        let inp = String(baseInp || '');
+        if (!/^\s*;;\s*UNITS:\s*SI\s*\(m\)/mi.test(inp)) {
+            inp = ';; UNITS: SI (m)\n' + inp;
+        }
+        inp = inp
+            .replace(/(^|\n)\[2D_OPTIONS\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
+            .replace(/(^|\n)\[2D_VERTICES\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
+            .replace(/(^|\n)\[2D_TRIANGLES\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1');
 
         inp = appendSection(inp, '2D_OPTIONS', [
             `MAX_TIMESTEP         ${finite(options.maxTimestep, 2.0)}`,
@@ -95,7 +98,7 @@
             `CFL_NUMBER           0.8`,
             `H_MOVE               0.001`,
             `FROUDE_MAX           1.0`,
-            `LTS_TIERS            0`
+            `LTS_TIERS            1`
         ]);
 
         inp = appendSection(inp, '2D_VERTICES', [
