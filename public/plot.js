@@ -4,6 +4,12 @@
 (function () {
     'use strict';
 
+    // Escape file-derived strings (element ids, labels) before they go into
+    // innerHTML — same helper as ui.js / results.js.
+    function esc(s) {
+        return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    }
+
     // State
     let activeSeries = []; // [{ id: string, type: string, variable: string, label: string, color: string, unit: string }]
     let timeRange = { startIndex: 0, endIndex: 0, mode: 'elapsed' }; // mode: 'elapsed' | 'datetime'
@@ -292,9 +298,9 @@
 
             item.innerHTML = `
                 <span class="ts-series-color" style="background:${s.color}"></span>
-                <span class="ts-series-type">${s.type}</span>
-                <span class="ts-series-name"><b>${s.id}</b> — ${s.label}</span>
-                <span class="ts-series-unit">${s.unit}</span>
+                <span class="ts-series-type">${esc(s.type)}</span>
+                <span class="ts-series-name"><b>${esc(s.id)}</b> — ${esc(s.label)}</span>
+                <span class="ts-series-unit">${esc(s.unit)}</span>
             `;
             listEl.appendChild(item);
         });
