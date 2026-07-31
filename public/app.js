@@ -778,11 +778,12 @@
     let swmmModulePromise = null;
     function getSwmmModule() {
         if (!swmmModulePromise) {
-            if (typeof createModule === 'undefined') {
-                return Promise.reject(new Error('SWMM WASM engine not found (swmmwasm.js missing).'));
+            const factory = (typeof createModule === 'function') ? createModule : (typeof createOpenSwmm2D === 'function' ? createOpenSwmm2D : null);
+            if (!factory) {
+                return Promise.reject(new Error('SWMM WASM engine not found (swmm6wasm.js missing).'));
             }
             // Pass noInitialRun: true so it doesn't crash trying to call main() on load
-            swmmModulePromise = createModule({
+            swmmModulePromise = factory({
                 noInitialRun: true,
                 print: (text) => console.log('SWMM:', text),
                 printErr: (text) => console.warn('SWMM Err:', text)
