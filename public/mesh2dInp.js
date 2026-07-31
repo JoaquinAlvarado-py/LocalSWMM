@@ -74,6 +74,9 @@
         if (!Array.isArray(cells) || cells.length === 0) {
             throw new Error('Generate a 2D mesh before starting a 2D simulation.');
         }
+        if (options.units === 'US' || /FLOW_UNITS\s+(CFS|GPM|MGD|IMGD|AFD)/i.test(String(baseInp || ''))) {
+            throw new Error('2D simulation currently only supports SI units (meters). Please switch project units to SI.');
+        }
 
         const mesh = buildMesh(cells, mapInstance);
         if (!mesh.triangles.length) throw new Error('The 2D mesh contains no valid triangles.');

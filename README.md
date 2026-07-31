@@ -39,7 +39,7 @@ Follow these steps if you want to start the application on your computer instead
    ```bash
    python server.py
    ```
-5. Open your web browser and go to `http://localhost:8000`.
+5. Open your web browser and go to `http://localhost:8080`.
 
 ## User Interface Overview
 

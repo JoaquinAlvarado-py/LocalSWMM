@@ -17,6 +17,13 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store')
         super().end_headers()
 
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+
     def do_GET(self):
         if self.path == '/api/status':
             self.send_response(200)
@@ -31,12 +38,12 @@ if __name__ == '__main__':
     # Ensure public folder exists
     os.makedirs(PUBLIC_DIR, exist_ok=True)
     
-    print(f"Starting server on http://localhost:{PORT}")
+    print(f"Starting server on http://127.0.0.1:{PORT}")
     print(f"Serving files from: {PUBLIC_DIR}")
     
     socketserver.ThreadingTCPServer.allow_reuse_address = True
     socketserver.ThreadingTCPServer.daemon_threads = True
-    with socketserver.ThreadingTCPServer(("", PORT), CustomHandler) as httpd:
+    with socketserver.ThreadingTCPServer(("127.0.0.1", PORT), CustomHandler) as httpd:
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:

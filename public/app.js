@@ -648,11 +648,16 @@
         if (epsgCode === 'EPSG:25832') {
             return '+proj=utm +zone=32 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs';
         }
-        const code = epsgCode.split(':')[1];
-        if (!code) return null;
+        const code = (epsgCode || '').split(':')[1] || epsgCode;
+        if (!code || !/^\d{4,6}$/.test(code)) return null;
         try {
             const res = await fetch(`https://epsg.io/${code}.proj4`);
-            if (res.ok) return await res.text();
+            if (res.ok) {
+                const text = await res.text();
+                if (text && text.trim().startsWith('+proj=')) {
+                    return text.trim();
+                }
+            }
         } catch (err) {
             console.warn('Failed to fetch proj4 definition', err);
         }
@@ -853,9 +858,10 @@
     // One persistent worker: it fetches + compiles the engine binary once
     // (started at page load, below) and each run only re-instantiates it.
     let simWorker = null;
+    let sim2DWorker = null;
     function getSimWorker() {
         if (!simWorker) {
-            simWorker = new Worker('simWorker.js');
+            simWorker = new Worker('simWorker.js?v=19');
             simWorker.onerror = () => {
                 try { simWorker.terminate(); } catch (e) { }
                 simWorker = null;
@@ -930,6 +936,10 @@
         if (simWorker) {
             try { simWorker.terminate(); } catch (e) { }
             simWorker = null;
+        }
+        if (sim2DWorker) {
+            try { sim2DWorker.terminate(); } catch (e) { }
+            sim2DWorker = null;
         }
         hideRunStatusModals();
         window.hideTopProgress(false);
@@ -1016,13 +1026,13 @@
             .then(r => r.ok ? r.json() : null)
             .then(v => { if (v) console.info('OpenSWMM 2D engine build:', v.engineDescribe || v.engineCommit, '| built', v.builtAtUtc); })
             .catch(() => { });
-        const wasmResponse = await fetch('openswmm2d.wasm');
-        if (!wasmResponse.ok) throw new Error(`OpenSWMM 2D WebAssembly could not be loaded (HTTP ${wasmResponse.status}).`);
-        const wasmBinary = await wasmResponse.arrayBuffer();
         return new Promise((resolve, reject) => {
-            const worker = new Worker('openSwmm2dWorker.js?v=19');
+            if (sim2DWorker) {
+                try { sim2DWorker.terminate(); } catch (e) { }
+            }
+            sim2DWorker = new Worker('openSwmm2dWorker.js?v=19');
             let stderrCount = 0;
-            worker.onmessage = event => {
+            sim2DWorker.onmessage = event => {
                 const message = event.data || {};
                 if (message.type === 'stdout') console.log('OpenSWMM 2D:', message.text);
                 else if (message.type === 'stderr') {
@@ -1035,21 +1045,21 @@
                 }
                 else if (message.type === 'progress2d') console.debug('OpenSWMM 2D elapsed milliseconds:', message.elapsedMs);
                 else if (message.type === 'results2d') {
-                    worker.terminate();
+                    if (sim2DWorker) { sim2DWorker.terminate(); sim2DWorker = null; }
                     resolve(message);
                 } else if (message.type === 'error') {
-                    worker.terminate();
+                    if (sim2DWorker) { sim2DWorker.terminate(); sim2DWorker = null; }
                     reject(new Error(message.message));
                 }
             };
-            worker.onerror = event => {
-                worker.terminate();
+            sim2DWorker.onerror = event => {
+                if (sim2DWorker) { sim2DWorker.terminate(); sim2DWorker = null; }
                 const missingBuild = /openswmm2d/i.test(event.message || '');
                 reject(new Error(missingBuild
                     ? 'OpenSWMM 2D WebAssembly is not built. Run npm run build:2d-wasm, then reload the application.'
                     : (event.message || 'OpenSWMM 2D worker failed to start.')));
             };
-            worker.postMessage({ type: 'run2d', inp: inpText, triangleIds, frameIntervalMs: 60000, wasmBinary }, [wasmBinary]);
+            sim2DWorker.postMessage({ type: 'run2d', inp: inpText, triangleIds, frameIntervalMs: 60000 });
         });
     }
 
@@ -1057,13 +1067,19 @@
         const finalFrame = result.frames && result.frames[result.frames.length - 1];
         if (!finalFrame) throw new Error('The 2D engine returned no surface result frames.');
         const ids = result.triangleIds || [];
+        if (ids.length !== finalFrame.depth.length) {
+            throw new Error(`2D result array length (${finalFrame.depth.length}) does not match triangle IDs count (${ids.length}).`);
+        }
         ids.forEach((id, index) => {
             const cell = Net.mesh2D.find(candidate => candidate.id === id);
             if (!cell) return;
             cell.props ||= {};
-            cell.props.depth = finalFrame.depth[index] || 0;
-            cell.props.head = finalFrame.head[index] || 0;
-            cell.props.velocity = finalFrame.velocity[index] || 0;
+            const d = finalFrame.depth[index];
+            const h = finalFrame.head[index];
+            const v = finalFrame.velocity[index];
+            cell.props.depth = Number.isFinite(d) ? d : 0;
+            cell.props.head = Number.isFinite(h) ? h : 0;
+            cell.props.velocity = Number.isFinite(v) ? v : 0;
         });
         window.App.results2D = result;
         window.App.resultFrame2D = result.frames.length - 1;
@@ -1217,6 +1233,10 @@
             return;
         }
         const has2DMesh = Net.mesh2D.length > 0;
+        if (has2DMesh && (Net.units === 'US' || (Net.options && Net.options.FLOW_UNITS && ['CFS', 'GPM', 'MGD', 'IMGD', 'AFD'].includes(Net.options.FLOW_UNITS.toUpperCase())))) {
+            window.showResultsWarning('2D simulation currently requires SI units (meters). Please change project units to SI in project settings before running 2D.');
+            return;
+        }
         const baseInpText = window.inpExporter.generateInp(Net);
         let meshInput2D = null;
         if (has2DMesh) {

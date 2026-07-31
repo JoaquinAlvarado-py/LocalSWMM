@@ -2,6 +2,7 @@
   "name": "swmm-3d-web-ui",
   "private": true,
   "scripts": {
-    "build:2d-wasm": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-openswmm2d.ps1"
+    "build:2d-wasm": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-openswmm2d.ps1",
+    "build:2d-wasm:sh": "bash scripts/build-openswmm2d.sh"
   }
 }

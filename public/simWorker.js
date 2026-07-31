@@ -13,13 +13,13 @@
 
 'use strict';
 
-importScripts('swmm6wasm.js');
+importScripts('swmm6wasm.js?v=19');
 
 let compiledWasmPromise = null;
 function getCompiledWasm() {
     if (!compiledWasmPromise) {
         compiledWasmPromise = (async () => {
-            const resp = await fetch('swmm6wasm.wasm');
+            const resp = await fetch('swmm6wasm.wasm?v=19');
             try {
                 return await WebAssembly.compileStreaming(resp.clone());
             } catch (e) {
@@ -166,6 +166,9 @@ self.onmessage = async (e) => {
             // (EXH) is MSVC-only and compiles to nothing under Emscripten, so a
             // partial .rpt/.out must not be read back as this run's result.
             if (err && err.name === 'ExitStatus') {
+                if (err.status !== undefined && err.status !== 0) {
+                    throw new Error('SWMM engine exited with error code ' + err.status);
+                }
                 self.postMessage({ type: 'err', text: 'SWMM engine exit: ' + (err.message || err) });
             } else {
                 throw new Error('SWMM engine crashed: ' + ((err && err.message) || err));
