@@ -222,8 +222,11 @@ class InpParser {
             weirType: (row[3] || 'TRANSVERSE').toUpperCase(), crestHt: this.num(row[4]),
             offset: this.num(row[4]), qCoeff: this.num(row[5], 3.33), gated: (row[6] || 'NO').toUpperCase(),
             endCon: this.num(row[7]), endCoeff: this.num(row[8]),
-            surcharge: (row[9] || 'YES').toUpperCase(), coeffCurve: row[10] || '',
-            roadWidth: 0, roadSurface: 'PAVED',
+            // … Surcharge RoadWidth RoadSurf CoeffCurve — the road pair sits
+            // between Surcharge and the coefficient curve name
+            surcharge: (row[9] || 'YES').toUpperCase(),
+            roadWidth: this.num(row[10]), roadSurface: (row[11] || 'PAVED').toUpperCase(),
+            coeffCurve: row[12] || '',
             xShape: 'RECT_OPEN', geom1: 1.0, geom2: 1.0, geom3: 0, geom4: 0
         }));
 
