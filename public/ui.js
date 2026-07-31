@@ -52,8 +52,8 @@
         }
     });
 
-    document.getElementById('btn-load-local').addEventListener('click', () => {
-        if (Net.loadFromLocalStorage()) {
+    document.getElementById('btn-load-local').addEventListener('click', async () => {
+        if (await Net.restoreAutosave()) {
             window.clearResults();
             Tools.clearSelection();
             setTimeout(() => window.fitToNetwork(), 100);
@@ -1173,8 +1173,8 @@
 
 
     // Startup: restore autosaved project
-    map.on('load', () => {
-        if (Net.loadFromLocalStorage()) {
+    map.on('load', async () => {
+        if (await Net.restoreAutosave()) {
             unitsSelect.value = Net.units;
             setTimeout(() => window.fitToNetwork(), 300);
         }
