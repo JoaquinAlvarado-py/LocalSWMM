@@ -1192,9 +1192,32 @@
         Module.FS.writeFile('/in.inp', inpText);
         try {
             let ran = false;
+            const hasEngineCreate = typeof Module._swmm_engine_create === 'function';
+            if (hasEngineCreate && typeof Module.cwrap === 'function') {
+                const create = Module.cwrap('swmm_engine_create', 'number', []);
+                const open = Module.cwrap('swmm_engine_open', 'number', ['number', 'string', 'string', 'string', 'number']);
+                const initialize = Module.cwrap('swmm_engine_initialize', 'number', ['number']);
+                const start = Module.cwrap('swmm_engine_start', 'number', ['number', 'number']);
+                const stride = Module.cwrap('swmm_engine_stride', 'number', ['number', 'number', 'number']);
+                const end = Module.cwrap('swmm_engine_end', 'number', ['number']);
+                const report = Module.cwrap('swmm_engine_report', 'number', ['number']);
+                const close = Module.cwrap('swmm_engine_close', 'number', ['number']);
+                const destroy = Module.cwrap('swmm_engine_destroy', null, ['number']);
 
-            // Try callMain first since it's the standard Emscripten way now
-            if (typeof Module.callMain === 'function') {
+                const engine = create();
+                const openRes = open(engine, '/in.inp', '/rpt.rpt', '/out.out', 0);
+                if (openRes !== 0) throw new Error('SWMM engine open failed with status code ' + openRes);
+                initialize(engine);
+                start(engine, 1);
+                const elapsedPtr = Module._malloc ? Module._malloc(8) : 0;
+                stride(engine, 10000000, elapsedPtr);
+                if (elapsedPtr && typeof Module._free === 'function') Module._free(elapsedPtr);
+                end(engine);
+                report(engine);
+                close(engine);
+                destroy(engine);
+                ran = true;
+            } else if (typeof Module.callMain === 'function') {
                 console.log('Running via callMain');
                 Module.callMain(['/in.inp', '/rpt.rpt', '/out.out']);
                 ran = true;
