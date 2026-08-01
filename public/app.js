@@ -48,6 +48,7 @@
         nodesVisible: true,
         linksVisible: true,
         subcatchmentsVisible: true,
+        mesh2DVisible: true,
         is3D: false,
         warningsVisible: true,
         selection: new Set(),      // selected element ids
@@ -566,6 +567,12 @@
         applyLayerVisibility('swmm-subcatchments-line', window.App.subcatchmentsVisible);
     }
     window.applySubcatchmentsVisibility = applySubcatchmentsVisibility;
+
+    function applyMesh2DVisibility() {
+        applyLayerVisibility('swmm-2d-mesh-fill', window.App.mesh2DVisible);
+        applyLayerVisibility('swmm-2d-mesh-line', window.App.mesh2DVisible);
+    }
+    window.applyMesh2DVisibility = applyMesh2DVisibility;
 
     // ---------- Style switching ----------
     window.setMapStyle = function (styleKey) {

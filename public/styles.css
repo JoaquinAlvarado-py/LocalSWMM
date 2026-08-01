@@ -1946,3 +1946,9 @@ body.hide-warnings .results-warning {
 }
 
 
+
+/* ===== Generate 2D Mesh dialog tabs ===== */
+.mtab-content { display: none; }
+.mtab-content.active { display: block; }
+.mtab-btn { color: var(--text-mid); }
+.mtab-btn.active { color: var(--accent); border-bottom: 2px solid var(--accent); margin-bottom: -2px; }

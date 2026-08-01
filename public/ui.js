@@ -371,6 +371,15 @@
         if (window.applySubcatchmentsVisibility) window.applySubcatchmentsVisibility();
     });
 
+    const btnMesh2D = document.getElementById('btn-toggle-mesh2d');
+    if (btnMesh2D) {
+        btnMesh2D.addEventListener('click', () => {
+            App.mesh2DVisible = !App.mesh2DVisible;
+            btnMesh2D.classList.toggle('toggled', App.mesh2DVisible);
+            if (window.applyMesh2DVisibility) window.applyMesh2DVisibility();
+        });
+    }
+
     const btnLabels = document.getElementById('btn-toggle-labels');
     btnLabels.addEventListener('click', () => {
         App.labelsVisible = !App.labelsVisible;
@@ -416,69 +425,24 @@
         });
     }
 
-    // 2D Mesh Generation
     const btnGenMesh = document.getElementById('btn-generate-mesh2d');
     if (btnGenMesh) {
         btnGenMesh.addEventListener('click', () => {
-            if (!window.Mesh2DGenerator) {
-                alert('Mesh generator module not loaded.');
-                return;
+            if (window.Mesh2DDialog) {
+                window.Mesh2DDialog.open();
+            } else {
+                alert('Mesh dialog module not loaded.');
             }
-            if (!Net.subcatchments || Net.subcatchments.length === 0) {
-                alert('No subcatchments found. Draw or import subcatchments first.');
-                return;
-            }
-
-            const maxAreaInput = document.getElementById('mesh2d-max-area');
-            const maxAreaM2 = maxAreaInput ? parseFloat(maxAreaInput.value) || 200 : 200;
-
-            btnGenMesh.disabled = true;
-            btnGenMesh.textContent = '⏳ Generating...';
-
-            // Use requestAnimationFrame to let UI update before blocking computation
-            requestAnimationFrame(() => {
-                try {
-                    const result = window.Mesh2DGenerator.generateFromSubcatchments({
-                        maxAreaM2,
-                        assignLandCover: true
-                    });
-                    let classification = null;
-                    if (window.LandCoverModule && App.map) {
-                        classification = window.LandCoverModule.classifyMeshCells(App.map, Net.mesh2D);
-                    }
-
-                    if (window.refreshNetworkData) window.refreshNetworkData();
-
-                    let msg = `🔺 2D Mesh: ${result.cells} triangular cells generated (${result.vertices} vertices).`;
-                    if (classification) {
-                        const breakdown = Object.entries(classification.counts)
-                            .map(([code, count]) => `${code}: ${count}`)
-                            .join(', ');
-                        msg += ` Land cover classified for ${classification.classified} cells${breakdown ? ` (${breakdown})` : ''}.`;
-                    }
-                    if (result.errors.length > 0) {
-                        msg += ` ⚠️ ${result.errors.length} warning(s): ${result.errors.join('; ')}`;
-                    }
-                    if (window.showResultsWarning) window.showResultsWarning(msg);
-                } catch (e) {
-                    alert('Mesh generation failed: ' + e.message);
-                    console.error('Mesh2D generation error:', e);
-                } finally {
-                    btnGenMesh.disabled = false;
-                    btnGenMesh.textContent = '🔺 Generate 2D Mesh from Subcatchments';
-                }
-            });
         });
     }
 
     const btnClearMesh = document.getElementById('btn-clear-mesh2d');
     if (btnClearMesh) {
         btnClearMesh.addEventListener('click', () => {
-            if (window.Mesh2DGenerator) {
-                window.Mesh2DGenerator.clearMesh();
-                if (window.refreshNetworkData) window.refreshNetworkData();
-                if (window.showResultsWarning) window.showResultsWarning('2D Mesh cleared.');
-            }
+            if (window.Mesh2DGenerator) window.Mesh2DGenerator.clearMesh();
+            if (window.Net) window.Net.clearIndexedMesh();
+            if (window.refreshNetworkData) window.refreshNetworkData();
+            if (window.showResultsWarning) window.showResultsWarning('2D Mesh cleared.');
         });
     }
 

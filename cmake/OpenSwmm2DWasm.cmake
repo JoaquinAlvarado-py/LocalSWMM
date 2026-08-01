@@ -28,7 +28,7 @@ target_link_options(openswmm2d_wasm PRIVATE
     "SHELL:-s FILESYSTEM=1"
     "SHELL:--no-entry"
     "SHELL:-s EXPORTED_RUNTIME_METHODS=['cwrap','FS','getValue']"
-    "SHELL:-s EXPORTED_FUNCTIONS=['_malloc','_free','_swmm_engine_create','_swmm_engine_destroy','_swmm_engine_open','_swmm_engine_initialize','_swmm_engine_start','_swmm_engine_step','_swmm_engine_stride','_swmm_engine_end','_swmm_engine_report','_swmm_engine_close','_swmm_2d_triangle_count','_swmm_2d_get_depths_bulk','_swmm_2d_get_heads_bulk','_swmm_2d_get_stat_max_velocities','_swmm_2d_get_continuity_error','_swmm_2d_get_solver_steps','_swmm_2d_get_mass_balance']"
+    "SHELL:-s EXPORTED_FUNCTIONS=['_malloc','_free','_swmm_engine_create','_swmm_engine_destroy','_swmm_engine_open','_swmm_engine_initialize','_swmm_engine_start','_swmm_engine_step','_swmm_engine_stride','_swmm_engine_end','_swmm_engine_report','_swmm_engine_close','_swmm_2d_triangle_count','_swmm_2d_get_depths_bulk','_swmm_2d_get_heads_bulk','_swmm_2d_get_stat_max_velocities','_swmm_2d_get_continuity_error','_swmm_2d_get_solver_steps','_swmm_2d_get_mass_balance','_swmm_2d_vertex_count','_swmm_2d_get_edge_flux_bulk','_swmm_2d_edge_get_geometry_bulk','_swmm_2d_vertex_get_render_depths_bulk','_swmm_2d_vertex_get_heads_bulk','_swmm_2d_vertex_get_xyz_bulk']"
     "SHELL:-s INITIAL_MEMORY=134217728"
     "SHELL:-s STACK_SIZE=5242880"
     "SHELL:-s WASM_ASYNC_COMPILATION=1"
