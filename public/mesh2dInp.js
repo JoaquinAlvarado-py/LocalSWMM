@@ -70,12 +70,101 @@
         return `${text}\n\n[${title}]\n${lines.join('\n')}\n`;
     }
 
-    function buildInput(baseInp, cells, mapInstance, options = {}) {
-        if (!Array.isArray(cells) || cells.length === 0) {
-            throw new Error('Generate a 2D mesh before starting a 2D simulation.');
+    function stripMesh2DSections(inp) {
+        return inp
+            .replace(/(^|\n)\[2D_OPTIONS\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
+            .replace(/(^|\n)\[2D_VERTICES\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
+            .replace(/(^|\n)\[2D_TRIANGLES\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
+            .replace(/(^|\n)\[2D_VERTEX_NODE_MAP\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
+            .replace(/(^|\n)\[2D_TRIANGLE_NODE_MAP\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
+            .replace(/(^|\n)\[2D_MESH_FILE\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1');
+    }
+
+    function buildOptionsLines(opts) {
+        opts = opts || {};
+        const lines = [
+            `MAX_TIMESTEP         ${finite(opts.maxTimestep, 2.0)}`,
+            `DRY_DEPTH            ${finite(opts.dryDepth, 0.001)}`,
+            `COUPLING_SYNC        ${finite(opts.couplingSync !== undefined ? opts.couplingSync : opts.couplingInterval, 1.0)}`,
+            `THETA                ${finite(opts.theta, 0.5)}`,
+            `CFL_NUMBER           ${finite(opts.cflNumber, 0.8)}`,
+            `H_MOVE               ${finite(opts.hMove, 0.001)}`,
+            `FROUDE_MAX           ${finite(opts.froudeMax, 1.0)}`,
+            `LTS_TIERS            ${Math.max(1, Math.round(finite(opts.ltsTiers, 1)))}`
+        ];
+        if (Number.isFinite(Number(opts.couplingCd))) {
+            lines.push(`COUPLING_CD          ${finite(opts.couplingCd, 0.65)}`);
         }
+        if (opts.couplingArea === 'AUTO' || opts.couplingArea === 'DEFAULT') {
+            lines.push(`COUPLING_AREA        ${opts.couplingArea}`);
+        }
+        if (/^(NATURAL_NEIGHBOUR|SYSTEM|NONE)$/i.test(String(opts.rainfallMode || ''))) {
+            lines.push(`RAINFALL_MODE        ${String(opts.rainfallMode).toUpperCase()}`);
+        }
+        if (/^(YES|NO)$/i.test(String(opts.report2d || ''))) {
+            lines.push(`REPORT_2D            ${String(opts.report2d).toUpperCase()}`);
+        }
+        return lines;
+    }
+
+    function sanitizeTag(tag) {
+        const t = String(tag || '').trim().replace(/\s+/g, '_');
+        return t || '-';
+    }
+
+    function buildFromIndexed(baseInp, indexed) {
+        const opts = indexed.options || {};
+        let inp = String(baseInp || '');
+        if (!/^\s*;;\s*UNITS:\s*SI\s*\(m\)/mi.test(inp)) {
+            inp = ';; UNITS: SI (m)\n' + inp;
+        }
+        inp = stripMesh2DSections(inp);
+        inp = appendSection(inp, '2D_OPTIONS', buildOptionsLines(opts));
+
+        inp = appendSection(inp, '2D_VERTICES', [
+            ';;X               Y               Z               TAG',
+            ...indexed.vertices.map(v =>
+                `${finite(v.x, 0).toFixed(4).padEnd(15)} ${finite(v.y, 0).toFixed(4).padEnd(15)} ${finite(v.z, 0).toFixed(4).padEnd(15)} ${sanitizeTag(v.tag)}`)
+        ]);
+
+        inp = appendSection(inp, '2D_TRIANGLES', [
+            ';;V1      V2       V3       MANNINGS_N   TAG',
+            ...indexed.triangles.map(t =>
+                `${String(t.v[0]).padEnd(8)} ${String(t.v[1]).padEnd(8)} ${String(t.v[2]).padEnd(8)} ${Math.max(0.001, finite(t.n, 0.045)).toFixed(5).padEnd(12)} ${sanitizeTag(t.tag)}`)
+        ]);
+
+        if (Array.isArray(indexed.vertexNodeMap) && indexed.vertexNodeMap.length) {
+            inp = appendSection(inp, '2D_VERTEX_NODE_MAP', [
+                ';;VERTEX          NODE               CD',
+                ...indexed.vertexNodeMap.map(m =>
+                    `${String(m.vertexIndex !== undefined ? m.vertexIndex : m.vertex).padEnd(17)} ${String(m.nodeId || m.node).padEnd(18)} ${finite(m.cd, 0.65).toFixed(3)}`)
+            ]);
+        }
+
+        return {
+            inp,
+            origin: indexed.origin,
+            triangleIds: indexed.triangles.map((t, i) => 'M2D_' + (i + 1)),
+            vertexCount: indexed.vertices.length,
+            triangleCount: indexed.triangles.length
+        };
+    }
+
+    function buildInput(baseInp, cells, mapInstance, options = {}) {
         if (options.units === 'US' || /FLOW_UNITS\s+(CFS|GPM|MGD|IMGD|AFD)/i.test(String(baseInp || ''))) {
             throw new Error('2D simulation currently only supports SI units (meters). Please switch project units to SI.');
+        }
+
+        // Prefer the indexed mesh (Triangle engine output) — carries stored
+        // elevations, vertex tags, node coupling and dialog solver options.
+        const indexed = window.Net && window.Net.mesh2DIndexed;
+        if (indexed && Array.isArray(indexed.vertices) && indexed.vertices.length &&
+            Array.isArray(indexed.triangles) && indexed.triangles.length) {
+            return buildFromIndexed(baseInp, indexed);
+        }
+
+        if (!Array.isArray(cells) || cells.length === 0) {
+            throw new Error('Generate a 2D mesh before starting a 2D simulation.');
         }
 
         const mesh = buildMesh(cells, mapInstance);
@@ -85,21 +174,9 @@
         if (!/^\s*;;\s*UNITS:\s*SI\s*\(m\)/mi.test(inp)) {
             inp = ';; UNITS: SI (m)\n' + inp;
         }
-        inp = inp
-            .replace(/(^|\n)\[2D_OPTIONS\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
-            .replace(/(^|\n)\[2D_VERTICES\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
-            .replace(/(^|\n)\[2D_TRIANGLES\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1');
+        inp = stripMesh2DSections(inp);
 
-        inp = appendSection(inp, '2D_OPTIONS', [
-            `MAX_TIMESTEP         ${finite(options.maxTimestep, 2.0)}`,
-            `DRY_DEPTH            ${finite(options.dryDepth, 0.001)}`,
-            `COUPLING_SYNC        ${finite(options.couplingInterval, 1.0)}`,
-            `THETA                0.5`,
-            `CFL_NUMBER           0.8`,
-            `H_MOVE               0.001`,
-            `FROUDE_MAX           1.0`,
-            `LTS_TIERS            1`
-        ]);
+        inp = appendSection(inp, '2D_OPTIONS', buildOptionsLines(options));
 
         inp = appendSection(inp, '2D_VERTICES', [
             ';;X               Y               Z               TAG',

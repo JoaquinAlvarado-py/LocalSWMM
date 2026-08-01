@@ -168,6 +168,7 @@
                         <button id="btn-toggle-nodes" class="tb-pill toggled" title="Toggle Nodes">Nodes</button>
                         <button id="btn-toggle-links" class="tb-pill toggled" title="Toggle Links">Links</button>
                         <button id="btn-toggle-subcatchments" class="tb-pill toggled" title="Toggle Subcatchments">Subcatch</button>
+                        <button id="btn-toggle-mesh2d" class="tb-pill toggled" title="Toggle 2D Mesh">2D Mesh</button>
                     </div>
                 </div>
                 <div class="settings-group-grid" style="margin-top:4px;">
@@ -202,13 +203,18 @@
                 </div>
                 <div class="settings-group" style="margin-top:6px;border-top:1px solid rgba(255,255,255,0.08);padding-top:6px;">
                     <span class="settings-label">2D Surface Mesh</span>
-                    <button id="btn-generate-mesh2d" class="tb-btn" style="width:100%;font-size:11px;" title="Generate a 2D triangular mesh from subcatchment polygons for overland flow routing">Generate 2D Mesh from Subcatchments</button>
-                    <div style="display:flex;align-items:center;gap:4px;margin-top:4px;">
-                        <label style="font-size:10px;color:#7a8a9c;white-space:nowrap;">Max area (m²):</label>
-                        <input type="number" id="mesh2d-max-area" value="200" min="10" max="100000" step="10" style="width:70px;font-size:10px;padding:2px 4px;" class="tb-input">
-                        <button id="btn-clear-mesh2d" class="tb-btn" style="font-size:10px;padding:2px 6px;" title="Remove all 2D mesh cells">Clear</button>
-                    </div>
+                    <button id="btn-generate-mesh2d" class="tb-btn" style="width:100%;font-size:11px;" title="Generate a 2D triangular mesh for overland flow routing">Generate 2D Mesh…</button>
+                    <button id="btn-clear-mesh2d" class="tb-btn" style="width:100%;font-size:10px;padding:2px 6px;margin-top:4px;" title="Remove all 2D mesh cells">Clear 2D Mesh</button>
                 </div>
+
+            <!-- Layer Tree Card -->
+            <div id="layer-tree-card" class="hidden">
+                <div class="settings-group" style="padding:4px 0;">
+                    <span class="settings-label">SWMM 2D Outputs</span>
+                    <div id="layer-tree-body" style="font-size:11px;"></div>
+                </div>
+            </div>
+
             </div>
 
             <!-- Street View pegman -->
@@ -530,9 +536,143 @@
             <p id="importas-info"></p>
             <label class="modal-radio"><input type="radio" name="importas-type" value="network" checked><strong>Network elements</strong> (points→junctions, lines→conduits, polygons→subcatchments)</label>
             <label class="modal-radio"><input type="radio" name="importas-type" value="masterplan"><strong>Master plan</strong> (background reference only)</label>
+            <label class="modal-radio"><input type="radio" name="importas-type" value="constraint"><strong>Constraint layer</strong> (mesh constraints — boundary, breaklines, points)</label>
             <div class="modal-actions">
                 <button id="btn-cancel-importas" class="tb-btn">Cancel</button>
                 <button id="btn-confirm-importas" class="tb-btn tb-btn-run">Import</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Generate 2D Mesh Modal -->
+    <div id="mesh2d-modal" class="modal-overlay hidden">
+        <div class="modal-box" style="max-width:680px;max-height:90vh;overflow-y:auto;">
+            <h2>Generate 2D Mesh</h2>
+            <div class="mtab-bar" style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:12px;">
+                <button class="mtab-btn active" data-mtab="sources" style="padding:8px 16px;border:none;background:none;font-weight:600;font-size:13px;cursor:pointer;border-bottom:2px solid var(--accent);margin-bottom:-2px;">Sources</button>
+                <button class="mtab-btn" data-mtab="quality" style="padding:8px 16px;border:none;background:none;font-weight:600;font-size:13px;cursor:pointer;color:var(--text-mid);">Quality</button>
+                <button class="mtab-btn" data-mtab="hydraulics" style="padding:8px 16px;border:none;background:none;font-weight:600;font-size:13px;cursor:pointer;color:var(--text-mid);">Hydraulics</button>
+            </div>
+            <!-- Sources Tab -->
+            <div id="mtab-sources" class="mtab-content active">
+                <div class="m2d-section">
+                    <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">DTM / Elevation Source</h4>
+                    <select id="m2d-dtm-source" class="tb-select" style="width:100%;margin-bottom:4px;">
+                        <option value="NONE">None — use node rim elevations</option>
+                        <option value="MAPBOX">Mapbox terrain (online DEM)</option>
+                        <option value="GEOTIFF">GeoTIFF upload</option>
+                    </select>
+                    <div id="m2d-geotiff-row" style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
+                        <input type="file" id="m2d-geotiff-file" accept=".tif,.tiff" style="font-size:11px;flex:1;">
+                    </div>
+                    <div style="display:flex;gap:6px;margin-bottom:4px;">
+                        <div style="flex:1;"><label style="font-size:10px;color:var(--text-light);">Vertical unit</label>
+                            <select id="m2d-vertical-unit" class="tb-select" style="width:100%;font-size:11px;"><option value="m">meters</option><option value="ft">feet</option><option value="cm">centimeters</option></select></div>
+                        <div style="flex:1;"><label style="font-size:10px;color:var(--text-light);">Z factor</label>
+                            <input type="number" id="m2d-z-factor" value="1" step="0.01" class="tb-input" style="width:100%;font-size:11px;"></div>
+                        <div style="flex:1;"><label style="font-size:10px;color:var(--text-light);">EPSG override</label>
+                            <input type="text" id="m2d-epsg-override" placeholder="auto" class="tb-input" style="width:100%;font-size:11px;"></div>
+                    </div>
+                </div>
+                <div class="m2d-section" style="margin-top:10px;">
+                    <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">Boundary & Constraints</h4>
+                    <label style="font-size:10px;color:var(--text-light);">Boundary polygon</label>
+                    <select id="m2d-boundary-layer" class="tb-select" style="width:100%;font-size:11px;margin-bottom:6px;"><option value="">Convex hull (auto)</option></select>
+                    <label style="font-size:10px;color:var(--text-light);">Constraining layers</label>
+                    <div id="m2d-constraint-layers" style="max-height:80px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:4px;margin-bottom:6px;font-size:11px;"></div>
+                </div>
+                <div class="m2d-section" style="margin-top:10px;">
+                    <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">1D Geometry Coupling</h4>
+                    <label class="m2d-check" style="display:block;font-size:11px;margin-bottom:2px;"><input type="checkbox" id="m2d-include-nodes" checked> Nodes → Steiner vertices</label>
+                    <div style="padding-left:18px;margin-bottom:4px;">
+                        <label class="m2d-check" style="display:block;font-size:11px;"><input type="checkbox" id="m2d-use-rimz" checked> Use rim elevation (invert + max depth)</label>
+                        <div style="display:flex;gap:6px;margin:2px 0;">
+                            <div><label style="font-size:10px;color:var(--text-light);">Flatten radius (m)</label><input type="number" id="m2d-flatten-radius" value="5" step="0.5" class="tb-input" style="width:80px;font-size:11px;"></div>
+                            <div><label style="font-size:10px;color:var(--text-light);">Min separation (m)</label><input type="number" id="m2d-min-node-sep" value="2" step="0.5" class="tb-input" style="width:80px;font-size:11px;"></div>
+                        </div>
+                    </div>
+                    <label class="m2d-check" style="display:block;font-size:11px;margin-bottom:2px;"><input type="checkbox" id="m2d-include-conduits" checked> Conduits → constraint segments</label>
+                    <label class="m2d-check" style="display:block;font-size:11px;margin-bottom:2px;"><input type="checkbox" id="m2d-include-subs" checked> Subcatchments → triangle regions</label>
+                    <label class="m2d-check" style="display:block;font-size:11px;"><input type="checkbox" id="m2d-emit-node-map" checked> Emit vertex-node coupling map</label>
+                </div>
+            </div>
+
+            <!-- Quality Tab -->
+            <div id="mtab-quality" class="mtab-content">
+                <div class="m2d-section">
+                    <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">Triangle Quality</h4>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <div><label style="font-size:10px;color:var(--text-light);">Max area (m², 0=none)</label><input type="number" id="m2d-max-area" value="0" step="10" class="tb-input" style="width:90px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">Min angle (°)</label><input type="number" id="m2d-min-angle" value="33" step="1" class="tb-input" style="width:70px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">Max Steiner (0=∞)</label><input type="number" id="m2d-max-steiner" value="0" step="100" class="tb-input" style="width:80px;font-size:11px;"></div>
+                    </div>
+                    <label class="m2d-check" style="display:block;font-size:11px;margin-top:4px;"><input type="checkbox" id="m2d-allow-boundary-steiner" checked> Allow Steiner points on boundary</label>
+                </div>
+                <div class="m2d-section" style="margin-top:10px;">
+                    <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">PSLG Simplification</h4>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <div><label style="font-size:10px;color:var(--text-light);">ε (m)</label><input type="number" id="m2d-simplify-eps" value="0.1" step="0.01" class="tb-input" style="width:70px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">Snap radius (m)</label><input type="number" id="m2d-snap-radius" value="0.01" step="0.001" class="tb-input" style="width:80px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">Max boundary edge (m, 0=none)</label><input type="number" id="m2d-max-edge-len" value="0" step="5" class="tb-input" style="width:110px;font-size:11px;"></div>
+                    </div>
+                </div>
+                <div class="m2d-section" style="margin-top:10px;">
+                    <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">Terrain-Adaptive Thinning</h4>
+                    <label class="m2d-check" style="display:block;font-size:11px;margin-bottom:4px;"><input type="checkbox" id="m2d-thinning-enabled"> Enable adaptive thinning</label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <div><label style="font-size:10px;color:var(--text-light);">Normal dot threshold</label><input type="number" id="m2d-thinning-normal-dot" value="0.6" step="0.05" class="tb-input" style="width:80px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">Passes</label><input type="number" id="m2d-thinning-passes" value="3" step="1" class="tb-input" style="width:60px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">Max points</label><input type="number" id="m2d-thinning-max-points" value="5000" step="500" class="tb-input" style="width:80px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">Min spacing (m)</label><input type="number" id="m2d-thinning-min-spacing" value="40" step="5" class="tb-input" style="width:80px;font-size:11px;"></div>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- Hydraulics Tab -->
+            <div id="mtab-hydraulics" class="mtab-content">
+                <div class="m2d-section">
+                    <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">Roughness & Coupling</h4>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <div><label style="font-size:10px;color:var(--text-light);">Default Manning's n</label><input type="number" id="m2d-default-n" value="0.045" step="0.005" class="tb-input" style="width:80px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">COUPLING_CD</label><input type="number" id="m2d-coupling-cd" value="0.65" step="0.05" class="tb-input" style="width:70px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">COUPLING_AREA</label>
+                            <select id="m2d-coupling-area" class="tb-select" style="font-size:11px;"><option value="AUTO">AUTO</option><option value="DEFAULT">DEFAULT</option></select></div>
+                    </div>
+                </div>
+                <div class="m2d-section" style="margin-top:10px;">
+                    <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">2D Solver Options</h4>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <div><label style="font-size:10px;color:var(--text-light);">MAX_TIMESTEP (s)</label><input type="number" id="m2d-max-timestep" value="2" step="0.5" class="tb-input" style="width:70px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">DRY_DEPTH (m)</label><input type="number" id="m2d-dry-depth" value="0.001" step="0.001" class="tb-input" style="width:70px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">COUPLING_SYNC (s)</label><input type="number" id="m2d-coupling-sync" value="1" step="0.5" class="tb-input" style="width:70px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">THETA</label><input type="number" id="m2d-theta" value="0.5" step="0.05" class="tb-input" style="width:60px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">CFL_NUMBER</label><input type="number" id="m2d-cfl-number" value="0.8" step="0.05" class="tb-input" style="width:60px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">H_MOVE (m)</label><input type="number" id="m2d-hmove" value="0.001" step="0.001" class="tb-input" style="width:70px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">FROUDE_MAX</label><input type="number" id="m2d-froude-max" value="1.0" step="0.1" class="tb-input" style="width:60px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">LTS_TIERS</label><input type="number" id="m2d-lts-tiers" value="1" step="1" class="tb-input" style="width:50px;font-size:11px;"></div>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-top:4px;">
+                        <div><label style="font-size:10px;color:var(--text-light);">RAINFALL_MODE</label>
+                            <select id="m2d-rainfall-mode" class="tb-select" style="font-size:11px;"><option value="NATURAL_NEIGHBOUR">NATURAL_NEIGHBOUR</option><option value="SYSTEM">SYSTEM</option><option value="NONE">NONE</option></select></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">REPORT_2D</label>
+                            <select id="m2d-report-2d" class="tb-select" style="font-size:11px;"><option value="NO">NO</option><option value="YES">YES</option></select></div>
+                    </div>
+                </div>
+                <div class="m2d-section" style="margin-top:10px;">
+                    <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">Output Format</h4>
+                    <label class="m2d-check" style="display:block;font-size:11px;"><input type="radio" name="m2d-output-mode" value="inline" checked> Inline .inp (2D sections embedded)</label>
+                    <label class="m2d-check" style="display:block;font-size:11px;"><input type="radio" name="m2d-output-mode" value="external"> External .2dm file</label>
+                    <button id="m2d-btn-download-2dm" class="tb-btn" style="font-size:11px;margin-top:4px;">Download .2dm</button>
+                </div>
+            </div>
+            <!-- Footer -->
+            <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;">
+                <div id="m2d-log" style="max-height:100px;overflow-y:auto;font-size:10px;font-family:monospace;background:var(--bg-subtle);border-radius:4px;padding:6px;margin-bottom:8px;color:var(--text-mid);"></div>
+                <div class="modal-actions">
+                    <button id="m2d-btn-close" class="tb-btn">Close</button>
+                    <button id="m2d-btn-generate" class="tb-btn tb-btn-run">Generate</button>
+                </div>
             </div>
         </div>
     </div>
@@ -627,7 +767,12 @@
     <script src="profile.js?v=12"></script>
     <script src="plot.js?v=12"></script>
     <script src="mesh2d.js?v=12"></script>
+    <script src="vendor/triangle/triangle-loader.js?v=12"></script>
+    <script src="mesh2dProj.js?v=12"></script>
+    <script src="mesh2dPslg.js?v=12"></script>
+    <script src="mesh2dTriangle.js?v=12"></script>
     <script src="mesh2dInp.js?v=12"></script>
+    <script src="mesh2dDialog.js?v=12"></script>
     <script src="landcover.js?v=12"></script>
     <script src="curves.js?v=12"></script>
     <script src="lid.js?v=12"></script>

@@ -117,6 +117,7 @@
             this.links = [];
             this.subcatchments = [];
             this.mesh2D = [];
+            this.mesh2DIndexed = null;
             this.timeseries = {};
             this.options = defaultOptions();
             this.units = 'SI';
@@ -151,6 +152,7 @@
             this._geoLinks = null;
             this._geoSubs = null;
             this._geoMesh = null;
+            this._mesh2DIndexedGeo = null;
             this._geoNodeFeat = null; // id -> cached node Feature
             this._geoLinkFeat = null; // id -> cached link Feature
         }
@@ -469,6 +471,7 @@
                 links: this.links,
                 subcatchments: this.subcatchments,
                 mesh2D: this.mesh2D,
+                mesh2DIndexed: this.mesh2DIndexed,
                 timeseries: this.timeseries,
                 rawSections: this.rawSections,
                 curves: this.curves,
@@ -490,6 +493,7 @@
             this.links = state.links || [];
             this.subcatchments = state.subcatchments || [];
             this.mesh2D = state.mesh2D || [];
+            this.mesh2DIndexed = state.mesh2DIndexed || null;
             this.timeseries = state.timeseries || {};
             this.rawSections = state.rawSections || {};
             this.curves = state.curves || [];
@@ -851,6 +855,69 @@
                 };
             }
             return this._geoMesh;
+        }
+
+        // ---------- indexed 2D mesh (Triangle engine output) ----------
+        /**
+         * Store the indexed mesh and derive legacy Net.mesh2D cells so all
+         * existing consumers (map layers, selection, results feature-state)
+         * keep working with stable triangle order.
+         * @param {Object} indexed — { origin, vertices, triangles, vertexNodeMap, options }
+         */
+        setIndexedMesh(indexed) {
+            this.mesh2DIndexed = indexed || null;
+            this._invalidateGeo();
+            if (!indexed || !indexed.triangles || !indexed.vertices) {
+                return;
+            }
+            // Derive legacy cells with stable ids matching triangle order.
+            const cells = [];
+            for (let i = 0; i < indexed.triangles.length; i++) {
+                const tri = indexed.triangles[i];
+                const v0 = indexed.vertices[tri.v[0]];
+                const v1 = indexed.vertices[tri.v[1]];
+                const v2 = indexed.vertices[tri.v[2]];
+                if (!v0 || !v1 || !v2) continue;
+                const ring = [
+                    [v0.lng, v0.lat],
+                    [v1.lng, v1.lat],
+                    [v2.lng, v2.lat],
+                    [v0.lng, v0.lat] // closed
+                ];
+                cells.push({
+                    id: 'M2D_' + (i + 1),
+                    ring: ring,
+                    manningN: tri.n,
+                    parentSubcatch: tri.tag || '',
+                    props: {
+                        manningN: tri.n,
+                        parentSubcatch: tri.tag || '',
+                        landCoverClass: 0
+                    }
+                });
+            }
+            this.mesh2D = cells;
+        }
+
+        clearIndexedMesh() {
+            this.mesh2DIndexed = null;
+            this._invalidateGeo();
+        }
+
+        // GeoJSON of the indexed mesh vertices (for vertex render layer).
+        mesh2DVerticesGeoJSON() {
+            if (!this.mesh2DIndexed || !this.mesh2DIndexed.vertices) {
+                return { type: 'FeatureCollection', features: [] };
+            }
+            return {
+                type: 'FeatureCollection',
+                features: this.mesh2DIndexed.vertices.map((v, i) => ({
+                    type: 'Feature',
+                    id: i,
+                    properties: { index: i, tag: v.tag || '', z: v.z || 0 },
+                    geometry: { type: 'Point', coordinates: [v.lng, v.lat] }
+                }))
+            };
         }
 
         bounds() {
