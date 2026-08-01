@@ -21,6 +21,7 @@
             zFactor: 1.0,
             epsgOverride: '',
             boundaryLayer: '',
+            domainBuffer: 50,
             constraintLayers: [],
             includeNodes: true,
             useRimZ: true,
@@ -156,6 +157,7 @@
         s.zFactor = n('m2d-z-factor', 1.0);
         s.epsgOverride = v('m2d-epsg-override', '');
         s.boundaryLayer = v('m2d-boundary-layer', '');
+        s.domainBuffer = n('m2d-domain-buffer', 50);
         s.includeNodes = b('m2d-include-nodes', true);
         s.useRimZ = b('m2d-use-rimz', true);
         s.flattenRadius = n('m2d-flatten-radius', 5.0);
@@ -212,6 +214,7 @@
         set('m2d-z-factor', s.zFactor);
         set('m2d-epsg-override', s.epsgOverride);
         set('m2d-boundary-layer', s.boundaryLayer);
+        set('m2d-domain-buffer', s.domainBuffer);
         setChk('m2d-include-nodes', s.includeNodes);
         setChk('m2d-use-rimz', s.useRimZ);
         set('m2d-flatten-radius', s.flattenRadius);
@@ -421,9 +424,20 @@
         var btnClose = $('m2d-btn-close');
         var btnCloseX = $('m2d-close-x');
         var btnDownload = $('m2d-btn-download-2dm');
+        var btnClear = $('m2d-btn-clear');
         if (btnGen) btnGen.onclick = generate;
         if (btnClose) btnClose.onclick = close;
         if (btnCloseX) btnCloseX.onclick = close;
+        if (btnClear) {
+            btnClear.onclick = function () {
+                if (window.Mesh2DGenerator) window.Mesh2DGenerator.clearMesh();
+                if (window.Net) window.Net.clearIndexedMesh();
+                if (window.refreshNetworkData) window.refreshNetworkData();
+                log('✓ 2D Mesh cleared.');
+                if (window.showResultsWarning) window.showResultsWarning('2D Mesh cleared.');
+                if (btnDownload) btnDownload.disabled = true;
+            };
+        }
         if (btnDownload) {
             btnDownload.disabled = !(window.Net && window.Net.mesh2DIndexed);
             btnDownload.onclick = function () {
