@@ -39,6 +39,9 @@
     }
 
     // Data menu items
+    document.getElementById('btn-mesh2d-menu')?.addEventListener('click', () => {
+        if (window.Mesh2DDialog) window.Mesh2DDialog.open();
+    });
     document.getElementById('btn-curves')?.addEventListener('click', () => {
         if (window.CurveEditor) window.CurveEditor.openEditor();
     });
@@ -425,16 +428,17 @@
         });
     }
 
+    const openMeshDialog = () => {
+        if (window.Mesh2DDialog) {
+            window.Mesh2DDialog.open();
+        } else {
+            alert('Mesh dialog module not loaded.');
+        }
+    };
     const btnGenMesh = document.getElementById('btn-generate-mesh2d');
-    if (btnGenMesh) {
-        btnGenMesh.addEventListener('click', () => {
-            if (window.Mesh2DDialog) {
-                window.Mesh2DDialog.open();
-            } else {
-                alert('Mesh dialog module not loaded.');
-            }
-        });
-    }
+    if (btnGenMesh) btnGenMesh.addEventListener('click', openMeshDialog);
+    const btnMeshToolbar = document.getElementById('btn-mesh2d-toolbar');
+    if (btnMeshToolbar) btnMeshToolbar.addEventListener('click', openMeshDialog);
 
     const btnClearMesh = document.getElementById('btn-clear-mesh2d');
     if (btnClearMesh) {

@@ -164,6 +164,44 @@
                 }
                 bndRing = dpSimplify(bndRing, eps);
                 bndRing = densify(bndRing, maxEdge);
+            } else {
+                // Automatically generate a continuous 2D bounding domain enclosing all network elements (+ buffer)
+                var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                var foundAny = false;
+                (sources.subcatchments || []).forEach(function (sub) {
+                    (sub.ring || []).forEach(function (p) {
+                        var loc = tf.toLocal(p);
+                        if (loc[0] < minX) minX = loc[0];
+                        if (loc[0] > maxX) maxX = loc[0];
+                        if (loc[1] < minY) minY = loc[1];
+                        if (loc[1] > maxY) maxY = loc[1];
+                        foundAny = true;
+                    });
+                });
+                (sources.nodes || []).forEach(function (node) {
+                    if (node.lngLat) {
+                        var loc = tf.toLocal(node.lngLat);
+                        if (loc[0] < minX) minX = loc[0];
+                        if (loc[0] > maxX) maxX = loc[0];
+                        if (loc[1] < minY) minY = loc[1];
+                        if (loc[1] > maxY) maxY = loc[1];
+                        foundAny = true;
+                    }
+                });
+                if (foundAny) {
+                    var buf = typeof opts.domainBuffer === 'number' ? opts.domainBuffer : 50;
+                    bndRing = [
+                        [minX - buf, minY - buf],
+                        [maxX + buf, minY - buf],
+                        [maxX + buf, maxY + buf],
+                        [minX - buf, maxY + buf]
+                    ];
+                    var autoEdge = maxEdge > 0 ? maxEdge : Math.max(maxX - minX + 2 * buf, maxY - minY + 2 * buf) / 20;
+                    if (autoEdge > 0) bndRing = densify(bndRing, autoEdge);
+                }
+            }
+
+            if (bndRing.length >= 3) {
                 var bndIdx = bndRing.map(function (p) { return _addPt(p[0], p[1], 'boundary'); });
                 for (var i = 0; i < bndIdx.length; i++) {
                     segments.push({
@@ -172,6 +210,13 @@
                         marker: 1
                     });
                 }
+                // Add a default background domain region (so Triangle meshes the full area, outside & inside subcatchments)
+                regions.push({
+                    x: bndRing[0][0] + 0.1,
+                    y: bndRing[0][1] + 0.1,
+                    attr: 0,
+                    maxArea: 0
+                });
             }
 
             // ---- 2. Subcatchments → triangle regions & optional constraint rings ----
