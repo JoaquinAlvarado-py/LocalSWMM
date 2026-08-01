@@ -60,6 +60,10 @@
                     <svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:middle;margin-right:4px;"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
                     Options
                 </button>
+                <button id="btn-mesh2d-toolbar" class="tb-btn" title="2D Surface Mesh Settings & Generation">
+                    <svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:middle;margin-right:4px;"><path fill="currentColor" d="M12 2L2 22h20L12 2zm0 4.2L18.4 19H5.6L12 6.2z"/></svg>
+                    2D Mesh
+                </button>
                 <button id="btn-ts-plot" class="tb-btn" title="Time Series Plot Selection">
                     <svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:middle;margin-right:4px;"><path fill="currentColor" d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.09-4-4L2 15.08l1.5 3.41z"/></svg>
                     Plot
@@ -73,6 +77,7 @@
                 <div class="tb-dropdown">
                     <button id="btn-data-menu" class="tb-btn">Data <span class="caret">▾</span></button>
                     <div class="tb-dropdown-menu" id="data-menu" style="left:auto;right:0;min-width:200px;">
+                        <button id="btn-mesh2d-menu" class="tb-menu-item">2D Surface Mesh…</button>
                         <button id="btn-curves" class="tb-menu-item">Curves…</button>
                         <button id="btn-lid" class="tb-menu-item">LID Controls…</button>
                         <button id="btn-quality" class="tb-menu-item">Water Quality…</button>
@@ -200,11 +205,6 @@
                 </div>
                 <div class="settings-group" style="margin-top:6px;">
                     <button id="btn-sample-all-dem" class="tb-btn" style="width:100%;font-size:11px;" title="Extract terrain elevation from selected DEM source for all network nodes">Sample DEM for All Nodes</button>
-                </div>
-                <div class="settings-group" style="margin-top:6px;border-top:1px solid rgba(255,255,255,0.08);padding-top:6px;">
-                    <span class="settings-label">2D Surface Mesh</span>
-                    <button id="btn-generate-mesh2d" class="tb-btn" style="width:100%;font-size:11px;" title="Generate a 2D triangular mesh for overland flow routing">Generate 2D Mesh…</button>
-                    <button id="btn-clear-mesh2d" class="tb-btn" style="width:100%;font-size:10px;padding:2px 6px;margin-top:4px;" title="Remove all 2D mesh cells">Clear 2D Mesh</button>
                 </div>
 
             <!-- Layer Tree Card -->
@@ -576,8 +576,12 @@
                 </div>
                 <div class="m2d-section" style="margin-top:10px;">
                     <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">Boundary & Constraints</h4>
-                    <label style="font-size:10px;color:var(--text-light);">Boundary polygon</label>
-                    <select id="m2d-boundary-layer" class="tb-select" style="width:100%;font-size:11px;margin-bottom:6px;"><option value="">Convex hull (auto)</option></select>
+                    <div style="display:flex;gap:6px;margin-bottom:6px;">
+                        <div style="flex:2;"><label style="font-size:10px;color:var(--text-light);">Boundary polygon layer</label>
+                        <select id="m2d-boundary-layer" class="tb-select" style="width:100%;font-size:11px;"><option value="">Auto Bounding Domain (+ buffer)</option></select></div>
+                        <div style="flex:1;"><label style="font-size:10px;color:var(--text-light);">Auto buffer (m)</label>
+                        <input type="number" id="m2d-domain-buffer" value="50" min="0" step="10" class="tb-input" style="width:100%;font-size:11px;"></div>
+                    </div>
                     <label style="font-size:10px;color:var(--text-light);">Constraining layers</label>
                     <div id="m2d-constraint-layers" style="max-height:80px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:4px;margin-bottom:6px;font-size:11px;"></div>
                 </div>
@@ -669,7 +673,8 @@
             <!-- Footer -->
             <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;">
                 <div id="m2d-log" style="max-height:100px;overflow-y:auto;font-size:10px;font-family:monospace;background:var(--bg-subtle);border-radius:4px;padding:6px;margin-bottom:8px;color:var(--text-mid);"></div>
-                <div class="modal-actions">
+                <div class="modal-actions" style="display:flex;gap:6px;align-items:center;">
+                    <button id="m2d-btn-clear" class="tb-btn" style="margin-right:auto;color:var(--danger, #ff6b6b);">Clear Mesh</button>
                     <button id="m2d-btn-close" class="tb-btn">Close</button>
                     <button id="m2d-btn-generate" class="tb-btn tb-btn-run">Generate</button>
                 </div>
