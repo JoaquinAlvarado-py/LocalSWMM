@@ -1110,7 +1110,8 @@
                     resolve(message);
                 } else if (message.type === 'error') {
                     if (sim2DWorker) { sim2DWorker.terminate(); sim2DWorker = null; }
-                    reject(new Error(message.message));
+                    const detail = message.detail ? `\n${message.detail}` : '';
+                    reject(new Error((message.message || 'OpenSWMM 2D worker failed.') + detail));
                 }
             };
             sim2DWorker.onerror = event => {
