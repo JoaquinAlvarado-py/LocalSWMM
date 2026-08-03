@@ -271,12 +271,13 @@
             var requestedArea = Number(quality.maxArea) || 0;
             var maxTargetTriangles = Number(quality.maxTargetTriangles) || 30000;
             var safeRequestedArea = requestedArea > 0 ? requestedArea : domainArea / maxTargetTriangles;
-            var detailArea = charEdge > 0 ? charEdge * charEdge * 0.5 : 0;
             if (requestedArea <= 0 || domainArea / safeRequestedArea >= maxTargetTriangles) {
+                // Base resolution: a uniform budget across the whole domain.
+                // Terrain-adaptive thinning (below) adds refinement where the
+                // DEM actually varies, so flat areas are not over-refined.
                 var capMaxArea = domainArea / maxTargetTriangles;
-                var uniformArea = (detailArea > 0 && detailArea < capMaxArea) ? detailArea : capMaxArea;
                 effectiveQuality = Object.assign({}, quality, {
-                    maxArea: uniformArea,
+                    maxArea: capMaxArea,
                     minAngle: Math.min(Number(quality.minAngle) || 33, 30),
                     maxSteiner: Number(quality.maxSteiner) > 0 ? Math.min(quality.maxSteiner, 30000) : 30000,
                     allowBoundarySteiner: false

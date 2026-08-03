@@ -173,16 +173,31 @@
             var candidate = { x: x, y: y, z: z, normal: normal(x, y, Math.max(1, spacing / 2)) }, candidateKey = Math.floor(x / spacing) + ':' + Math.floor(y / spacing);
             candidates.push(candidate); var candidateBucket = candidateGrid.get(candidateKey); if (candidateBucket) candidateBucket.push(candidate); else candidateGrid.set(candidateKey, [candidate]);
         }
-        var threshold = Number(opts.normalDot); if (!isFinite(threshold)) threshold = 0.6;
+        // "Most-curved first": score every candidate by how much its surface
+        // normal bends away from its local neighbourhood (curvature). Then
+        // accept the most-curved points, enforcing a minimum spacing and the
+        // caller's point budget. This adapts mesh detail to the DEM: valleys,
+        // ridges and breaks of slope get vertices, flat areas stay coarse.
         candidates.forEach(function (c) {
-            if (points.length >= maxPoints || !c.normal) return;
+            if (!c.normal) return;
             var avg = [0, 0, 0], count = 0;
             var ccx = Math.floor(c.x / spacing), ccy = Math.floor(c.y / spacing);
             for (var gx = ccx - 1; gx <= ccx + 1; gx++) for (var gy = ccy - 1; gy <= ccy + 1; gy++) (candidateGrid.get(gx + ':' + gy) || []).forEach(function (q) { if (q.normal) { avg[0] += q.normal[0]; avg[1] += q.normal[1]; avg[2] += q.normal[2]; count++; } });
-            var al = Math.hypot(avg[0], avg[1], avg[2]) || 1, dot = (c.normal[0] * avg[0] + c.normal[1] * avg[1] + c.normal[2] * avg[2]) / al;
-            if (dot >= threshold) return;
-            var key = Math.floor(c.x / spacing) + ':' + Math.floor(c.y / spacing); if (grid.has(key)) return; grid.set(key, true); points.push({ x: c.x, y: c.y, z: c.z, tag: 'terrain' });
+            if (count < 2) return;
+            var al = Math.hypot(avg[0], avg[1], avg[2]) || 1;
+            c.score = 1 - (c.normal[0] * avg[0] + c.normal[1] * avg[1] + c.normal[2] * avg[2]) / al;
         });
+        candidates = candidates.filter(function (c) { return isFinite(c.score); });
+        candidates.sort(function (a, b) { return b.score - a.score; });
+        for (var ci = 0; ci < candidates.length && points.length < maxPoints; ci++) {
+            var c = candidates[ci];
+            var cx = Math.floor(c.x / spacing), cy = Math.floor(c.y / spacing), tooClose = false;
+            for (var gx = cx - 1; gx <= cx + 1 && !tooClose; gx++) for (var gy = cy - 1; gy <= cy + 1 && !tooClose; gy++) (grid.get(gx + ':' + gy) || []).forEach(function (q) { if (Math.hypot(q.x - c.x, q.y - c.y) < spacing) tooClose = true; });
+            if (tooClose) continue;
+            var key = cx + ':' + cy;
+            var bucket = grid.get(key); if (bucket) bucket.push(c); else grid.set(key, [c]);
+            points.push({ x: c.x, y: c.y, z: c.z, tag: 'terrain' });
+        }
         return points;
     }
 
