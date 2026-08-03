@@ -24,6 +24,16 @@
             var v = s[r[0]] || { visible: r[0] === 'cell-fill' || r[0] === 'edges', opacity: 100 }; var line = document.createElement('div'); line.className = 'layer-tree-row'; line.innerHTML = '<label><input type="checkbox" ' + (v.visible ? 'checked' : '') + '> ' + r[1] + '</label><input type="range" min="0" max="100" value="' + v.opacity + '" aria-label="' + r[1] + ' opacity">'; var cb = line.querySelector('input[type=checkbox]'), range = line.querySelector('input[type=range]'); function apply() { s[r[0]] = { visible: cb.checked, opacity: Number(range.value) }; save(s); if (m && m.getLayer(r[2])) { var hiddenIn3D = window.App && window.App.is3D && (r[0] === 'terrain' || r[0] === 'smooth-depth'); try { m.setLayoutProperty(r[2], 'visibility', cb.checked && !hiddenIn3D ? 'visible' : 'none'); } catch (e) {} if (window.Mesh2DGL && (r[2] === 'm2d-smooth-depth-fill' || r[2] === 'm2d-mesh-terrain')) window.Mesh2DGL.setOpacity(r[2], Number(range.value) / 100); var prop = r[2].indexOf('fill') >= 0 || r[2].indexOf('bands') >= 0 ? 'fill-opacity' : r[2].indexOf('line') >= 0 || r[2].indexOf('isolines') >= 0 ? 'line-opacity' : r[2].indexOf('arrows') >= 0 ? 'icon-opacity' : 'circle-opacity'; try { m.setPaintProperty(r[2], prop, Number(range.value) / 100); } catch (e) {} } } cb.addEventListener('change', apply); range.addEventListener('input', apply); body.appendChild(line); apply();
         });
     }
-    window.LayerTree = { refresh: refresh, rows: rows };
+    function enableResultsDefaults() {
+        var s = state();
+        if (s._resultsDefaultsV2) return refresh();
+        ['velocity-arrows', 'vertices', 'depth-isolines', 'edges', 'depth-bands', 'smooth-depth', 'cell-fill', 'terrain'].forEach(function (key) {
+            s[key] = { visible: true, opacity: s[key] ? s[key].opacity : 100 };
+        });
+        s._resultsDefaultsV2 = true;
+        save(s);
+        refresh();
+    }
+    window.LayerTree = { refresh: refresh, rows: rows, enableResultsDefaults: enableResultsDefaults };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', refresh); else setTimeout(refresh, 0);
 })(window);
