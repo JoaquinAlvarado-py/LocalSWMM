@@ -208,11 +208,30 @@
             return Promise.reject(new Error('Mesh2DPslg module is not loaded'));
         }
 
+        // Characteristic edge length: the mean segment spacing of the
+        // subcatchment rings, in local metres. The domain boundary is
+        // densified to this same spacing so the "gap" between the model and
+        // the DEM extent is meshed at comparable detail instead of a few
+        // giant cells.
+        var charEdge = 0, subEdges = 0;
+        (sources.subcatchments || []).forEach(function (sub) {
+            var ring = sub.ring || [];
+            for (var i = 1; i < ring.length; i++) {
+                var a = ctx.transform.toLocal(ring[i - 1]), b = ctx.transform.toLocal(ring[i]);
+                charEdge += Math.hypot(b[0] - a[0], b[1] - a[1]);
+                subEdges++;
+            }
+        });
+        if (subEdges > 0) charEdge /= subEdges;
+        var boundaryLen = (Number(quality.maxBoundaryEdge) || 0) > 0
+            ? quality.maxBoundaryEdge
+            : (charEdge > 0 ? charEdge : 0);
+
         var pslg = window.Mesh2DPslg.fromNetwork(sources, {
             transform: ctx.transform,
             simplifyEps: quality.simplifyEps,
             snapRadius: quality.snapRadius,
-            maxBoundaryEdge: quality.maxBoundaryEdge,
+            maxBoundaryEdge: boundaryLen,
             minNodeSep: quality.minNodeSep,
             flattenRadius: quality.flattenRadius,
             domainBuffer: quality.domainBuffer,
@@ -252,9 +271,12 @@
             var requestedArea = Number(quality.maxArea) || 0;
             var maxTargetTriangles = Number(quality.maxTargetTriangles) || 30000;
             var safeRequestedArea = requestedArea > 0 ? requestedArea : domainArea / maxTargetTriangles;
+            var detailArea = charEdge > 0 ? charEdge * charEdge * 0.5 : 0;
             if (requestedArea <= 0 || domainArea / safeRequestedArea >= maxTargetTriangles) {
+                var capMaxArea = domainArea / maxTargetTriangles;
+                var uniformArea = (detailArea > 0 && detailArea < capMaxArea) ? detailArea : capMaxArea;
                 effectiveQuality = Object.assign({}, quality, {
-                    maxArea: domainArea / maxTargetTriangles,
+                    maxArea: uniformArea,
                     minAngle: Math.min(Number(quality.minAngle) || 33, 30),
                     maxSteiner: Number(quality.maxSteiner) > 0 ? Math.min(quality.maxSteiner, 30000) : 30000,
                     allowBoundarySteiner: false
