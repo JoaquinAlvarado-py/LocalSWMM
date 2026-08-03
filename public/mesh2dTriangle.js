@@ -336,7 +336,7 @@
             });
             domainArea = Math.abs(domainArea) / 2;
             var requestedArea = Number(quality.maxArea) || 0;
-            var maxTargetTriangles = Number(quality.maxTargetTriangles) || 30000;
+            var maxTargetTriangles = Number(quality.maxTargetTriangles) || 15000;
             var safeRequestedArea = requestedArea > 0 ? requestedArea : domainArea / maxTargetTriangles;
             if (requestedArea <= 0 || domainArea / safeRequestedArea >= maxTargetTriangles) {
                 // Base resolution: a uniform budget across the whole domain.
