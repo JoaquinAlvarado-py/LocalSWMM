@@ -39,10 +39,24 @@
             sampler.note = 'Mapbox terrain uses the current tile coverage and zoom; uncovered vertices use IDW fallback.';
             return sampler;
         }
-        if (settings.dtmSource !== 'GEOTIFF' || !settings.file || !window.GeoTIFF) return sampler;
+        var openTopo = /^(COP30|USGS10m|SRTMGL1|NASADEM|ANADEM|GEDTM30)$/.test(String(settings.dtmSource || ''));
+        if (settings.dtmSource !== 'GEOTIFF' && !openTopo) return sampler;
+        if (!window.GeoTIFF) return sampler;
 
-        sampler.kind = 'GEOTIFF';
-        sampler.ready = settings.file.arrayBuffer().then(function (buffer) {
+        sampler.kind = openTopo ? 'OPENTOPOGRAPHY_' + settings.dtmSource : 'GEOTIFF';
+        var rasterBuffer;
+        if (settings.file && settings.file.arrayBuffer) {
+            rasterBuffer = settings.file.arrayBuffer();
+        } else if (openTopo && settings.bbox && window.LandCoverModule && window.LandCoverModule.getOpenTopographyBboxUrl) {
+            var url = window.LandCoverModule.getOpenTopographyBboxUrl(settings.bbox[0], settings.bbox[1], settings.bbox[2], settings.bbox[3], settings.dtmSource, settings.apiKey || '');
+            rasterBuffer = fetch(url).then(function (response) {
+                if (!response.ok) throw new Error('OpenTopography DEM request failed: HTTP ' + response.status);
+                return response.arrayBuffer();
+            });
+        } else {
+            return sampler;
+        }
+        sampler.ready = rasterBuffer.then(function (buffer) {
             return window.GeoTIFF.fromArrayBuffer(buffer);
         }).then(function (tiff) {
             return tiff.getImage();
@@ -59,6 +73,25 @@
                 var sourceProj = epsg;
                 sampler.epsg = epsg;
                 sampler.detectedCrs = epsg;
+                function toLngLat(x, y) {
+                    if (sourceProj !== 'EPSG:4326' && window.proj4) {
+                        try { return window.proj4(sourceProj, 'EPSG:4326', [x, y]); } catch (e) { return null; }
+                    }
+                    return [x, y];
+                }
+                sampler.refreshBounds = function () {
+                    var rasterCorners = [
+                        toLngLat(x0, y0),
+                        toLngLat(x0 + sx * width, y0),
+                        toLngLat(x0 + sx * width, y0 - sy * height),
+                        toLngLat(x0, y0 - sy * height)
+                    ];
+                    if (rasterCorners.every(function (p) { return p && isFinite(p[0]) && isFinite(p[1]); })) {
+                        rasterCorners.push(rasterCorners[0].slice());
+                        sampler.boundsLngLat = rasterCorners;
+                    }
+                };
+                sampler.refreshBounds();
                 var toRaster = function (lngLat) {
                     var xy = [lngLat[0], lngLat[1]];
                     if (sourceProj !== 'EPSG:4326' && window.proj4) {

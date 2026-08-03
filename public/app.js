@@ -422,6 +422,10 @@
 
     // ---------- DEM Terrain Sampling Functions ----------
     window.sampleDEMElevationAsync = async function (lngLat) {
+        if (window.App && window.App.mesh2DTerrainSampler && window.App.mesh2DTerrainSampler.sampleLngLat) {
+            const sampled = window.App.mesh2DTerrainSampler.sampleLngLat(lngLat);
+            if (Number.isFinite(sampled)) return sampled;
+        }
         if (!map) return null;
         const demSelect = document.getElementById('dem-source-select');
         const apiKeyInput = document.getElementById('opentopo-api-key');

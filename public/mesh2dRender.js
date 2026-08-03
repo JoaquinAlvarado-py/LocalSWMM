@@ -31,10 +31,32 @@
     }
     function contourBands(mesh, values, levels) {
         var fs = [], lv = levels || levelsAuto(values);
+        function clip(poly, limit, keepAbove) {
+            var out = [];
+            if (!poly.length) return out;
+            function inside(p) { return keepAbove ? p[2] >= limit : p[2] <= limit; }
+            function intersection(a, b) {
+                var den = b[2] - a[2], t = Math.abs(den) < 1e-12 ? 0 : (limit - a[2]) / den;
+                return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, limit];
+            }
+            for (var i = 0; i < poly.length; i++) {
+                var a = poly[i], b = poly[(i + 1) % poly.length], aIn = inside(a), bIn = inside(b);
+                if (aIn && bIn) out.push(b);
+                else if (aIn && !bIn) out.push(intersection(a, b));
+                else if (!aIn && bIn) out.push(intersection(a, b), b);
+            }
+            return out;
+        }
         (mesh.triangles || []).forEach(function (t) {
             var poly = t.v.map(function (i) { var v = mesh.vertices[i]; return [v.lng, v.lat, values[i]]; });
-            var min = Math.min.apply(Math, poly.map(function (p) { return p[2]; })), max = Math.max.apply(Math, poly.map(function (p) { return p[2]; }));
-            for (var b = 0; b < lv.length - 1; b++) if (max >= lv[b] && min <= lv[b + 1]) fs.push(feature('Polygon', [[poly.map(function (p) { return [p[0], p[1]]; }).concat([ [poly[0][0], poly[0][1]] ])]], { bandIndex: b, level: lv[b] }, 'band-' + b + '-' + t.v.join('-')));
+            for (var b = 0; b < lv.length - 1; b++) {
+                var clipped = clip(clip(poly, lv[b], true), lv[b + 1], false);
+                if (clipped.length >= 3) {
+                    var ring = clipped.map(function (p) { return [p[0], p[1]]; });
+                    ring.push(ring[0].slice());
+                    fs.push(feature('Polygon', [ring], { bandIndex: b, level: lv[b] }, 'band-' + b + '-' + t.v.join('-')));
+                }
+            }
         });
         return { type: 'FeatureCollection', features: fs };
     }

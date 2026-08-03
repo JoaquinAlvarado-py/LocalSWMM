@@ -254,6 +254,9 @@
             if (!window.Mesh2DGenerator || !window.Mesh2DGenerator.generateFromSubcatchments) {
                 throw new Error('Neither Triangle nor poly2tri fallback is available: ' + (err.message || err));
             }
+            if (!sources.subcatchments || !sources.subcatchments.length) {
+                throw new Error('Triangle failed, and the poly2tri fallback can only mesh inside subcatchments. Add subcatchments or fix the Triangle engine (full-domain meshing requires Triangle).');
+            }
             var fallback = window.Mesh2DGenerator.generateFromSubcatchments({
                 maxAreaM2: quality.maxArea || 200,
                 assignLandCover: true
