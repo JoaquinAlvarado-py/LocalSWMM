@@ -812,6 +812,39 @@
         }
         window.clearSelection && window.clearSelection();
         setTimeout(() => window.fitToNetwork(), 100);
+        setTimeout(() => window.maybeAutoLoadBellingeTif && window.maybeAutoLoadBellingeTif(), 150);
+    };
+
+    // If the loaded model sits inside the Bellinge2.tif raster extent, fetch the
+    // bundled GeoTIFF and pre-select it as the 2D mesh DTM so the DEM can be
+    // used immediately without hunting for the file on disk.
+    window.maybeAutoLoadBellingeTif = async function () {
+        try {
+            if (!Net || !Net.nodes || !Net.nodes.length) return;
+            if (window.App && window.App.mesh2DBellingeTif) return; // already loaded
+            let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+            Net.nodes.forEach(n => {
+                if (!n.lngLat) return;
+                minLng = Math.min(minLng, n.lngLat[0]); maxLng = Math.max(maxLng, n.lngLat[0]);
+                minLat = Math.min(minLat, n.lngLat[1]); maxLat = Math.max(maxLat, n.lngLat[1]);
+            });
+            // Bellinge2.tif extent (EPSG:4326), with a small tolerance margin.
+            const inBellinge = minLng >= 10.20 && maxLng <= 10.43 && minLat >= 55.29 && maxLat <= 55.41;
+            if (!inBellinge) return;
+            const res = await fetch('./sample_models/Bellinge2.tif');
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const buffer = await res.arrayBuffer();
+            const tif = { name: 'Bellinge2.tif', arrayBuffer: () => Promise.resolve(buffer) };
+            window.App.mesh2DBellingeTif = tif;
+            window.App.mesh2DGeoTiffFile = tif;
+            window.App.mesh2DGeoTiffName = 'Bellinge2.tif';
+            console.info('[2D Mesh] Bellinge model detected — bundled Bellinge2.tif DEM is ready for 2D mesh generation.');
+            if (window.showResultsWarning) {
+                window.showResultsWarning('Bellinge model detected — the bundled Bellinge2.tif DEM is now pre-selected for 2D mesh generation. Open "Generate 2D Mesh" and press Generate.');
+            }
+        } catch (err) {
+            console.warn('Could not auto-load bundled Bellinge2.tif:', err);
+        }
     };
 
     // WASM simulation run
