@@ -62,26 +62,26 @@
 
     // SETTERS (indices match the C struct layout)
     var _proto = TriangulateIO.prototype;
-    Object.defineProperty(_proto, 'pointlist', { set: function (v) { this.arr[0] = arrayToHeap(this._module, v, Float64Array); } });
+    Object.defineProperty(_proto, 'pointlist', { set: function (v) { this.arr[0] = arrayToHeap(this._module, v, Float64Array); this.arr[3] = v ? (v.length / 2) | 0 : 0; } });
     Object.defineProperty(_proto, 'pointattributelist', { set: function (v) { this.arr[1] = arrayToHeap(this._module, v, Float64Array); } });
     Object.defineProperty(_proto, 'pointmarkerlist', { set: function (v) { this.arr[2] = arrayToHeap(this._module, v); } });
     Object.defineProperty(_proto, 'numberofpoints', { set: function (v) { this.arr[3] = v; } });
     Object.defineProperty(_proto, 'numberofpointattributes', { set: function (v) { this.arr[4] = v; } });
-    Object.defineProperty(_proto, 'trianglelist', { set: function (v) { this.arr[5] = arrayToHeap(this._module, v); } });
-    Object.defineProperty(_proto, 'triangleattributelist', { set: function (v) { this.arr[6] = arrayToHeap(this._module, v, Float64Array); } });
+    Object.defineProperty(_proto, 'trianglelist', { set: function (v) { this.arr[5] = arrayToHeap(this._module, v); this.arr[9] = v ? (v.length / 3) | 0 : 0; } });
+    Object.defineProperty(_proto, 'triangleattributelist', { set: function (v) { this.arr[6] = arrayToHeap(this._module, v, Float64Array); this.arr[11] = v && this.arr[9] ? (v.length / this.arr[9]) | 0 : 0; } });
     Object.defineProperty(_proto, 'trianglearealist', { set: function (v) { this.arr[7] = arrayToHeap(this._module, v, Float64Array); } });
     Object.defineProperty(_proto, 'neighborlist', { set: function (v) { this.arr[8] = arrayToHeap(this._module, v); } });
     Object.defineProperty(_proto, 'numberoftriangles', { set: function (v) { this.arr[9] = v; } });
     Object.defineProperty(_proto, 'numberofcorners', { set: function (v) { this.arr[10] = v; } });
     Object.defineProperty(_proto, 'numberoftriangleattributes', { set: function (v) { this.arr[11] = v; } });
-    Object.defineProperty(_proto, 'segmentlist', { set: function (v) { this.arr[12] = arrayToHeap(this._module, v); } });
+    Object.defineProperty(_proto, 'segmentlist', { set: function (v) { this.arr[12] = arrayToHeap(this._module, v); this.arr[14] = v ? (v.length / 2) | 0 : 0; } });
     Object.defineProperty(_proto, 'segmentmarkerlist', { set: function (v) { this.arr[13] = arrayToHeap(this._module, v); } });
     Object.defineProperty(_proto, 'numberofsegments', { set: function (v) { this.arr[14] = v; } });
-    Object.defineProperty(_proto, 'holelist', { set: function (v) { this.arr[15] = arrayToHeap(this._module, v, Float64Array); } });
+    Object.defineProperty(_proto, 'holelist', { set: function (v) { this.arr[15] = arrayToHeap(this._module, v, Float64Array); this.arr[16] = v ? (v.length / 2) | 0 : 0; } });
     Object.defineProperty(_proto, 'numberofholes', { set: function (v) { this.arr[16] = v; } });
-    Object.defineProperty(_proto, 'regionlist', { set: function (v) { this.arr[17] = arrayToHeap(this._module, v, Float64Array); } });
+    Object.defineProperty(_proto, 'regionlist', { set: function (v) { this.arr[17] = arrayToHeap(this._module, v, Float64Array); this.arr[18] = v ? (v.length / 4) | 0 : 0; } });
     Object.defineProperty(_proto, 'numberofregions', { set: function (v) { this.arr[18] = v; } });
-    Object.defineProperty(_proto, 'edgelist', { set: function (v) { this.arr[19] = arrayToHeap(this._module, v); } });
+    Object.defineProperty(_proto, 'edgelist', { set: function (v) { this.arr[19] = arrayToHeap(this._module, v); this.arr[22] = v ? (v.length / 2) | 0 : 0; } });
     Object.defineProperty(_proto, 'edgemarkerlist', { set: function (v) { this.arr[20] = arrayToHeap(this._module, v); } });
     Object.defineProperty(_proto, 'normlist', { set: function (v) { this.arr[21] = arrayToHeap(this._module, v, Float64Array); } });
 
@@ -102,12 +102,13 @@
 
     _proto.destroy = function (all) {
         var M = this._module;
+        [0, 1, 2, 5, 6, 7, 8, 12, 13, 19, 20, 21].forEach(function (i) {
+            if (this.arr[i]) M._free(this.arr[i]);
+        }, this);
+        if (all) [15, 17].forEach(function (i) {
+            if (this.arr[i]) M._free(this.arr[i]);
+        }, this);
         if (this.ptr) M._free(this.ptr);
-        if (all) {
-            [0, 1, 2, 5, 6, 7, 8, 12, 13, 15, 17, 19, 20, 21].forEach(function (i) {
-                if (this.arr[i]) M._free(this.arr[i]);
-            }, this);
-        }
         this.ptr = 0;
     };
 
@@ -180,4 +181,6 @@
     TriangleWASM.isReady = function () { return TriangleWASM._ready; };
 
     window.TriangleWASM = TriangleWASM;
+    // Keep the short name used by the upstream package/demo API as well.
+    window.Triangle = TriangleWASM;
 })(window);

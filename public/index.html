@@ -210,7 +210,7 @@
             <!-- Layer Tree Card -->
             <div id="layer-tree-card" class="hidden">
                 <div class="settings-group" style="padding:4px 0;">
-                    <span class="settings-label">SWMM 2D Outputs</span>
+                 <span class="settings-label">2D Layer Tree</span>
                     <div id="layer-tree-body" style="font-size:11px;"></div>
                 </div>
             </div>
@@ -580,7 +580,7 @@
                         <div style="flex:2;"><label style="font-size:10px;color:var(--text-light);">Boundary polygon layer</label>
                         <select id="m2d-boundary-layer" class="tb-select" style="width:100%;font-size:11px;"><option value="">Auto Bounding Domain (+ buffer)</option></select></div>
                         <div style="flex:1;"><label style="font-size:10px;color:var(--text-light);">Auto buffer (m)</label>
-                        <input type="number" id="m2d-domain-buffer" value="50" min="0" step="10" class="tb-input" style="width:100%;font-size:11px;"></div>
+                         <input type="number" id="m2d-domain-buffer" value="10" min="0" step="10" class="tb-input" style="width:100%;font-size:11px;"></div>
                     </div>
                     <label style="font-size:10px;color:var(--text-light);">Constraining layers</label>
                     <div id="m2d-constraint-layers" style="max-height:80px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:4px;margin-bottom:6px;font-size:11px;"></div>
@@ -606,7 +606,7 @@
                 <div class="m2d-section">
                     <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">Triangle Quality</h4>
                     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                        <div><label style="font-size:10px;color:var(--text-light);">Max area (m², 0=none)</label><input type="number" id="m2d-max-area" value="0" step="10" class="tb-input" style="width:90px;font-size:11px;"></div>
+                         <div><label style="font-size:10px;color:var(--text-light);">Max area (m², 0=none)</label><input type="number" id="m2d-max-area" value="200" step="10" class="tb-input" style="width:90px;font-size:11px;"></div>
                         <div><label style="font-size:10px;color:var(--text-light);">Min angle (°)</label><input type="number" id="m2d-min-angle" value="33" step="1" class="tb-input" style="width:70px;font-size:11px;"></div>
                         <div><label style="font-size:10px;color:var(--text-light);">Max Steiner (0=∞)</label><input type="number" id="m2d-max-steiner" value="0" step="100" class="tb-input" style="width:80px;font-size:11px;"></div>
                     </div>
@@ -652,12 +652,19 @@
                         <div><label style="font-size:10px;color:var(--text-light);">COUPLING_SYNC (s)</label><input type="number" id="m2d-coupling-sync" value="1" step="0.5" class="tb-input" style="width:70px;font-size:11px;"></div>
                         <div><label style="font-size:10px;color:var(--text-light);">THETA</label><input type="number" id="m2d-theta" value="0.5" step="0.05" class="tb-input" style="width:60px;font-size:11px;"></div>
                         <div><label style="font-size:10px;color:var(--text-light);">CFL_NUMBER</label><input type="number" id="m2d-cfl-number" value="0.8" step="0.05" class="tb-input" style="width:60px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">H_MOVE (m)</label><input type="number" id="m2d-hmove" value="0.001" step="0.001" class="tb-input" style="width:70px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">FROUDE_MAX</label><input type="number" id="m2d-froude-max" value="1.0" step="0.1" class="tb-input" style="width:60px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">LTS_TIERS</label><input type="number" id="m2d-lts-tiers" value="1" step="1" class="tb-input" style="width:50px;font-size:11px;"></div>
-                    </div>
-                    <div style="display:flex;gap:8px;margin-top:4px;">
-                        <div><label style="font-size:10px;color:var(--text-light);">RAINFALL_MODE</label>
+                         <div><label style="font-size:10px;color:var(--text-light);">H_MOVE (m)</label><input type="number" id="m2d-hmove" value="0.001" step="0.001" class="tb-input" style="width:70px;font-size:11px;"></div>
+                         <div><label style="font-size:10px;color:var(--text-light);">FROUDE_MAX</label><input type="number" id="m2d-froude-max" value="1.0" step="0.1" class="tb-input" style="width:60px;font-size:11px;"></div>
+                         <div><label style="font-size:10px;color:var(--text-light);">LTS_TIERS</label><input type="number" id="m2d-lts-tiers" value="1" step="1" class="tb-input" style="width:50px;font-size:11px;"></div>
+                         <div><label style="font-size:10px;color:var(--text-light);">LIMITER_EPSILON</label><input type="number" id="m2d-limiter-epsilon" value="0.000001" step="0.000001" class="tb-input" style="width:90px;font-size:11px;"></div>
+                         <div><label style="font-size:10px;color:var(--text-light);">FLUX_DH_EPS</label><input type="number" id="m2d-flux-dh-eps" value="0.000001" step="0.000001" class="tb-input" style="width:90px;font-size:11px;"></div>
+                     </div>
+                     <div style="display:flex;gap:8px;margin-top:4px;">
+                         <div><label style="font-size:10px;color:var(--text-light);">CELL_CLOSURE</label>
+                             <select id="m2d-cell-closure" class="tb-select" style="font-size:11px;"><option value="FLAT">FLAT</option><option value="VFR">VFR</option></select></div>
+                         <div><label style="font-size:10px;color:var(--text-light);">FACE_RECONSTRUCTION</label>
+                             <select id="m2d-face-reconstruction" class="tb-select" style="font-size:11px;"><option value="MEAN">MEAN</option><option value="VFR_FACE">VFR_FACE</option></select></div>
+                         <div><label style="font-size:10px;color:var(--text-light);">VFR_MIN_WET_FRAC</label><input type="number" id="m2d-vfr-min-wet-frac" value="0.1" min="0.000001" max="0.5" step="0.01" class="tb-input" style="width:75px;font-size:11px;"></div>
+                         <div><label style="font-size:10px;color:var(--text-light);">RAINFALL_MODE</label>
                             <select id="m2d-rainfall-mode" class="tb-select" style="font-size:11px;"><option value="NATURAL_NEIGHBOUR">NATURAL_NEIGHBOUR</option><option value="SYSTEM">SYSTEM</option><option value="NONE">NONE</option></select></div>
                         <div><label style="font-size:10px;color:var(--text-light);">REPORT_2D</label>
                             <select id="m2d-report-2d" class="tb-select" style="font-size:11px;"><option value="NO">NO</option><option value="YES">YES</option></select></div>
@@ -757,6 +764,7 @@
     <script src="https://unpkg.com/dxf-parser@1.1.2/dist/dxf-parser.js"></script>
     <!-- poly2tri.js for Constrained Delaunay Triangulation (2D mesh generation) -->
     <script src="https://cdn.jsdelivr.net/npm/poly2tri@1.5.0/dist/poly2tri.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
 
     <!-- Application -->
     <script src="inpParser.js?v=12"></script>
@@ -771,13 +779,19 @@
     <script src="tools.js?v=12"></script>
     <script src="profile.js?v=12"></script>
     <script src="plot.js?v=12"></script>
-    <script src="mesh2d.js?v=12"></script>
     <script src="vendor/triangle/triangle-loader.js?v=12"></script>
     <script src="mesh2dProj.js?v=12"></script>
     <script src="mesh2dPslg.js?v=12"></script>
+    <script src="mesh2dTerrain.js?v=12"></script>
     <script src="mesh2dTriangle.js?v=12"></script>
+    <script src="mesh2dCoupling.js?v=12"></script>
+    <script src="mesh2dExport.js?v=12"></script>
+    <script src="mesh2dRender.js?v=12"></script>
+    <script src="meshGlLayer.js?v=12"></script>
+    <script src="mesh2d.js?v=12"></script>
     <script src="mesh2dInp.js?v=12"></script>
     <script src="mesh2dDialog.js?v=12"></script>
+    <script src="layerTree.js?v=12"></script>
     <script src="landcover.js?v=12"></script>
     <script src="curves.js?v=12"></script>
     <script src="lid.js?v=12"></script>

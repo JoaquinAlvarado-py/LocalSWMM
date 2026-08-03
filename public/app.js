@@ -53,6 +53,7 @@
         warningsVisible: true,
         selection: new Set(),      // selected element ids
         masterPlan: null,          // geojson reference overlay
+        importedLayers: window.Net.importedLayers || [],
         lastRunReport: null
     };
 
@@ -126,6 +127,8 @@
                 }
             });
         }
+
+        if (window.LayerTree && window.LayerTree.refresh) window.LayerTree.refresh();
 
         if (!map.getSource('swmm-subcatchments')) {
             map.addSource('swmm-subcatchments', { type: 'geojson', promoteId: 'id', data: Net.subcatchmentsGeoJSON() });
@@ -252,6 +255,7 @@
         if (window.App.masterPlan && !map.getSource('master-plan')) {
             addMasterPlanLayers(window.App.masterPlan);
         }
+        (window.App.importedLayers || []).forEach(addConstraintLayer);
 
         applyResultStylingIfAny();
     }
@@ -264,6 +268,12 @@
         map.getSource('swmm-subcatchments').setData(Net.subcatchmentsGeoJSON());
         const meshSrc = map.getSource('swmm-2d-mesh');
         if (meshSrc) meshSrc.setData(Net.mesh2DGeoJSON());
+        const constraintNames = new Set((window.App.importedLayers || []).map(l => 'constraint-' + l.name));
+        const staleConstraints = new Set();
+        ((map.getStyle() && map.getStyle().layers) || []).filter(l => l.id.indexOf('constraint-') === 0 && !constraintNames.has(l.id.replace(/-(line|fill|point)$/, ''))).forEach(l => { staleConstraints.add(l.id.replace(/-(line|fill|point)$/, '')); if (map.getLayer(l.id)) map.removeLayer(l.id); });
+        staleConstraints.forEach(id => { if (map.getSource(id)) map.removeSource(id); });
+        (window.App.importedLayers || []).forEach(addConstraintLayer);
+        if (window.LayerTree && window.LayerTree.refresh) window.LayerTree.refresh();
         // restore selection feature-state
         window.App.selection.forEach(id => setElementState(id, { selected: true }));
     }
@@ -322,6 +332,16 @@
         }, 'swmm-subcatchments-fill');
     }
 
+    function addConstraintLayer(layer) {
+        if (!layer || !layer.name || !layer.geojson || map.getSource('constraint-' + layer.name)) return;
+        var id = 'constraint-' + layer.name;
+        map.addSource(id, { type: 'geojson', data: layer.geojson });
+        map.addLayer({ id: id + '-line', type: 'line', source: id, paint: { 'line-color': '#6b7280', 'line-width': 1.5, 'line-opacity': 0.65 } }, 'swmm-subcatchments-fill');
+        map.addLayer({ id: id + '-fill', type: 'fill', source: id, filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#9ca3af', 'fill-opacity': 0.08 } }, 'swmm-subcatchments-fill');
+        map.addLayer({ id: id + '-point', type: 'circle', source: id, filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-color': '#6b7280', 'circle-radius': 3, 'circle-opacity': 0.75 } }, 'swmm-subcatchments-fill');
+    }
+    window.addConstraintLayer = addConstraintLayer;
+
     window.setMasterPlan = function (geojson) {
         window.App.masterPlan = geojson;
         ['master-plan-fill', 'master-plan-line', 'master-plan-points'].forEach(l => {
@@ -351,6 +371,7 @@
             if (map.getLayer('3d-buildings-base')) map.setLayoutProperty('3d-buildings-base', 'visibility', 'none');
             map.easeTo({ pitch: 0, bearing: 0, duration: 800 });
         }
+        if (window.LayerTree && window.LayerTree.refresh) window.LayerTree.refresh();
     }
     window.apply3D = apply3D;
 
@@ -670,6 +691,7 @@
         }
         return null;
     }
+    window.fetchProjDef = fetchProjDef;
 
     function transformModelCoords(model, fn) {
         model.nodes.forEach(n => { n.lngLat = fn(n.lngLat); });
@@ -746,9 +768,12 @@
                 // wiped whatever mesh was already loaded
                 mesh2D: model.mesh2D || [],
                 timeseries: model.timeseries || {},
-                rawSections: model.rawSections || {}
+                rawSections: model.rawSections || {},
+                mesh2DIndexed: model.mesh2DIndexed || null,
+                importedLayers: model.importedLayers || []
             };
             Net.loadState(state, true);
+            window.App.importedLayers = Net.importedLayers || [];
         } else {
             // merge: add with fresh unique ids when colliding
             // (register in the index maps as we go so findAny sees them)
@@ -767,6 +792,10 @@
                 Net.subcatchments.push(s);
                 Net._subMap.set(s.id, s);
             });
+            (model.importedLayers || []).forEach(layer => {
+                if (!Net.importedLayers.some(l => l.name === layer.name)) Net.importedLayers.push(layer);
+            });
+            window.App.importedLayers = Net.importedLayers;
             (model.mesh2D || []).forEach(m => {
                 if (Net.findAny(m.id)) m.id = Net.nextId('MESH2D');
                 Net.mesh2D.push(m);
@@ -1049,7 +1078,7 @@
         return 3500;
     }
 
-    async function run2DSimulationInWorker(inpText, triangleIds) {
+    async function run2DSimulationInWorker(inpText, triangleIds, meshFile) {
         fetch('openswmm2d.version.json')
             .then(r => r.ok ? r.json() : null)
             .then(v => { if (v) console.info('OpenSWMM 2D engine build:', v.engineDescribe || v.engineCommit, '| built', v.builtAtUtc); })
@@ -1087,7 +1116,13 @@
                     ? 'OpenSWMM 2D WebAssembly is not built. Run npm run build:2d-wasm, then reload the application.'
                     : (event.message || 'OpenSWMM 2D worker failed to start.')));
             };
-            sim2DWorker.postMessage({ type: 'run2d', inp: inpText, triangleIds, frameIntervalMs: 60000 });
+            sim2DWorker.postMessage({
+                type: 'run2d', inp: inpText, triangleIds,
+                meshFile: meshFile || null,
+                triangleVertices: Net.mesh2DIndexed ? Net.mesh2DIndexed.triangles.map(t => t.v) : null,
+                dryDepth: Net.mesh2DIndexed && Net.mesh2DIndexed.options ? Net.mesh2DIndexed.options.dryDepth : 0.001,
+                wantVertexFields: true, frameIntervalMs: 60000
+            });
         });
     }
 
@@ -1321,7 +1356,7 @@
             if (has2DMesh) {
                 if (runStatusModal) runStatusModal.classList.remove('hidden');
                 updateRunStatusUI(5, 0, '00:00');
-                result = await run2DSimulationInWorker(inpText, meshInput2D.triangleIds);
+                result = await run2DSimulationInWorker(inpText, meshInput2D.triangleIds, meshInput2D.meshFile);
                 updateRunStatusUI(100, 0, '00:00');
                 apply2DResults(result);
                 window.App.outData = null;
