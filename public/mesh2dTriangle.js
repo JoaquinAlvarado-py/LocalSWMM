@@ -111,10 +111,13 @@
             regionlist: regionlist,
             numberofregions: nr
         });
-        if (hasRegionalArea && !quality.maxArea) {
-            inIO.trianglearealist = areaList;
-        }
-        var outIO = Tri.makeIO({});
+        var outIO = null;
+
+        try {
+            outIO = Tri.makeIO({});
+            if (hasRegionalArea && !quality.maxArea) {
+                inIO.trianglearealist = areaList;
+            }
 
         // Build switches: pzQ + q{minAngle} + a{maxArea}/A+a + S{maxSteiner} + Y
         var switches = {
@@ -182,18 +185,21 @@
             triangles.push({ v: [v0, v1, v2], n: n, tag: subId || '' });
         }
 
-        Tri.freeIO(inIO, true);
-        Tri.freeIO(outIO, true);
-
-        return {
+            return {
             origin: tf.origin,
             vertices: vertices,
             triangles: triangles,
             vertexNodeMap: vertexNodeMap,
+            nodeVertexIndex: pslg.nodeVertexIndex || {},
             options: ctx.options || {},
             warnings: (pslg.warnings || []).slice(),
             fallback: false
-        };
+            };
+        } finally {
+            // Triangle copies holelist and regionlist pointers into output.
+            // Free those shared allocations exactly once through the input.
+            try { Tri.freeIO(inIO, true); } finally { if (outIO) Tri.freeIO(outIO, false); }
+        }
     }
 
     function runGeneration(sources, quality, ctx, log) {
@@ -218,6 +224,22 @@
             sampleZ: ctx.sampleZ
         });
 
+        if (ctx.terrainSampler && quality.thinningEnabled && window.Mesh2DTerrain) {
+            var boundary = pslg.points.filter(function (p) { return p.tag === 'boundary'; }).map(function (p) { return [p.x, p.y]; });
+            var terrainPoints = window.Mesh2DTerrain.thinTerrain(ctx.terrainSampler, boundary, {
+                normalDot: quality.thinningNormalDot,
+                passes: quality.thinningPasses,
+                maxPoints: quality.thinningMaxPoints,
+                minSpacing: quality.thinningMinSpacing
+            }, ctx.transform);
+            var mergeRadius2 = Math.pow(Number(quality.snapRadius) || 0.01, 2), acceptedTerrain = 0;
+            terrainPoints.forEach(function (p) {
+                var duplicate = pslg.points.some(function (q) { var dx = q.x - p.x, dy = q.y - p.y; return dx * dx + dy * dy <= mergeRadius2; });
+                if (!duplicate) { pslg.points.push(p); acceptedTerrain++; }
+            });
+            log('Terrain thinning added ' + acceptedTerrain + ' terrain vertices.');
+        }
+
         (pslg.warnings || []).forEach(function (w) { log('⚠ ' + w); });
         log('PSLG: ' + pslg.points.length + ' points, ' + pslg.segments.length + ' segments, ' +
             pslg.regions.length + ' regions, ' + pslg.holes.length + ' holes.');
@@ -241,6 +263,7 @@
                 vertices: [],
                 triangles: [],
                 vertexNodeMap: [],
+                nodeVertexIndex: {},
                 options: ctx.options || {},
                 warnings: (pslg.warnings || []).concat(fallback.errors || []),
                 fallback: true,

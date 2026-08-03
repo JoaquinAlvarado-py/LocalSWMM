@@ -23,6 +23,8 @@ class InpParser {
         }
         this.sections = sections;
         this.rawSections = rawSections;
+        const originMatch = String(text).match(/;;\s*2D_ORIGIN\s+([-+\d.eE]+)\s+([-+\d.eE]+)/i);
+        this.mesh2DOrigin = originMatch ? { lng: Number(originMatch[1]), lat: Number(originMatch[2]) } : { lng: 0, lat: 0 };
         return this.buildModel();
     }
 
@@ -41,6 +43,7 @@ class InpParser {
             links: [],
             subcatchments: [],
             mesh2D: [],
+            mesh2DIndexed: null,
             timeseries: {},
             rawSections: this.rawSections,
             curves: [],
@@ -487,13 +490,39 @@ class InpParser {
                 });
             }
         });
-        // --- 2D Mesh (OpenSWMM Engine) ---
+        // --- 2D Mesh (OpenSWMM Engine and legacy app dialect) ---
+        const engineRows = (S['2D_VERTICES'] || []).filter(row => row.length >= 3 && isFinite(Number(row[0])));
+        const engineTriangles = (S['2D_TRIANGLES'] || []).filter(row => row.length >= 4 && isFinite(Number(row[0])));
+        if (engineRows.length && engineTriangles.length) {
+            const origin = this.mesh2DOrigin || { lng: 0, lat: 0 };
+            const metersLng = 111320 * Math.cos(origin.lat * Math.PI / 180);
+            const vertices = engineRows.map(row => {
+                const x = this.num(row[0]), y = this.num(row[1]), z = this.num(row[2], 0);
+                return { x, y, z, lng: origin.lng + x / metersLng, lat: origin.lat + y / 111320, tag: row[3] && row[3] !== '-' ? row[3] : '' };
+            });
+            const triangles = engineTriangles.map(row => ({ v: [this.num(row[0]), this.num(row[1]), this.num(row[2])], n: this.num(row[3], 0.045), tag: row[4] && row[4] !== '-' ? row[4] : '' }));
+            const vertexNodeMap = (S['2D_VERTEX_NODE_MAP'] || []).filter(row => row.length >= 2 && isFinite(Number(row[0]))).map(row => ({ vertexIndex: this.num(row[0]), nodeId: row[1], cd: this.num(row[2], 0.65), area: this.num(row[3], 0) }));
+            const nodeVertexIndex = {}; vertexNodeMap.forEach(row => { nodeVertexIndex[row.nodeId] = row.vertexIndex; });
+            const options = {};
+            (S['2D_OPTIONS'] || []).forEach(row => {
+                if (row.length < 2) return;
+                const key = row[0].toUpperCase(), value = row[1];
+                const map = { MAX_TIMESTEP: 'maxTimestep', DRY_DEPTH: 'dryDepth', COUPLING_CD: 'couplingCd', COUPLING_SYNC: 'couplingSync', LIMITER_EPSILON: 'limiterEpsilon', FLUX_DH_EPS: 'fluxDhEps', CELL_CLOSURE: 'cellClosure', FACE_RECONSTRUCTION: 'faceReconstruction', VFR_MIN_WET_FRAC: 'vfrMinWetFrac', INTEGRATOR: 'integrator', THETA: 'theta', CFL_NUMBER: 'cflNumber', H_MOVE: 'hMove', LTS_TIERS: 'ltsTiers', FROUDE_MAX: 'froudeMax', COUPLING_AREA: 'couplingArea', RAINFALL_MODE: 'rainfallMode', REPORT_2D: 'report2d' };
+                if (map[key]) options[map[key]] = /^[-+]?\d*\.?\d+(e[-+]?\d+)?$/i.test(value) ? Number(value) : value;
+            });
+            model.mesh2DIndexed = { origin, vertices, triangles, vertexNodeMap, nodeVertexIndex, options };
+            triangles.forEach((t, i) => {
+                const a = vertices[t.v[0]], b = vertices[t.v[1]], c = vertices[t.v[2]];
+                if (!a || !b || !c) return;
+                model.mesh2D.push({ id: 'M2D_' + (i + 1), ring: [[a.lng, a.lat], [b.lng, b.lat], [c.lng, c.lat], [a.lng, a.lat]], manningN: t.n, parentSubcatch: t.tag, props: { manningN: t.n, parentSubcatch: t.tag } });
+            });
+        }
         const meshVertices = {};
         (S['2D_VERTICES'] || []).forEach(row => {
-            if (row.length >= 3) meshVertices[row[0]] = [this.num(row[1]), this.num(row[2])];
+            if (row.length >= 3 && !isFinite(Number(row[0]))) meshVertices[row[0]] = [this.num(row[1]), this.num(row[2])];
         });
 
-        (S['2D_CELLS'] || []).forEach(row => {
+        if (!model.mesh2DIndexed) (S['2D_CELLS'] || []).forEach(row => {
             if (row.length < 4) return; // Need ID and at least 3 vertices
             const cellId = row[0];
             const ring = [];
