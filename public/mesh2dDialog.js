@@ -163,7 +163,9 @@
 
         s.dtmSource = v('m2d-dtm-source', 'CURRENT');
         var tif = $('m2d-geotiff-file');
-        s.geotiffFile = tif && tif.files && tif.files.length ? tif.files[0] : null;
+        s.geotiffFile = (tif && tif.files && tif.files.length)
+            ? tif.files[0]
+            : (window.App && window.App.mesh2DGeoTiffFile) || null;
         s.verticalUnit = v('m2d-vertical-unit', 'm');
         s.zFactor = n('m2d-z-factor', 1.0);
         s.epsgOverride = v('m2d-epsg-override', '');
@@ -428,6 +430,14 @@
             boundaryPolygon = { type: 'Polygon', coordinates: [terrainSampler.boundsLngLat] };
             sources.boundaryPolygon = boundaryPolygon;
             log('Domain: full GeoTIFF extent (' + terrainSampler.detectedCrs + ').');
+        } else if (!boundaryPolygon) {
+            if (terrainSource === 'GEOTIFF' && !s.geotiffFile) {
+                log('⚠ GeoTIFF selected but no file is loaded — re-select the .tif in this dialog. Using the model bounding domain for now.');
+            } else if (terrainSource !== 'NONE' && terrainSampler && !terrainSampler.boundsLngLat) {
+                log('⚠ Raster bounds unavailable for this DEM source — using the model bounding domain instead of the full raster.');
+            } else {
+                log('Domain: auto bounding domain (nodes + subcatchments).');
+            }
         }
 
         var ctx = {
@@ -505,6 +515,17 @@
         }
         logEl = $('m2d-log');
         if (!tabsInitialized) { initTabs(); tabsInitialized = true; }
+        // Keep the selected GeoTIFF across dialog reopens (the File object
+        // cannot be persisted to localStorage).
+        var tifInput = $('m2d-geotiff-file');
+        if (tifInput && !tifInput._m2dBound) {
+            tifInput._m2dBound = true;
+            tifInput.addEventListener('change', function () {
+                if (window.App && tifInput.files && tifInput.files.length) {
+                    window.App.mesh2DGeoTiffFile = tifInput.files[0];
+                }
+            });
+        }
         populateLayers();
         writeSettings(loadSettings());
         modal.classList.remove('hidden');
