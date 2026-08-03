@@ -165,6 +165,7 @@
         var b = function (id, fallback) { var el = $(id); return el ? el.checked : fallback; };
 
         s.dtmSource = v('m2d-dtm-source', 'CURRENT');
+        if (s.dtmSource === 'CURRENT' && window.App && window.App.mesh2DBellingeTif) s.dtmSource = 'GEOTIFF';
         var tif = $('m2d-geotiff-file');
         s.geotiffFile = (tif && tif.files && tif.files.length)
             ? tif.files[0]
@@ -532,6 +533,9 @@
         populateLayers();
         writeSettings(loadSettings());
         modal.classList.remove('hidden');
+        if (window.App && window.App.mesh2DBellingeTif) {
+            log('ℹ Bellinge2.tif DEM is bundled and pre-selected as the GeoTIFF source for this model.');
+        }
 
         var btnGen = $('m2d-btn-generate');
         var btnClose = $('m2d-btn-close');
