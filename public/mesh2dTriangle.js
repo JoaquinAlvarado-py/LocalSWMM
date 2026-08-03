@@ -240,12 +240,29 @@
             log('Terrain thinning added ' + acceptedTerrain + ' terrain vertices.');
         }
 
+        var effectiveQuality = quality;
+        var boundaryPoints = pslg.points.filter(function (p) { return p.marker === 1; });
+        if (boundaryPoints.length >= 3 && quality.autoAreaCap !== false) {
+            var domainArea = 0;
+            boundaryPoints.forEach(function (p, i) {
+                var q = boundaryPoints[(i + 1) % boundaryPoints.length];
+                domainArea += p.x * q.y - q.x * p.y;
+            });
+            domainArea = Math.abs(domainArea) / 2;
+            var requestedArea = Number(quality.maxArea) || 0;
+            var maxTargetTriangles = Number(quality.maxTargetTriangles) || 100000;
+            if (requestedArea > 0 && domainArea / requestedArea > maxTargetTriangles) {
+                effectiveQuality = Object.assign({}, quality, { maxArea: domainArea / maxTargetTriangles });
+                log('⚠ Full-domain mesh density was reduced to approximately ' + maxTargetTriangles.toLocaleString() + ' triangles (' + effectiveQuality.maxArea.toFixed(2) + ' m² max area) to avoid WASM exhaustion.');
+            }
+        }
+
         (pslg.warnings || []).forEach(function (w) { log('⚠ ' + w); });
         log('PSLG: ' + pslg.points.length + ' points, ' + pslg.segments.length + ' segments, ' +
             pslg.regions.length + ' regions, ' + pslg.holes.length + ' holes.');
 
         return ensureReady().then(function () {
-            var result = triangulate(pslg, quality, ctx);
+            var result = triangulate(pslg, effectiveQuality, ctx);
             log('Triangle: ' + result.vertices.length + ' vertices, ' + result.triangles.length + ' triangles.');
             return result;
         }).catch(function (err) {
@@ -258,7 +275,7 @@
                 throw new Error('Triangle failed, and the poly2tri fallback can only mesh inside subcatchments. Add subcatchments or fix the Triangle engine (full-domain meshing requires Triangle).');
             }
             var fallback = window.Mesh2DGenerator.generateFromSubcatchments({
-                maxAreaM2: quality.maxArea || 200,
+                maxAreaM2: effectiveQuality.maxArea || 200,
                 assignLandCover: true
             });
             return {
