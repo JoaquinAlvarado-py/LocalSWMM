@@ -30,6 +30,25 @@
         return Math.sqrt(dist2(p, [a[0] + t * dx, a[1] + t * dy]));
     }
 
+    function interiorPoint(ring, forbidden) {
+        if (!ring || ring.length < 3) return null;
+        var cx = 0, cy = 0;
+        ring.forEach(function (p) { cx += p[0]; cy += p[1]; });
+        var candidates = [[cx / ring.length, cy / ring.length]];
+        for (var i = 0; i < ring.length; i++) {
+            var a = ring[i], b = ring[(i + 1) % ring.length];
+            candidates.push([(a[0] + b[0]) * 0.495 + cx / ring.length * 0.01, (a[1] + b[1]) * 0.495 + cy / ring.length * 0.01]);
+            candidates.push([a[0] * 0.99 + cx / ring.length * 0.01, a[1] * 0.99 + cy / ring.length * 0.01]);
+        }
+        for (var c = 0; c < candidates.length; c++) {
+            var p = candidates[c];
+            if (!pointInPolygon(p, ring)) continue;
+            if ((forbidden || []).some(function (hole) { return pointInPolygon(p, hole); })) continue;
+            return p;
+        }
+        return null;
+    }
+
     // Douglas-Peucker — endpoints pinned, ≥3 unique vertices guard.
     function dpSimplify(points, eps) {
         if (points.length < 3) return points.slice();
@@ -94,6 +113,16 @@
                ((o3 > 1e-9 && o4 < -1e-9) || (o3 < -1e-9 && o4 > 1e-9));
     }
 
+    function convexHull(points) {
+        var pts = points.slice().sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
+        if (pts.length <= 3) return pts;
+        function cross(o, a, b) { return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); }
+        var lower = [], upper = [];
+        pts.forEach(function (p) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); });
+        for (var i = pts.length - 1; i >= 0; i--) { var p = pts[i]; while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }
+        upper.pop(); lower.pop(); return lower.concat(upper);
+    }
+
     // ---------- Mesh2DPslg API ----------
     var Mesh2DPslg = {
         fromNetwork: function (sources, opts) {
@@ -112,6 +141,7 @@
             var holes = [];       // [{x, y}]
             var regions = [];     // [{x, y, attr, maxArea}]
             var warnings = [];
+            var holeRings = [];
 
             var nodeVertexIndex = {};   // nodeId -> point index
             var regionAttrToSub = {};   // region attribute int -> subcatchment ID
@@ -134,7 +164,7 @@
                             var i = bucket[b];
                             var dx = points[i].x - x, dy = points[i].y - y;
                             if (dx * dx + dy * dy <= snapRadius2) {
-                                if (tag && !points[i].tag) points[i].tag = tag;
+                                if (tag && (!points[i].tag || points[i].tag === 'boundary')) points[i].tag = tag;
                                 if (nodeId && !points[i].nodeId) {
                                     points[i].nodeId = nodeId;
                                     if (z !== undefined) points[i].z = z;
@@ -145,7 +175,7 @@
                     }
                 }
                 var idx = points.length;
-                points.push({ x: x, y: y, tag: tag || '', z: z, nodeId: nodeId || null });
+                points.push({ x: x, y: y, tag: tag || '', marker: tag === 'boundary' ? 1 : 0, z: z, nodeId: nodeId || null });
                 var key = _cellKey(cx, cy);
                 var cell = grid.get(key);
                 if (cell) cell.push(idx); else grid.set(key, [idx]);
@@ -154,6 +184,9 @@
 
             // ---- 1. Boundary Polygon → constraint segments (marker = 1) ----
             var bndRing = [];
+            if (sources.boundaryPolygon && sources.boundaryPolygon.geometry) {
+                sources.boundaryPolygon = sources.boundaryPolygon.geometry;
+            }
             if (sources.boundaryPolygon && sources.boundaryPolygon.coordinates) {
                 var coords = sources.boundaryPolygon.coordinates[0] || [];
                 bndRing = coords.map(function (p) { return tf.toLocal(p); });
@@ -164,6 +197,20 @@
                 }
                 bndRing = dpSimplify(bndRing, eps);
                 bndRing = densify(bndRing, maxEdge);
+                // Interior rings are holes in an explicit desktop-style domain.
+                (sources.boundaryPolygon.coordinates.slice(1) || []).forEach(function (hole) {
+                    var h = hole.map(function (p) { return tf.toLocal(p); });
+                    if (h.length >= 4 && h[0][0] === h[h.length - 1][0] && h[0][1] === h[h.length - 1][1]) h.pop();
+                        h = dpSimplify(h, eps);
+                    if (h.length >= 3) {
+                        var holeSeed = interiorPoint(h, []);
+                        if (!holeSeed) holeSeed = [h[0][0], h[0][1]];
+                        holes.push({ x: holeSeed[0], y: holeSeed[1] });
+                        holeRings.push(h);
+                        var hi = h.map(function (p) { return _addPt(p[0], p[1], ''); });
+                        for (var hh = 0; hh < hi.length; hh++) segments.push({ p1: hi[hh], p2: hi[(hh + 1) % hi.length], marker: 1 });
+                    }
+                });
             } else {
                 // Automatically generate a continuous 2D bounding domain enclosing all network elements (+ buffer)
                 var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -190,13 +237,13 @@
                 });
                 if (foundAny) {
                     var buf = typeof opts.domainBuffer === 'number' ? opts.domainBuffer : 50;
-                    bndRing = [
-                        [minX - buf, minY - buf],
-                        [maxX + buf, minY - buf],
-                        [maxX + buf, maxY + buf],
-                        [minX - buf, maxY + buf]
-                    ];
-                    var autoEdge = maxEdge > 0 ? maxEdge : Math.max(maxX - minX + 2 * buf, maxY - minY + 2 * buf) / 20;
+                    var domainPoints = [];
+                    (sources.subcatchments || []).forEach(function (sub) { (sub.ring || []).forEach(function (p) { domainPoints.push(tf.toLocal(p)); }); });
+                    (sources.nodes || []).forEach(function (node) { if (node.lngLat) domainPoints.push(tf.toLocal(node.lngLat)); });
+                    bndRing = convexHull(domainPoints);
+                    var dcx = 0, dcy = 0; bndRing.forEach(function (p) { dcx += p[0]; dcy += p[1]; }); dcx /= bndRing.length || 1; dcy /= bndRing.length || 1;
+                    bndRing = bndRing.map(function (p) { var dx = p[0] - dcx, dy = p[1] - dcy, len = Math.hypot(dx, dy) || 1; return [p[0] + buf * dx / len, p[1] + buf * dy / len]; });
+                    var autoEdge = maxEdge > 0 ? maxEdge : 0;
                     if (autoEdge > 0) bndRing = densify(bndRing, autoEdge);
                 }
             }
@@ -211,9 +258,11 @@
                     });
                 }
                 // Add a default background domain region (so Triangle meshes the full area, outside & inside subcatchments)
+                var outerSeed = interiorPoint(bndRing, holeRings);
+                var bx = outerSeed ? outerSeed[0] : bndRing[0][0], by = outerSeed ? outerSeed[1] : bndRing[0][1];
                 regions.push({
-                    x: bndRing[0][0] + 0.1,
-                    y: bndRing[0][1] + 0.1,
+                    x: bx,
+                    y: by,
                     attr: 0,
                     maxArea: 0
                 });
@@ -233,17 +282,7 @@
                             segments.push({ p1: rIdx[i], p2: rIdx[(i + 1) % rIdx.length], marker: 2 });
                         }
                     }
-                    var cx = 0, cy = 0;
-                    ring.forEach(function (p) { cx += p[0]; cy += p[1]; });
-                    cx /= ring.length; cy /= ring.length;
-                    if (!pointInPolygon([cx, cy], ring)) {
-                        var found = false;
-                        for (var step = 0; step < ring.length && !found; step++) {
-                            var mid = [(ring[step][0] + ring[(step + 1) % ring.length][0]) / 2,
-                                       (ring[step][1] + ring[(step + 1) % ring.length][1]) / 2];
-                            if (pointInPolygon(mid, ring)) { cx = mid[0]; cy = mid[1]; found = true; }
-                        }
-                    }
+                    var seed = interiorPoint(ring, []), cx = seed ? seed[0] : ring[0][0], cy = seed ? seed[1] : ring[0][1];
                     var attr = nextRegionAttr++;
                     regionAttrToSub[attr] = sub.id;
                     regions.push({ x: cx, y: cy, attr: attr, maxArea: 0 });
@@ -278,7 +317,7 @@
                             var invert2 = parseFloat(node.props.invertEl) || 0;
                             if (!isNaN(invert2)) zVal = invert2 + maxD2;
                         }
-                        var idx = _addPt(local[0], local[1], 'node:' + node.id, zVal, node.id);
+                        var idx = _addPt(local[0], local[1], String(node.id), zVal, node.id);
                         nodeVertexIndex[node.id] = idx;
                         nodeVertexPts.push({ x: local[0], y: local[1], idx: idx });
                     }
@@ -460,5 +499,6 @@
         }
     };
 
+    Mesh2DPslg.build = Mesh2DPslg.fromNetwork;
     window.Mesh2DPslg = Mesh2DPslg;
 })(window);

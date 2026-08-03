@@ -76,6 +76,7 @@ function getModule() {
 }
 
 function bindApi(Module) {
+    const optional = (name, ret, args) => typeof Module['_' + name] === 'function' ? Module.cwrap(name, ret, args) : null;
     return {
         create: Module.cwrap('swmm_engine_create', 'number', []),
         open: Module.cwrap('swmm_engine_open', 'number', ['number', 'string', 'string', 'string', 'number']),
@@ -92,9 +93,15 @@ function bindApi(Module) {
         heads: Module.cwrap('swmm_2d_get_heads_bulk', 'number', ['number', 'number']),
         maxVelocities: Module.cwrap('swmm_2d_get_stat_max_velocities', 'number', ['number', 'number']),
         continuityError: Module.cwrap('swmm_2d_get_continuity_error', 'number', ['number', 'number']),
-        solverSteps: Module.cwrap('swmm_2d_get_solver_steps', 'number', ['number', 'number']),
-        cvodeSteps: Module.cwrap('swmm_2d_get_cvode_steps', 'number', ['number', 'number']),
-        massBalance: Module.cwrap('swmm_2d_get_mass_balance', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'])
+        solverSteps: optional('swmm_2d_get_solver_steps', 'number', ['number', 'number']),
+        cvodeSteps: optional('swmm_2d_get_cvode_steps', 'number', ['number', 'number']),
+        massBalance: Module.cwrap('swmm_2d_get_mass_balance', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
+        vertexCount: optional('swmm_2d_vertex_count', 'number', ['number', 'number']),
+        vertexXYZ: optional('swmm_2d_vertex_get_xyz_bulk', 'number', ['number', 'number', 'number', 'number']),
+        edgeGeometry: optional('swmm_2d_edge_get_geometry_bulk', 'number', ['number', 'number', 'number', 'number']),
+        edgeFlux: optional('swmm_2d_get_edge_flux_bulk', 'number', ['number', 'number']),
+        vertexDepths: optional('swmm_2d_vertex_get_render_depths_bulk', 'number', ['number', 'number']),
+        vertexHeads: optional('swmm_2d_vertex_get_heads_bulk', 'number', ['number', 'number'])
     };
 }
 
@@ -140,7 +147,7 @@ function check(code, operation, Module, reportPath, payload) {
 }
 
 function readDoubleArray(Module, ptr, count) {
-    const arr = new Array(count);
+    const arr = new Float64Array(count);
     for (let i = 0; i < count; i++) {
         arr[i] = Module.getValue(ptr + (i * 8), 'double');
     }
@@ -170,15 +177,65 @@ function readFrame(Module, api, engine, count, elapsedMs) {
     }
 }
 
-function readDiagnostics(Module, api, engine) {
+function readVertexFields(Module, api, engine) {
+    if (!api.vertexCount || !api.vertexDepths || !api.vertexHeads) return null;
+    const countPtr = Module._malloc(4);
+    try {
+        if (api.vertexCount(engine, countPtr) !== 0) return null;
+        const count = Module.getValue(countPtr, 'i32');
+        if (count <= 0) return null;
+        const d = Module._malloc(count * 8), h = Module._malloc(count * 8);
+        try {
+            if (api.vertexDepths(engine, d) !== 0 || api.vertexHeads(engine, h) !== 0) return null;
+            return { depth: readDoubleArray(Module, d, count), head: readDoubleArray(Module, h, count) };
+        } finally { Module._free(d); Module._free(h); }
+    } finally { Module._free(countPtr); }
+}
+
+function readVelocity(Module, api, engine, depths, triangleVertices, dryDepth, geometryCache) {
+    if (!api.edgeGeometry || !api.edgeFlux || !triangleVertices) return null;
+    const n = depths.length, bytes = n * 3 * 8;
+    geometryCache = geometryCache || {};
+    const flux = Module._malloc(bytes);
+    try {
+        if (api.edgeFlux(engine, flux) !== 0) return null;
+        if (!geometryCache.length) {
+            const len = Module._malloc(bytes), nx = Module._malloc(bytes), ny = Module._malloc(bytes);
+            try {
+                if (api.edgeGeometry(engine, len, nx, ny) !== 0) return null;
+                geometryCache.length = readDoubleArray(Module, len, n * 3);
+                geometryCache.nx = readDoubleArray(Module, nx, n * 3);
+                geometryCache.ny = readDoubleArray(Module, ny, n * 3);
+            } finally { Module._free(len); Module._free(nx); Module._free(ny); }
+        }
+        const f = readDoubleArray(Module, flux, n * 3), l = geometryCache.length, x = geometryCache.nx, y = geometryCache.ny;
+        const magnitudes = new Float64Array(n), vxOut = new Float64Array(n), vyOut = new Float64Array(n);
+        depths.forEach(function (h, i) {
+            if (!(h > (dryDepth || 0.001))) return;
+            let a = 0, b = 0, c = 0, d = 0, e = 0, q0, q1, q2;
+            for (let k = 0; k < 3; k++) { const q = l[i * 3 + k] ? f[i * 3 + k] / l[i * 3 + k] : 0; const nxk = x[i * 3 + k], nyk = y[i * 3 + k]; a += nxk * nxk; b += nxk * nyk; c += nyk * nyk; if (k === 0) q0 = q; else if (k === 1) q1 = q; else q2 = q; }
+            // Use all three rows of N^T q. The first two rows define the
+            // least-squares system; the third contributes to its RHS.
+            let rx = 0, ry = 0; for (let k = 0; k < 3; k++) { rx += x[i * 3 + k] * [q0, q1, q2][k]; ry += y[i * 3 + k] * [q0, q1, q2][k]; }
+            const det = a * c - b * b; if (Math.abs(det) < 1e-12) return;
+            const vx = (c * rx - b * ry) / det / h, vy = (a * ry - b * rx) / det / h;
+            vxOut[i] = vx; vyOut[i] = vy; magnitudes[i] = Math.hypot(vx, vy);
+        });
+        return { mag: magnitudes, vx: vxOut, vy: vyOut };
+    } finally { Module._free(flux); }
+}
+
+function readDiagnostics(Module, api, engine, count) {
     const values = Array.from({ length: 11 }, () => Module._malloc(Float64Array.BYTES_PER_ELEMENT));
     const stepsPtr = Module._malloc(4);
+    const maxVelocityPtr = Module._malloc(Math.max(1, count || 1) * Float64Array.BYTES_PER_ELEMENT);
     try {
         const massCode = api.massBalance(engine, ...values.slice(0, 10));
         const continuityCode = api.continuityError(engine, values[10]);
         const getSteps = api.solverSteps || api.cvodeSteps;
         const stepsCode = getSteps ? getSteps(engine, stepsPtr) : -1;
         const value = pointer => Module.getValue(pointer, 'double');
+        const maxVelocityCode = api.maxVelocities(engine, maxVelocityPtr);
         return {
             massBalance: massCode === 0 ? {
                 initialVolume: value(values[0]), finalVolume: value(values[1]), rainfall: value(values[2]),
@@ -186,11 +243,13 @@ function readDiagnostics(Module, api, engine) {
                 outfallOut: value(values[6]), boundaryIn: value(values[7]), boundaryOut: value(values[8]),
                 evaporation: value(values[9]), continuityError: continuityCode === 0 ? value(values[10]) : null
             } : null,
-            solverStats: stepsCode === 0 ? { internalSteps: Module.getValue(stepsPtr, 'i32') } : null
+            solverStats: stepsCode === 0 ? { internalSteps: Module.getValue(stepsPtr, 'i32') } : null,
+            maxVelocities: maxVelocityCode === 0 ? readDoubleArray(Module, maxVelocityPtr, count || 0) : null
         };
     } finally {
         values.forEach(pointer => Module._free(pointer));
         Module._free(stepsPtr);
+        Module._free(maxVelocityPtr);
     }
 }
 
@@ -209,11 +268,17 @@ async function run(payload) {
     const stepsPerYield = Math.max(1, Number(payload.stepsPerYield) || 256);
     let nextFrameMs = 0;
     let started = false;
+    let meshFilePath = null;
+    const velocityGeometry = {};
 
     if (!engine) throw new Error('Could not create an OpenSWMM engine instance.');
 
     try {
         Module.FS.writeFile(inputPath, payload.inp);
+        if (payload.meshFile && payload.meshFile.name && payload.meshFile.content) {
+            meshFilePath = '/' + String(payload.meshFile.name).replace(/\\/g, '/').split('/').pop().replace(/[^A-Za-z0-9._-]/g, '_');
+            Module.FS.writeFile(meshFilePath, payload.meshFile.content);
+        }
         self.postMessage({ type: 'status2d', stage: 'input-written' });
         check(api.open(engine, inputPath, reportPath, outputPath, 0), 'Opening the 1D-2D model', Module, reportPath, payload);
         self.postMessage({ type: 'status2d', stage: 'model-opened' });
@@ -240,7 +305,11 @@ async function run(payload) {
             elapsedDays = Module.getValue(elapsedPtr, 'double');
             const elapsedMs = elapsedDays * 86400000;
             if (elapsedMs >= nextFrameMs || elapsedDays <= 0) {
-                frames.push(readFrame(Module, api, engine, count, elapsedMs));
+                const frame = readFrame(Module, api, engine, count, elapsedMs);
+                if (payload.wantVertexFields) frame.vertex = readVertexFields(Module, api, engine);
+                const instantVelocity = readVelocity(Module, api, engine, frame.depth, payload.triangleVertices, payload.dryDepth, velocityGeometry);
+                if (instantVelocity) { frame.velocity = instantVelocity.mag; frame.velocityX = instantVelocity.vx; frame.velocityY = instantVelocity.vy; }
+                frames.push(frame);
                 nextFrameMs = elapsedMs + frameIntervalMs;
                 self.postMessage({ type: 'progress2d', elapsedMs });
             }
@@ -251,20 +320,29 @@ async function run(payload) {
         } while (elapsedDays > 0);
 
         const finalFrame = readFrame(Module, api, engine, count, elapsedDays * 86400000);
+        if (payload.wantVertexFields) finalFrame.vertex = readVertexFields(Module, api, engine);
+        const finalVelocity = readVelocity(Module, api, engine, finalFrame.depth, payload.triangleVertices, payload.dryDepth, velocityGeometry);
+        if (finalVelocity) { finalFrame.velocity = finalVelocity.mag; finalFrame.velocityX = finalVelocity.vx; finalFrame.velocityY = finalVelocity.vy; }
         if (!frames.length || frames[frames.length - 1].elapsedMs !== finalFrame.elapsedMs) frames.push(finalFrame);
-        const diagnostics = readDiagnostics(Module, api, engine);
+        const diagnostics = readDiagnostics(Module, api, engine, count);
         check(api.end(engine), 'Ending the 1D-2D model', Module, reportPath, payload);
         started = false;
         check(api.report(engine), 'Writing the 1D-2D report', Module, reportPath, payload);
 
         const report = Module.FS.analyzePath(reportPath).exists ? Module.FS.readFile(reportPath, { encoding: 'utf8' }) : '';
+        const transferable = [];
+        frames.forEach(frame => {
+            ['depth', 'head', 'velocity', 'velocityX', 'velocityY'].forEach(key => { if (frame[key] && frame[key].buffer) transferable.push(frame[key].buffer); });
+            if (frame.vertex) ['depth', 'head'].forEach(key => { if (frame.vertex[key] && frame.vertex[key].buffer) transferable.push(frame.vertex[key].buffer); });
+        });
+        if (diagnostics.maxVelocities && diagnostics.maxVelocities.buffer) transferable.push(diagnostics.maxVelocities.buffer);
         self.postMessage({
             type: 'results2d',
             triangleIds: payload.triangleIds,
             frames,
             diagnostics,
             report
-        });
+        }, transferable);
     } finally {
         // After a WASM trap the runtime is dead and every call below throws;
         // swallow those so cleanup failures don't mask the original error.
@@ -273,7 +351,7 @@ async function run(payload) {
         safely(() => api.close(engine));
         safely(() => api.destroy(engine));
         safely(() => Module._free(elapsedPtr));
-        [inputPath, reportPath, outputPath].forEach(path => {
+        [inputPath, reportPath, outputPath, meshFilePath].filter(Boolean).forEach(path => {
             safely(() => { if (Module.FS.analyzePath(path).exists) Module.FS.unlink(path); });
         });
     }

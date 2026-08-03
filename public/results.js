@@ -369,6 +369,7 @@
                 if (this._appliedNode.get(id) === color) return;
                 this._appliedNode.set(id, color);
                 try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: color }); } catch (e) { }
+                this._applied2D.set(id, color);
                 try { map.setFeatureState({ source: 'swmm-2d-mesh', id }, { resultColor: color }); } catch (e) { }
             });
             Object.entries(this.linkColors).forEach(([id, color]) => {
@@ -406,6 +407,7 @@
                             try { map.setFeatureState({ source: 'swmm-2d-mesh', id: ids[i] }, { resultColor: color }); } catch (e) { }
                         }
                     }
+                    if (window.Mesh2DLayers) window.Mesh2DLayers.onStep(step, frame);
                 }
             }
 
@@ -499,6 +501,7 @@
             this._appliedNode.clear();
             this._appliedLink.clear();
             this._applied2D.clear();
+            if (window.Mesh2DLayers && window.Mesh2DLayers.clear) window.Mesh2DLayers.clear();
             this.nodeColors = {};
             this.linkColors = {};
             this.timeSeries = null;
@@ -1277,7 +1280,7 @@
             }
             if (!isFinite(min)) min = 0;
             if (!isFinite(max)) max = 0.1;
-            return { min: Math.max(0, min), max: Math.max(max, 0.001) };
+            return { min: min, max: Math.max(max, min + 0.001) };
         }
 
         const depthRange = compute2DMinMax('depth');
@@ -1288,6 +1291,7 @@
         ResultStyling.clear();
         ResultStyling.active2DVar = 'depth';
         ResultStyling.mesh2DMinMax = depthRange;
+        if (window.LayerTree) window.LayerTree.refresh();
 
         // Color-code mesh with last-frame depth values initially
         const lastFrame = frames[frames.length - 1];
@@ -1315,6 +1319,7 @@
         ResultStyling.timeSeries = ts;
         ResultStyling.active = true;
         ResultStyling.applyToMap();
+        if (window.Mesh2DLayers && lastFrame) window.Mesh2DLayers.onStep(0, lastFrame);
 
         if (window.AnimationUI && ts.times.length > 1) {
             window.AnimationUI.setRange(ts.times.length);

@@ -30,6 +30,11 @@
 
 * { box-sizing: border-box; }
 
+.layer-tree-row { display:flex; align-items:center; gap:6px; padding:3px 0; color:var(--text-mid); }
+.layer-tree-row label { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.layer-tree-row input[type="range"] { width:64px; }
+.layer-tree-group { margin-top:6px; padding:3px 0; border-bottom:1px solid var(--border); font-weight:600; color:var(--text-dark); }
+
 html, body {
     margin: 0;
     padding: 0;

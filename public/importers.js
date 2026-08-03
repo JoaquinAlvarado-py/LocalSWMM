@@ -30,6 +30,19 @@
         if (mode === 'masterplan') {
             window.setMasterPlan(pendingImport.geojson);
             fitToGeoJSON(pendingImport.geojson);
+        } else if (mode === 'constraint') {
+            const counts = countGeoms(pendingImport.geojson);
+            const dominant = counts.polygons >= counts.lines && counts.polygons >= counts.points ? 'polygon' : counts.lines >= counts.points ? 'line' : 'point';
+            const layer = { name: pendingImport.name, geojson: pendingImport.geojson, geometryClass: dominant };
+            window.App.importedLayers = window.App.importedLayers || [];
+            window.App.importedLayers = window.App.importedLayers.filter(l => l.name !== layer.name);
+            window.App.importedLayers.push(layer);
+            if (window.Net) {
+                window.Net.importedLayers = window.App.importedLayers;
+                window.Net.commit();
+            }
+            if (window.addConstraintLayer) window.addConstraintLayer(layer);
+            fitToGeoJSON(pendingImport.geojson);
         } else {
             importGeoJSONAsNetwork(pendingImport.geojson);
         }

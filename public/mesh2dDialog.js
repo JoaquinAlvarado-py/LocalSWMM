@@ -21,7 +21,7 @@
             zFactor: 1.0,
             epsgOverride: '',
             boundaryLayer: '',
-            domainBuffer: 50,
+            domainBuffer: 10,
             constraintLayers: [],
             includeNodes: true,
             useRimZ: true,
@@ -31,7 +31,7 @@
             includeSubcatchments: true,
             emitNodeMap: true,
             // Quality
-            maxArea: 0,
+            maxArea: 200,
             minAngle: 33,
             maxSteiner: 0,
             allowBoundarySteiner: true,
@@ -52,10 +52,15 @@
             couplingSync: 1.0,
             theta: 0.5,
             cflNumber: 0.8,
-            hMove: 0.001,
-            froudeMax: 1.0,
-            ltsTiers: 1,
-            rainfallMode: 'NATURAL_NEIGHBOUR',
+             hMove: 0.001,
+             froudeMax: 1.0,
+             ltsTiers: 1,
+             limiterEpsilon: 1e-6,
+             fluxDhEps: 1e-6,
+             cellClosure: 'FLAT',
+             faceReconstruction: 'MEAN',
+             vfrMinWetFrac: 0.1,
+             rainfallMode: 'NATURAL_NEIGHBOUR',
             report2d: 'NO',
             // Output
             outputMode: 'inline'
@@ -124,7 +129,8 @@
         }
         layers.forEach(function (layer) {
             var counts = countGeoms(layer.geojson);
-            var label = layer.name + ' (' + counts.points + 'pt, ' + counts.lines + 'ln, ' + counts.polygons + 'pg)';
+            var dominant = layer.geometryClass || (counts.polygons >= counts.lines && counts.polygons >= counts.points ? 'polygon' : counts.lines >= counts.points ? 'line' : 'point');
+            var label = layer.name + ' [' + dominant + '] (' + counts.points + 'pt, ' + counts.lines + 'ln, ' + counts.polygons + 'pg)';
             if (boundarySel && counts.polygons > 0) {
                 var opt = document.createElement('option');
                 opt.value = layer.name;
@@ -153,6 +159,8 @@
         var b = function (id, fallback) { var el = $(id); return el ? el.checked : fallback; };
 
         s.dtmSource = v('m2d-dtm-source', 'NONE');
+        var tif = $('m2d-geotiff-file');
+        s.geotiffFile = tif && tif.files && tif.files.length ? tif.files[0] : null;
         s.verticalUnit = v('m2d-vertical-unit', 'm');
         s.zFactor = n('m2d-z-factor', 1.0);
         s.epsgOverride = v('m2d-epsg-override', '');
@@ -190,6 +198,11 @@
         s.hMove = n('m2d-hmove', 0.001);
         s.froudeMax = n('m2d-froude-max', 1.0);
         s.ltsTiers = n('m2d-lts-tiers', 1);
+        s.limiterEpsilon = n('m2d-limiter-epsilon', 1e-6);
+        s.fluxDhEps = n('m2d-flux-dh-eps', 1e-6);
+        s.cellClosure = v('m2d-cell-closure', 'FLAT');
+        s.faceReconstruction = v('m2d-face-reconstruction', 'MEAN');
+        s.vfrMinWetFrac = n('m2d-vfr-min-wet-frac', 0.1);
         s.rainfallMode = v('m2d-rainfall-mode', 'NATURAL_NEIGHBOUR');
         s.report2d = v('m2d-report-2d', 'NO');
 
@@ -247,6 +260,11 @@
         set('m2d-hmove', s.hMove);
         set('m2d-froude-max', s.froudeMax);
         set('m2d-lts-tiers', s.ltsTiers);
+        set('m2d-limiter-epsilon', s.limiterEpsilon);
+        set('m2d-flux-dh-eps', s.fluxDhEps);
+        set('m2d-cell-closure', s.cellClosure);
+        set('m2d-face-reconstruction', s.faceReconstruction);
+        set('m2d-vfr-min-wet-frac', s.vfrMinWetFrac);
         set('m2d-rainfall-mode', s.rainfallMode);
         set('m2d-report-2d', s.report2d);
 
@@ -259,20 +277,16 @@
         });
     }
 
-    function resolveElevations(result, s, transform) {
+    async function resolveElevations(result, s, transform, sampler) {
         if (!result.vertices || !result.vertices.length) return;
-        if (window.Mesh2DTerrain && s.dtmSource !== 'NONE') {
-            var sampler = window.Mesh2DTerrain.createSampler({
-                dtmSource: s.dtmSource, verticalUnit: s.verticalUnit,
-                zFactor: s.zFactor, epsgOverride: s.epsgOverride
-            }, window.map);
-            if (sampler) {
-                window.Mesh2DTerrain.resolveVertexElevations(result.vertices, sampler, {
-                    useRimZ: s.useRimZ, flattenRadius: s.flattenRadius
-                });
-                log('✓ Terrain elevations resolved via ' + sampler.kind + '.');
-                return;
-            }
+        if (window.Mesh2DTerrain) {
+            if (sampler) await sampler.ready;
+            window.Mesh2DTerrain.resolveVertexElevations(result.vertices, sampler, {
+                useRimZ: s.useRimZ, flattenRadius: s.flattenRadius,
+                nodes: window.Net && window.Net.nodes
+            });
+            if (sampler) log('✓ Terrain elevations resolved via ' + sampler.kind + (sampler.detectedCrs ? ' (' + sampler.detectedCrs + ')' : '') + '.');
+            return;
         }
         // Interim Mapbox sampling until Mesh2DTerrain (Phase 2) is available.
         if (s.dtmSource === 'MAPBOX' && window.map && typeof window.map.queryTerrainElevation === 'function') {
@@ -291,9 +305,9 @@
         if (zeroed > 0) log('⚠ ' + zeroed + ' vertices had no elevation source — set to 0.');
     }
 
-    function generate() {
+    async function generate() {
         var s = readSettings();
-        saveSettings(s);
+        var persisted = Object.assign({}, s); delete persisted.geotiffFile; saveSettings(persisted);
         clearLog();
         log('Starting 2D mesh generation…');
         var Net = window.Net;
@@ -345,11 +359,38 @@
             snapRadius: s.snapRadius,
             maxBoundaryEdge: s.maxBoundaryEdgeLen,
             minNodeSep: s.minNodeSeparation,
-            flattenRadius: s.flattenRadius
+            flattenRadius: s.flattenRadius,
+            domainBuffer: s.domainBuffer,
+            thinningEnabled: s.thinningEnabled,
+            thinningNormalDot: s.thinningNormalDot,
+            thinningPasses: s.thinningPasses,
+            thinningMaxPoints: s.thinningMaxPoints,
+            thinningMinSpacing: s.thinningMinSpacing
         };
+
+        var terrainSampler = null;
+        if (window.Mesh2DTerrain && s.dtmSource !== 'NONE') {
+            if (s.epsgOverride && window.proj4 && window.fetchProjDef) {
+                var projDef = await window.fetchProjDef(s.epsgOverride);
+                if (projDef) window.proj4.defs(s.epsgOverride, projDef);
+            }
+            terrainSampler = window.Mesh2DTerrain.createSampler({
+                dtmSource: s.dtmSource,
+                verticalUnit: s.verticalUnit,
+                zFactor: s.zFactor,
+                epsgOverride: s.epsgOverride,
+                file: s.geotiffFile
+            }, window.map);
+            try { await terrainSampler.ready; } catch (e) {
+                log('⚠ Terrain source failed: ' + e.message);
+                terrainSampler = null;
+            }
+        }
 
         var ctx = {
             transform: transform,
+            terrainSampler: terrainSampler,
+            sampleZ: terrainSampler ? function (x, y) { return terrainSampler.sampleLngLat(transform.toLngLat([x, y])); } : null,
             includeNodes: s.includeNodes,
             includeConduits: s.includeConduits,
             includeSubcatchments: s.includeSubcatchments,
@@ -364,10 +405,15 @@
                 couplingSync: s.couplingSync,
                 theta: s.theta,
                 cflNumber: s.cflNumber,
-                hMove: s.hMove,
-                froudeMax: s.froudeMax,
-                ltsTiers: s.ltsTiers,
-                couplingCd: s.couplingCd,
+                 hMove: s.hMove,
+                 froudeMax: s.froudeMax,
+                 ltsTiers: s.ltsTiers,
+                 limiterEpsilon: s.limiterEpsilon,
+                 fluxDhEps: s.fluxDhEps,
+                 cellClosure: s.cellClosure,
+                 faceReconstruction: s.faceReconstruction,
+                 vfrMinWetFrac: s.vfrMinWetFrac,
+                 couplingCd: s.couplingCd,
                 couplingArea: s.couplingArea,
                 defaultN: s.defaultN,
                 outputMode: s.outputMode
@@ -377,12 +423,12 @@
         var btnGen = $('m2d-btn-generate');
         if (btnGen) { btnGen.disabled = true; btnGen.textContent = '⏳ Generating…'; }
         requestAnimationFrame(function () {
-            window.Mesh2DTriangle.runGeneration(sources, quality, ctx, log).then(function (result) {
+            window.Mesh2DTriangle.runGeneration(sources, quality, ctx, log).then(async function (result) {
                 if (result.fallback) {
                     log('⚠ Fell back to poly2tri: ' + (result.fallbackResult.cells || 0) + ' cells.');
                     if (window.refreshNetworkData) window.refreshNetworkData();
                 } else {
-                    resolveElevations(result, s, transform);
+                    await resolveElevations(result, s, transform, terrainSampler);
                     if (!s.emitNodeMap) {
                         result.vertexNodeMap = [];
                     } else if (window.Mesh2DCoupling) {

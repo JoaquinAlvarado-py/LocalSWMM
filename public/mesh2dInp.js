@@ -10,6 +10,10 @@
         return Number.isFinite(number) ? number : fallback;
     }
 
+    function bounded(value, fallback, min, max) {
+        return Math.max(min, Math.min(max, finite(value, fallback)));
+    }
+
     function getOrigin(cells) {
         const points = cells.flatMap(cell => (cell.ring || []).slice(0, 3));
         if (!points.length) return { lng: 0, lat: 0 };
@@ -75,6 +79,7 @@
             .replace(/(^|\n)\[2D_OPTIONS\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
             .replace(/(^|\n)\[2D_VERTICES\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
             .replace(/(^|\n)\[2D_TRIANGLES\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
+            .replace(/(^|\n)\[2D_CELLS\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
             .replace(/(^|\n)\[2D_VERTEX_NODE_MAP\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
             .replace(/(^|\n)\[2D_TRIANGLE_NODE_MAP\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
             .replace(/(^|\n)\[2D_MESH_FILE\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1');
@@ -85,19 +90,23 @@
         const lines = [
             `MAX_TIMESTEP         ${finite(opts.maxTimestep, 2.0)}`,
             `DRY_DEPTH            ${finite(opts.dryDepth, 0.001)}`,
-            `COUPLING_SYNC        ${finite(opts.couplingSync !== undefined ? opts.couplingSync : opts.couplingInterval, 1.0)}`,
-            `THETA                ${finite(opts.theta, 0.5)}`,
-            `CFL_NUMBER           ${finite(opts.cflNumber, 0.8)}`,
+            `COUPLING_SYNC        ${Math.max(0, finite(opts.couplingSync !== undefined ? opts.couplingSync : opts.couplingInterval, 1.0))}`,
+            `THETA                ${bounded(opts.theta, 0.5, 1e-9, 1)}`,
+            `CFL_NUMBER           ${bounded(opts.cflNumber, 0.8, 1e-9, 1)}`,
             `H_MOVE               ${finite(opts.hMove, 0.001)}`,
             `FROUDE_MAX           ${finite(opts.froudeMax, 1.0)}`,
-            `LTS_TIERS            ${Math.max(1, Math.round(finite(opts.ltsTiers, 1)))}`
+            `LTS_TIERS            ${Math.max(1, Math.min(8, Math.round(finite(opts.ltsTiers, 1))))}`
         ];
-        if (Number.isFinite(Number(opts.couplingCd))) {
-            lines.push(`COUPLING_CD          ${finite(opts.couplingCd, 0.65)}`);
-        }
-        if (opts.couplingArea === 'AUTO' || opts.couplingArea === 'DEFAULT') {
-            lines.push(`COUPLING_AREA        ${opts.couplingArea}`);
-        }
+        lines.push(
+            `LIMITER_EPSILON      ${finite(opts.limiterEpsilon, 1e-6)}`,
+            `FLUX_DH_EPS          ${finite(opts.fluxDhEps, 1e-6)}`,
+            `CELL_CLOSURE         ${/^(VFR)$/i.test(String(opts.cellClosure || '')) ? 'VFR' : 'FLAT'}`,
+            `FACE_RECONSTRUCTION  ${/^(VFR_FACE)$/i.test(String(opts.faceReconstruction || '')) ? 'VFR_FACE' : 'MEAN'}`,
+            `VFR_MIN_WET_FRAC     ${bounded(opts.vfrMinWetFrac, 0.1, 1e-9, 0.5)}`,
+            'INTEGRATOR           EXPLICIT'
+        );
+        lines.push(`COUPLING_CD          ${finite(opts.couplingCd, 0.65)}`);
+        lines.push(`COUPLING_AREA        ${opts.couplingArea === 'DEFAULT' ? 'DEFAULT' : 'AUTO'}`);
         if (/^(NATURAL_NEIGHBOUR|SYSTEM|NONE)$/i.test(String(opts.rainfallMode || ''))) {
             lines.push(`RAINFALL_MODE        ${String(opts.rainfallMode).toUpperCase()}`);
         }
@@ -160,6 +169,12 @@
         const indexed = window.Net && window.Net.mesh2DIndexed;
         if (indexed && Array.isArray(indexed.vertices) && indexed.vertices.length &&
             Array.isArray(indexed.triangles) && indexed.triangles.length) {
+            if (indexed.options && indexed.options.outputMode === 'external' && window.Mesh2DExport && window.Mesh2DExport.buildExternal) {
+                return window.Mesh2DExport.buildExternal(baseInp, indexed, indexed.options.meshFileName || 'mesh.2dm');
+            }
+            if (window.Mesh2DExport && window.Mesh2DExport.buildInline) {
+                return window.Mesh2DExport.buildInline(baseInp, indexed);
+            }
             return buildFromIndexed(baseInp, indexed);
         }
 

@@ -131,6 +131,8 @@
             this.treatments = [];
             this.aquifers = [];
             this.snowpacks = [];
+            this.importedLayers = [];
+            if (typeof window !== 'undefined' && window.App) window.App.importedLayers = this.importedLayers;
             this.rebuildIndexes();
             if (notify) this.emit('bulk');
         }
@@ -480,7 +482,8 @@
                 landUses: this.landUses,
                 treatments: this.treatments,
                 aquifers: this.aquifers,
-                snowpacks: this.snowpacks
+                snowpacks: this.snowpacks,
+                importedLayers: this.importedLayers
             };
         }
 
@@ -503,7 +506,11 @@
             this.treatments = state.treatments || [];
             this.aquifers = state.aquifers || [];
             this.snowpacks = state.snowpacks || [];
+            this.importedLayers = state.importedLayers || [];
             this.rebuildIndexes();
+            if (this.mesh2DIndexed && this.mesh2DIndexed.vertices && this.mesh2DIndexed.triangles) {
+                this.setIndexedMesh(this.mesh2DIndexed);
+            }
             if (resetHistory) {
                 this.history = [{ t: 'snap', json: JSON.stringify(this.serialize()) }];
                 this.hIndex = 0;
@@ -901,6 +908,7 @@
 
         clearIndexedMesh() {
             this.mesh2DIndexed = null;
+            this.mesh2D = [];
             this._invalidateGeo();
         }
 
