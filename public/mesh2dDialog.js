@@ -47,14 +47,14 @@
             defaultN: 0.045,
             couplingCd: 0.65,
             couplingArea: 'AUTO',
-            maxTimestep: 2.0,
+            maxTimestep: 10.0,
             dryDepth: 0.001,
             couplingSync: 1.0,
             theta: 0.5,
             cflNumber: 0.8,
-             hMove: 0.001,
+             hMove: 0.003,
              froudeMax: 1.0,
-             ltsTiers: 1,
+             ltsTiers: 4,
              limiterEpsilon: 1e-6,
              fluxDhEps: 1e-6,
              cellClosure: 'FLAT',
@@ -75,7 +75,14 @@
             if (s && settingsVersion < 2 && s.dtmSource === 'NONE') merged.dtmSource = 'CURRENT';
             if (s && settingsVersion < 3 && s.thinningEnabled === false) merged.thinningEnabled = true;
             if (s && settingsVersion < 3 && s.thinningMaxPoints === undefined) merged.thinningMaxPoints = 10000;
-            merged._meshDtmVersion = 3;
+            if (s && settingsVersion < 4) {
+                // v4: align solver defaults with the engine's own defaults
+                // (LTS_TIERS 4, MAX_TIMESTEP 10, H_MOVE 0.003) — much faster.
+                merged.ltsTiers = 4;
+                merged.maxTimestep = 10;
+                merged.hMove = 0.003;
+            }
+            merged._meshDtmVersion = 4;
             return merged;
         } catch (e) {
             return defaultSettings();
