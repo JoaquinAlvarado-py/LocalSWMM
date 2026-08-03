@@ -50,6 +50,45 @@
         return defaultN;
     }
 
+    function pointInRing(point, ring) {
+        var x = point[0], y = point[1], inside = false;
+        for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+            var a = ring[i], b = ring[j];
+            if (((a[1] > y) !== (b[1] > y)) && x < (b[0] - a[0]) * (y - a[1]) / ((b[1] - a[1]) || 1e-30) + a[0]) inside = !inside;
+        }
+        return inside;
+    }
+
+    function buildSubcatchmentLookup(rings) {
+        if (!rings || !rings.length) return null;
+        var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        rings.forEach(function (item) {
+            item.ring.forEach(function (p) { minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]); minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]); });
+        });
+        var cellSize = Math.max(20, Math.sqrt(Math.max(1, (maxX - minX) * (maxY - minY) / rings.length)));
+        var buckets = new Map();
+        rings.forEach(function (item, index) {
+            var rx = item.ring.map(function (p) { return p[0]; }), ry = item.ring.map(function (p) { return p[1]; });
+            var ax = Math.floor(Math.min.apply(null, rx) / cellSize), bx = Math.floor(Math.max.apply(null, rx) / cellSize);
+            var ay = Math.floor(Math.min.apply(null, ry) / cellSize), by = Math.floor(Math.max.apply(null, ry) / cellSize);
+            for (var x = ax; x <= bx; x++) for (var y = ay; y <= by; y++) {
+                var key = x + ':' + y, bucket = buckets.get(key);
+                if (bucket) bucket.push(index); else buckets.set(key, [index]);
+            }
+        });
+        return { rings: rings, cellSize: cellSize, buckets: buckets };
+    }
+
+    function findSubcatchmentAt(lookup, x, y) {
+        if (!lookup) return '';
+        var bucket = lookup.buckets.get(Math.floor(x / lookup.cellSize) + ':' + Math.floor(y / lookup.cellSize)) || [];
+        for (var i = 0; i < bucket.length; i++) {
+            var item = lookup.rings[bucket[i]];
+            if (pointInRing([x, y], item.ring)) return item.id;
+        }
+        return '';
+    }
+
     function triangulate(pslg, quality, ctx) {
         quality = quality || {};
         ctx = ctx || {};
@@ -146,6 +185,7 @@
         var outNt = outIO.out_numberoftriangles;
         var outCorners = outIO.out_numberofcorners || 3;
         var outTriAttrs = outIO.out_triangleattributelist;
+        var subcatchmentLookup = ctx.subcatchmentLookup || null;
 
         // ---- Match input points → output vertices by coordinate hash ----
         var inHash = new CoordHash(1000);
@@ -181,6 +221,12 @@
             var v2 = outTris[ti * outCorners + 2];
             var attr = outTriAttrs ? outTriAttrs[ti] : 0;
             var subId = attr ? (pslg.regionAttrToSub[attr] || '') : '';
+            if (!subId && subcatchmentLookup) {
+                var ax = outPts[v0 * 2], ay = outPts[v0 * 2 + 1];
+                var bx = outPts[v1 * 2], by = outPts[v1 * 2 + 1];
+                var cx = outPts[v2 * 2], cy = outPts[v2 * 2 + 1];
+                subId = findSubcatchmentAt(subcatchmentLookup, (ax + bx + cx) / 3, (ay + by + cy) / 3);
+            }
             var n = subId ? manningForSub(subId, defaultN) : defaultN;
             triangles.push({ v: [v0, v1, v2], n: n, tag: subId || '' });
         }
@@ -225,30 +271,51 @@
         if (subEdges > 0) charEdge /= subEdges;
         var boundaryLen = (Number(quality.maxBoundaryEdge) || 0) > 0
             ? quality.maxBoundaryEdge
-            : (charEdge > 0 ? charEdge : 0);
+            : (charEdge > 0 ? Math.max(30, Math.min(charEdge, 100)) : 0);
 
-        var pslg = window.Mesh2DPslg.fromNetwork(sources, {
-            transform: ctx.transform,
-            simplifyEps: quality.simplifyEps,
-            snapRadius: quality.snapRadius,
-            maxBoundaryEdge: boundaryLen,
-            minNodeSep: quality.minNodeSep,
-            flattenRadius: quality.flattenRadius,
-            domainBuffer: quality.domainBuffer,
-            includeSubcatchments: ctx.includeSubcatchments,
-            useSubRings: ctx.includeSubcatchments,
-            includeNodes: ctx.includeNodes,
-            includeConduits: ctx.includeConduits,
-            useRimZ: ctx.useRimZ,
-            sampleZ: ctx.sampleZ
-        });
+        // Triangle's prebuilt WASM heap is fixed at 16 MB; total PSLG points
+        // (constraints + boundary + terrain) must fit inside it.
+        var trianglePointBudget = Number(quality.trianglePointBudget) || 8000;
+
+        function buildPslg(useRings, useConduits) {
+            return window.Mesh2DPslg.fromNetwork(sources, {
+                transform: ctx.transform,
+                simplifyEps: quality.simplifyEps,
+                snapRadius: quality.snapRadius,
+                maxBoundaryEdge: boundaryLen,
+                minNodeSep: quality.minNodeSep,
+                flattenRadius: quality.flattenRadius,
+                domainBuffer: quality.domainBuffer,
+                includeSubcatchments: ctx.includeSubcatchments,
+                useSubRings: useRings,
+                includeNodes: ctx.includeNodes,
+                includeConduits: useConduits,
+                useRimZ: ctx.useRimZ,
+                sampleZ: ctx.sampleZ
+            });
+        }
+
+        var pslg = buildPslg(!!ctx.includeSubcatchments, !!ctx.includeConduits);
+        if (pslg.points.length > trianglePointBudget && pslg.points.length > 1500) {
+            // Large models: subcatchment rings and conduit segments are dropped
+            // from the PSLG (subcatchment roughness is re-assigned by triangle
+            // centroid afterwards) so the mesh still covers the full domain.
+            pslg = buildPslg(false, false);
+            log('⚠ Large model: subcatchment rings and conduit constraints were dropped to fit the Triangle WASM memory budget (' + trianglePointBudget + ' points). Subcatchment roughness is assigned by triangle centroid instead.');
+        }
 
         if (ctx.terrainSampler && quality.thinningEnabled && window.Mesh2DTerrain) {
             var boundary = pslg.points.filter(function (p) { return p.tag === 'boundary'; }).map(function (p) { return [p.x, p.y]; });
+            // Triangle's prebuilt WASM heap is fixed at 16 MB. Keep the total
+            // PSLG size inside that budget: terrain points only get the room
+            // left over after the constraints/boundary points.
+            var trianglePointBudget = Number(quality.trianglePointBudget) || 8000;
+            var terrainBudget = Math.max(0, trianglePointBudget - pslg.points.length);
+            var terrainMaxPoints = Math.min(Number(quality.thinningMaxPoints) || 10000, terrainBudget);
             var terrainPoints = window.Mesh2DTerrain.thinTerrain(ctx.terrainSampler, boundary, {
                 normalDot: quality.thinningNormalDot,
                 passes: quality.thinningPasses,
-                maxPoints: quality.thinningMaxPoints,
+                maxPoints: terrainMaxPoints,
                 minSpacing: quality.thinningMinSpacing
             }, ctx.transform);
             var mergeRadius2 = Math.pow(Number(quality.snapRadius) || 0.01, 2), acceptedTerrain = 0;
@@ -286,7 +353,23 @@
             }
         }
 
-        (pslg.warnings || []).forEach(function (w) { log('⚠ ' + w); });
+        // Triangle's WASM build is memory-sensitive with hundreds of region
+        // seeds. Keep the subcatchment rings as PSLG constraints, but classify
+        // output triangles by centroid when the region list is large. This
+        // preserves full-domain topology and subcatchment roughness without
+        // passing hundreds of region flood-fill seeds to Triangle.
+        var maxTriangleRegions = Number(quality.maxTriangleRegions) || 256;
+        if (pslg.regions.length > maxTriangleRegions) {
+            ctx.subcatchmentLookup = buildSubcatchmentLookup((sources.subcatchments || []).map(function (sub) {
+                return { id: sub.id, ring: (sub.ring || []).map(ctx.transform.toLocal) };
+            }));
+            pslg.regions = pslg.regions.length ? [pslg.regions[0]] : [];
+            pslg.regionAttrToSub = {};
+            log('Triangle region-seed count reduced from ' + (sources.subcatchments || []).length + ' to the background region; subcatchment tags/roughness will be assigned by triangle centroid.');
+        }
+
+        (pslg.warnings || []).slice(0, 20).forEach(function (w) { log('⚠ ' + w); });
+        if ((pslg.warnings || []).length > 20) log('⚠ ... and ' + (pslg.warnings.length - 20) + ' more constraint warnings (suppressed).');
         log('PSLG: ' + pslg.points.length + ' points, ' + pslg.segments.length + ' segments, ' +
             pslg.regions.length + ' regions, ' + pslg.holes.length + ' holes.');
 
