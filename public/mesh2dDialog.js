@@ -16,7 +16,7 @@
     function defaultSettings() {
         return {
             // Sources
-            dtmSource: 'NONE',
+            dtmSource: 'CURRENT',
             verticalUnit: 'm',
             zFactor: 1.0,
             epsgOverride: '',
@@ -70,7 +70,10 @@
     function loadSettings() {
         try {
             var s = JSON.parse(localStorage.getItem(SETTINGS_KEY));
-            return Object.assign(defaultSettings(), s || {});
+            var merged = Object.assign(defaultSettings(), s || {});
+            if (s && s._meshDtmVersion !== 2 && s.dtmSource === 'NONE') merged.dtmSource = 'CURRENT';
+            merged._meshDtmVersion = 2;
+            return merged;
         } catch (e) {
             return defaultSettings();
         }
@@ -158,7 +161,7 @@
         var n = function (id, fallback) { var el = $(id); var val = el ? parseFloat(el.value) : fallback; return isNaN(val) ? fallback : val; };
         var b = function (id, fallback) { var el = $(id); return el ? el.checked : fallback; };
 
-        s.dtmSource = v('m2d-dtm-source', 'NONE');
+        s.dtmSource = v('m2d-dtm-source', 'CURRENT');
         var tif = $('m2d-geotiff-file');
         s.geotiffFile = tif && tif.files && tif.files.length ? tif.files[0] : null;
         s.verticalUnit = v('m2d-vertical-unit', 'm');
@@ -289,7 +292,7 @@
             return;
         }
         // Interim Mapbox sampling until Mesh2DTerrain (Phase 2) is available.
-        if (s.dtmSource === 'MAPBOX' && window.map && typeof window.map.queryTerrainElevation === 'function') {
+        if ((s.effectiveDtmSource || s.dtmSource) === 'MAPBOX' && window.map && typeof window.map.queryTerrainElevation === 'function') {
             var unitFactor = s.verticalUnit === 'ft' ? 0.3048 : (s.verticalUnit === 'cm' ? 0.01 : 1.0);
             var sampled = 0;
             result.vertices.forEach(function (v) {
@@ -329,6 +332,10 @@
         log('Starting 2D mesh generation…');
         var Net = window.Net;
         if (!Net) { log('❌ Net object not found.'); return; }
+        var terrainSource = s.dtmSource === 'CURRENT'
+            ? (($('dem-source-select') && $('dem-source-select').value) || 'MAPBOX')
+            : s.dtmSource;
+        s.effectiveDtmSource = terrainSource;
         if (!Net.subcatchments || Net.subcatchments.length === 0) {
             log('ℹ No subcatchments — meshing the full domain (boundary polygon or auto bounding domain) with the default Manning\'s n.');
         }
@@ -353,7 +360,7 @@
                 }
             }
         }
-        var hasDtmDomain = s.dtmSource === 'GEOTIFF' && !!s.geotiffFile;
+        var hasDtmDomain = terrainSource === 'GEOTIFF' && !!s.geotiffFile;
         if (!Net.nodes.length && !Net.links.length && !Net.subcatchments.length && !boundaryPolygon && !hasDtmDomain) {
             log('❌ No model geometry to mesh. Provide nodes, links, subcatchments, a boundary layer, or a GeoTIFF domain.'); return;
         }
@@ -390,13 +397,13 @@
         };
 
         var terrainSampler = null;
-        if (window.Mesh2DTerrain && s.dtmSource !== 'NONE') {
+        if (window.Mesh2DTerrain && terrainSource !== 'NONE') {
             if (s.epsgOverride && window.proj4 && window.fetchProjDef) {
                 var projDef = await window.fetchProjDef(s.epsgOverride);
                 if (projDef) window.proj4.defs(s.epsgOverride, projDef);
             }
             terrainSampler = window.Mesh2DTerrain.createSampler({
-                dtmSource: s.dtmSource,
+                dtmSource: terrainSource,
                 verticalUnit: s.verticalUnit,
                 zFactor: s.zFactor,
                 epsgOverride: s.epsgOverride,
