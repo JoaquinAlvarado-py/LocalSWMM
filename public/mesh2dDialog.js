@@ -122,7 +122,7 @@
         var boundarySel = $('m2d-boundary-layer');
         var constraintDiv = $('m2d-constraint-layers');
         if (boundarySel) {
-            boundarySel.innerHTML = '<option value="">Convex hull (auto)</option>';
+            boundarySel.innerHTML = '<option value="">Auto domain: GeoTIFF extent, otherwise model hull</option>';
         }
         if (constraintDiv) {
             constraintDiv.innerHTML = '';
@@ -305,6 +305,23 @@
         if (zeroed > 0) log('⚠ ' + zeroed + ' vertices had no elevation source — set to 0.');
     }
 
+    function terrainBbox(Net, boundary) {
+        var minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+        function scan(point) {
+            if (!point || typeof point[0] !== 'number' || typeof point[1] !== 'number') return;
+            minLng = Math.min(minLng, point[0]); maxLng = Math.max(maxLng, point[0]);
+            minLat = Math.min(minLat, point[1]); maxLat = Math.max(maxLat, point[1]);
+        }
+        function walk(coords) { if (!coords) return; if (typeof coords[0] === 'number') scan(coords); else coords.forEach(walk); }
+        if (boundary) walk(boundary.geometry ? boundary.geometry.coordinates : boundary.coordinates);
+        (Net.nodes || []).forEach(function (n) { scan(n.lngLat); });
+        (Net.links || []).forEach(function (l) { (l.vertices || []).forEach(scan); });
+        (Net.subcatchments || []).forEach(function (s) { (s.ring || []).forEach(scan); });
+        if (!isFinite(minLng)) return null;
+        var padLng = Math.max((maxLng - minLng) * 0.02, 0.0001), padLat = Math.max((maxLat - minLat) * 0.02, 0.0001);
+        return [minLat - padLat, minLng - padLng, maxLat + padLat, maxLng + padLng];
+    }
+
     async function generate() {
         var s = readSettings();
         var persisted = Object.assign({}, s); delete persisted.geotiffFile; saveSettings(persisted);
@@ -313,7 +330,7 @@
         var Net = window.Net;
         if (!Net) { log('❌ Net object not found.'); return; }
         if (!Net.subcatchments || Net.subcatchments.length === 0) {
-            log('❌ No subcatchments found. Draw or import subcatchments first.'); return;
+            log('ℹ No subcatchments — meshing the full domain (boundary polygon or auto bounding domain) with the default Manning\'s n.');
         }
         var origin = window.Mesh2DProj.originFromModel(Net);
         var transform = window.Mesh2DProj.makeTransform(origin);
@@ -335,6 +352,10 @@
                     break;
                 }
             }
+        }
+        var hasDtmDomain = s.dtmSource === 'GEOTIFF' && !!s.geotiffFile;
+        if (!Net.nodes.length && !Net.links.length && !Net.subcatchments.length && !boundaryPolygon && !hasDtmDomain) {
+            log('❌ No model geometry to mesh. Provide nodes, links, subcatchments, a boundary layer, or a GeoTIFF domain.'); return;
         }
         var constraintLayers = [];
         (s.constraintLayers || []).forEach(function (name) {
@@ -379,12 +400,27 @@
                 verticalUnit: s.verticalUnit,
                 zFactor: s.zFactor,
                 epsgOverride: s.epsgOverride,
-                file: s.geotiffFile
+                file: s.geotiffFile,
+                bbox: terrainBbox(Net, boundaryPolygon),
+                apiKey: $('opentopo-api-key') ? $('opentopo-api-key').value.trim() : ''
             }, window.map);
             try { await terrainSampler.ready; } catch (e) {
                 log('⚠ Terrain source failed: ' + e.message);
                 terrainSampler = null;
             }
+        }
+        if (terrainSampler && terrainSampler.detectedCrs && terrainSampler.detectedCrs !== 'EPSG:4326' && window.proj4 && window.fetchProjDef) {
+            var detectedDef = await window.fetchProjDef(terrainSampler.detectedCrs);
+            if (detectedDef) {
+                window.proj4.defs(terrainSampler.detectedCrs, detectedDef);
+                if (terrainSampler.refreshBounds) terrainSampler.refreshBounds();
+            }
+        }
+        if (window.App) window.App.mesh2DTerrainSampler = terrainSampler;
+        if (!boundaryPolygon && terrainSampler && terrainSampler.boundsLngLat) {
+            boundaryPolygon = { type: 'Polygon', coordinates: [terrainSampler.boundsLngLat] };
+            sources.boundaryPolygon = boundaryPolygon;
+            log('Domain: full GeoTIFF extent (' + terrainSampler.detectedCrs + ').');
         }
 
         var ctx = {
