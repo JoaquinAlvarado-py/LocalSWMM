@@ -1291,7 +1291,7 @@
         ResultStyling.clear();
         ResultStyling.active2DVar = 'depth';
         ResultStyling.mesh2DMinMax = depthRange;
-        if (window.LayerTree) window.LayerTree.refresh();
+        if (window.LayerTree && window.LayerTree.enableResultsDefaults) window.LayerTree.enableResultsDefaults();
 
         // Color-code mesh with last-frame depth values initially
         const lastFrame = frames[frames.length - 1];
