@@ -41,7 +41,7 @@
             thinningEnabled: true,
             thinningNormalDot: 0.6,
             thinningPasses: 3,
-            thinningMaxPoints: 5000,
+            thinningMaxPoints: 10000,
             thinningMinSpacing: 40,
             // Hydraulics
             defaultN: 0.045,
@@ -71,8 +71,11 @@
         try {
             var s = JSON.parse(localStorage.getItem(SETTINGS_KEY));
             var merged = Object.assign(defaultSettings(), s || {});
-            if (s && s._meshDtmVersion !== 2 && s.dtmSource === 'NONE') merged.dtmSource = 'CURRENT';
-            merged._meshDtmVersion = 2;
+            var settingsVersion = Number(s && s._meshDtmVersion) || 0;
+            if (s && settingsVersion < 2 && s.dtmSource === 'NONE') merged.dtmSource = 'CURRENT';
+            if (s && settingsVersion < 3 && s.thinningEnabled === false) merged.thinningEnabled = true;
+            if (s && settingsVersion < 3 && s.thinningMaxPoints === undefined) merged.thinningMaxPoints = 10000;
+            merged._meshDtmVersion = 3;
             return merged;
         } catch (e) {
             return defaultSettings();
