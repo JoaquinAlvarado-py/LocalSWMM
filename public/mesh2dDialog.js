@@ -38,7 +38,7 @@
             simplifyEps: 0.1,
             snapRadius: 0.01,
             maxBoundaryEdgeLen: 0,
-            thinningEnabled: false,
+            thinningEnabled: true,
             thinningNormalDot: 0.6,
             thinningPasses: 3,
             thinningMaxPoints: 5000,
