@@ -68,7 +68,8 @@ function getModule() {
                 },
                 locateFile: file => file.endsWith('.wasm') ? 'openswmm2d.wasm' : file,
                 print: text => self.postMessage({ type: 'stdout', text: String(text) }),
-                printErr: createThrottledPrintErr()
+                printErr: createThrottledPrintErr(),
+                onAbort: reason => self.postMessage({ type: 'stderr', text: '[OpenSWMM 2D WASM abort] ' + String(reason || 'unknown reason') })
             });
             });
     }
@@ -364,6 +365,10 @@ self.onmessage = event => {
         // The failed instance may be an aborted runtime with stale MEMFS state
         // (EXH recovery is MSVC-only); never reuse it for a later run.
         modulePromise = null;
-        self.postMessage({ type: 'error', message: error && error.message ? error.message : String(error) });
+        self.postMessage({
+            type: 'error',
+            message: error && error.message ? error.message : String(error),
+            detail: error && error.stack ? error.stack : ''
+        });
     });
 };
