@@ -250,10 +250,16 @@
             });
             domainArea = Math.abs(domainArea) / 2;
             var requestedArea = Number(quality.maxArea) || 0;
-            var maxTargetTriangles = Number(quality.maxTargetTriangles) || 100000;
-            if (requestedArea > 0 && domainArea / requestedArea > maxTargetTriangles) {
-                effectiveQuality = Object.assign({}, quality, { maxArea: domainArea / maxTargetTriangles });
-                log('⚠ Full-domain mesh density was reduced to approximately ' + maxTargetTriangles.toLocaleString() + ' triangles (' + effectiveQuality.maxArea.toFixed(2) + ' m² max area) to avoid WASM exhaustion.');
+            var maxTargetTriangles = Number(quality.maxTargetTriangles) || 30000;
+            var safeRequestedArea = requestedArea > 0 ? requestedArea : domainArea / maxTargetTriangles;
+            if (requestedArea <= 0 || domainArea / safeRequestedArea >= maxTargetTriangles) {
+                effectiveQuality = Object.assign({}, quality, {
+                    maxArea: domainArea / maxTargetTriangles,
+                    minAngle: Math.min(Number(quality.minAngle) || 33, 30),
+                    maxSteiner: Number(quality.maxSteiner) > 0 ? Math.min(quality.maxSteiner, 30000) : 30000,
+                    allowBoundarySteiner: false
+                });
+                log('⚠ Full-domain mesh density was reduced to approximately ' + maxTargetTriangles.toLocaleString() + ' triangles (' + effectiveQuality.maxArea.toFixed(2) + ' m² max area); boundary refinement was disabled to avoid WASM exhaustion.');
             }
         }
 
