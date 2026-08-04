@@ -169,6 +169,19 @@
         const indexed = window.Net && window.Net.mesh2DIndexed;
         if (indexed && Array.isArray(indexed.vertices) && indexed.vertices.length &&
             Array.isArray(indexed.triangles) && indexed.triangles.length) {
+            // Overlay the CURRENT dialog solver settings so a mesh generated
+            // with older defaults (e.g. LTS_TIERS 1) still runs with the
+            // settings the user sees, without having to regenerate the mesh.
+            const current = window.Mesh2DDialog && window.Mesh2DDialog.getSettings ? window.Mesh2DDialog.getSettings() : null;
+            if (current) {
+                const fresh = Object.assign({}, indexed.options || {});
+                ['maxTimestep', 'dryDepth', 'couplingSync', 'theta', 'cflNumber', 'hMove', 'froudeMax', 'ltsTiers',
+                 'couplingCd', 'couplingArea', 'rainfallMode', 'report2d', 'limiterEpsilon', 'fluxDhEps',
+                 'cellClosure', 'faceReconstruction', 'vfrMinWetFrac', 'outputMode'].forEach(k => {
+                    if (current[k] !== undefined) fresh[k] = current[k];
+                });
+                indexed.options = fresh;
+            }
             if (indexed.options && indexed.options.outputMode === 'external' && window.Mesh2DExport && window.Mesh2DExport.buildExternal) {
                 return window.Mesh2DExport.buildExternal(baseInp, indexed, indexed.options.meshFileName || 'mesh.2dm');
             }
