@@ -538,7 +538,9 @@
             return {
                 depth: state.slice(2 * nt, 3 * nt),
                 head: state.slice(nt, 2 * nt),
-                vol: state.slice(0, nt)
+                vol: state.slice(0, nt),
+                qx: state.slice(3 * nt, 4 * nt),
+                qy: state.slice(4 * nt, 5 * nt)
             };
         }
 
