@@ -96,11 +96,12 @@
         },
         onStep: function (step, frame) {
             var mesh = window.Net && window.Net.mesh2DIndexed, m = this.map || window.map; if (!mesh || !m || !frame) return;
-            var triValues = frame.depth || [], field = frame.vertex && frame.vertex.depth ? frame.vertex.depth : null;
+            var triValues = frame.depth || [], field = frame.vertex && frame.vertex.depth ? Array.from(frame.vertex.depth) : null;
             if (!field) { mesh.triangles.forEach(function (t, i) { t.value = triValues[i] || 0; }); field = Mesh2DRender.vertexField(mesh, null); }
             var levels = Mesh2DRender.levelsAuto(field, 8);
             function set(id, data) { var s = m.getSource(id); if (s) s.setData(data); }
-            set('m2d-vertices', Mesh2DRender.meshVertices(mesh, field)); set('m2d-depth-isolines', Mesh2DRender.isolines(mesh, field, levels)); set('m2d-depth-bands', Mesh2DRender.contourBands(mesh, field, levels)); set('m2d-velocity-arrows', Mesh2DRender.velocityArrows(mesh, frame.velocity || [], Math.max.apply(null, frame.velocity || [1]), frame.velocityX, frame.velocityY));
+            var vel = frame.velocity || [], vMax = 0; for (var vi = 0; vi < vel.length; vi++) { if (vel[vi] > vMax) vMax = vel[vi]; }
+            set('m2d-vertices', Mesh2DRender.meshVertices(mesh, field)); set('m2d-depth-isolines', Mesh2DRender.isolines(mesh, field, levels)); set('m2d-depth-bands', Mesh2DRender.contourBands(mesh, field, levels)); set('m2d-velocity-arrows', Mesh2DRender.velocityArrows(mesh, vel, vMax || 1, frame.velocityX, frame.velocityY));
             if (window.Mesh2DGL) window.Mesh2DGL.onStep(field);
         },
         clear: function () {

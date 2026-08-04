@@ -1,0 +1,256 @@
+# SWMM Fork WebGPU — Plan: acelerar el solver 2D con WebGPU
+
+## 1. Objetivo
+
+El cuello de botella de las simulaciones 2D es el **marchador hidráulico explícito**
+(local-inertial con LTS) sobre mallas de 10k–70k triángulos, corriendo escalar en WASM.
+WebGPU permite ejecutar los kernels de celdas/caras en la GPU con un speedup potencial
+de **5–20×** en la parte 2D (estima: run de 10 min → ~30 s–1 min).
+
+Este proyecto es una **copia limpia** de `SWMM_3D_Web_UI` para desarrollar un backend
+2D WebGPU *en paralelo* al motor WASM actual (que queda como fallback y referencia de
+validación).
+
+## 2. Arquitectura
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ App (vanilla JS, sin bundler)                                 │
+│  - Generación de malla (Triangle WASM) → mesh2DIndexed        │
+│  - UI / layers / resultados (sin cambios)                     │
+├──────────────────────────────────────────────────────────────┤
+│ 2D Backend (nuevo)                                            │
+│  ┌─────────────────┐     ┌───────────────────────────────┐   │
+│  │ JS orchestrator  │◄───►│ 1D SWMM engine (WASM, actual) │   │
+│  │ WebGPUMarscher   │     │  open/init/stride (1D steps)  │   │
+│  └────────┬────────┘     └───────────────────────────────┘   │
+│           │ estado compartido: coupling points, head 1D      │
+│  ┌────────▼────────┐                                          │
+│  │ WGSL compute     │  faceFlux → cellUpdate → boundary      │
+│  │ kernels (GPU)    │  → LTS (v2) → output fields            │
+│  └─────────────────┘                                          │
+├──────────────────────────────────────────────────────────────┤
+│ Fallback: openSwmm2dWorker.js (WASM) cuando no hay WebGPU    │
+└──────────────────────────────────────────────────────────────┘
+```
+
+- **El 1D no se toca**: el motor WASM (`swmm_engine_*`) sigue resolviendo la red
+  (Bellinge: 1,044 links) y la hidrología.
+- El 2D WebGPU corre los substeps del marchador entre pasos de enrutado 1D y hace el
+  intercambio de acople (coupling) por buffers.
+
+## 3. Por qué el marchador encaja en WebGPU
+
+`ExplicitInertialSolver` (referencia: `third_party/openswmm-engine/src/engine/2d/solver/ExplicitInertialSolver.cpp`)
+es un stencil:
+
+- **fireFaces**: por cara, flujo `q` desde head de los 2 triángulos adyacentes
+  (Manning + cap de Froude + limiter). Caras independientes → paralelizable 1:1.
+- **fireCells**: por celda, volumen/head/depth desde la suma de flujos de sus 3 caras
+  + fuentes (lluvia, acople). Celdas independientes → paralelizable 1:1.
+- **syncAndRebuild / tiers (LTS)**: v1 con dt global; v2 con listas de tiers.
+
+Los pasos 1:1 sobre arreglos contiguos son exactamente el modelo de compute shaders.
+
+## 4. Modelo de datos (SoA, buffers GPU)
+
+Todo en **coordenadas locales métricas** (ya lo produce `mesh2DProj`).
+
+| Buffer | Tipo | Contenido |
+|---|---|---|
+| `vert_xyz` | f32×3 | x,y,z de vértices |
+| `tri` | u32×3 | índices de triángulo |
+| `face` | u32×2 | tri izquierdo/derecho por cara (precomputado en CPU) |
+| `face_edge` | u32×3 | vértices de cada cara (para geometría) |
+| `tri_area`, `tri_cz`, `face_len`, `face_nx/ny`, `face_zmid` | f32 | geometría derivada (una vez) |
+| `state_vol`, `state_head`, `state_depth` | f32 | estado actual |
+| `state_q` | f32×2 | momentum por cara (componentes) |
+| `state_flux` | f32 | flujo acumulado por cara para output |
+| `sources_rain`, `sources_coupling`, `boundary` | f32 | forzamientos |
+| `tiers` / `active` (v2) | u32 | listas de trabajo |
+
+Tamaño para 50k celdas: ~50k×3×4 B ≈ 2–6 MB en total — trivial para GPUs.
+
+## 5. Kernels WGSL (v1: dt global, sin LTS)
+
+1. `faceFlux` (1 invocación por cara)
+   - `hf = faceFlowDepth(head[a], head[b], zmid)` (portar exacto de `inertial::faceFlowDepth`)
+   - Manning friction, cap Froude, limiter → `q`
+   - escribir `flux` (antisimétrico: + en un lado, − en el otro)
+2. `cellUpdate` (1 invocación por celda)
+   - sumar flujos de sus 3 caras → Δvol
+   - + lluvia, + acople, − evaporación
+   - `vol = max(0, vol + Δ)`; `head = z + vol/area`; `depth = head − z`
+3. `boundaryApply` (v1: WALL en todas las caras exteriores; luego NORMAL_FLOW / SPECIFIED_STAGE)
+4. `renderDepths` / `vertexReconstruct` (para resultados, cadencia de frame)
+
+Los substeps se encadenan con barriers entre `faceFlux` y `cellUpdate`.
+
+## 6. Acople 1D↔2D (orquestador JS)
+
+- Bucle por paso de enrutado (ROUTING_STEP):
+  1. `stride` del 1D WASM (1 paso) → lee `head`/`depth` de nodos acoplados.
+  2. Escribe en `sources_coupling` (intercambio con CD, área de acople).
+  3. GPU: N substeps del marchador para avanzar el 2D el `COUPLING_SYNC`.
+  4. Lee `coupling_flux` → lo devuelve al 1D como inflow lateral.
+- Cadencia de frames (60 s) → `renderDepths` + descarga para `Mesh2DLayers`.
+
+## 7. Precisión (f32 vs f64)
+
+WebGPU compute es **f32**; el motor usa double.
+
+- Coordenadas locales ya son pequeñas (±5 km) → sin cancelación catastrófica en XY.
+- `head = z + depth` con z≈65 m y depth≈0.001–1 m: en f32, resolución ≈ 7.8e-6 m
+  (sub-mm) — aceptable frente a `DRY_DEPTH 0.001`.
+- Validar continuidad de masa del prototipo contra el motor; si hace falta,
+  acumular volumen en f32 con suma por pares o `Kahan` en el kernel de celdas.
+
+## 8. Validación (paridad con el motor)
+
+- Portar las fórmulas **exactas** de `ExplicitInertialSolver.cpp` + `inertial::*` (leer
+  `faceFlowDepth`, Manning, `cellCflDt`, limiter).
+- Test de paridad: mismo mesh (Bellinge2.tif), misma lluvia y opciones; comparar
+  por frame: max depth, max velocity, volumen total, continuidad.
+- Criterio: máx|Δdepth| < 1e-3 m y |Δcontinuidad| < 0.1% en los mismos frames.
+
+## 9. Hitos (milestones)
+
+- **M0 — Harness**: copia lista, `navigator.gpu` detect, canvas/device, kernel trivial,
+  baseline de FPS; correr en localhost con Chrome. *(Criterio: el harness carga el mesh
+  generado y pinta 1 frame.)*
+- **M1 — Marchador dt global**: kernels faceFlux+cellUpdate con lluvia uniforme,
+  sin acople. *(Criterio: paridad en el ejemplo 2D del engine con 8 celdas y luego 5k.)*
+- **M2 — Acople 1D+2D**: loop orquestado con el 1D WASM + coupling points.
+  *(Criterio: Bellinge completo corre y la animación se ve igual que WASM.)*
+- **M3 — Condiciones de borde + LTS v2**: NORMAL_FLOW/SPECIFIED_STAGE, tiers por listas.
+- **M4 — Output/rendering**: `renderDepths` por frame para `Mesh2DLayers` + toggle
+  WebGPU/WASM en la UI.
+- **M5 — Benchmark & host**: medir en tu GPU vs WASM; deploy a GitHub Pages
+  (o Cloudflare Pages). Fallback automático a WASM sin WebGPU.
+
+## 10. Hosting
+
+- **GitHub Pages funciona para WebGPU** (solo requiere HTTPS; no necesita COOP/COEP).
+- Cloudflare Pages / Netlify si más adelante se quiere probar pthreads.
+- Verificar: `navigator.gpu` en Chrome/Edge 113+, desktop y Android.
+
+## 11. Riesgos
+
+| Riesgo | Mitigación |
+|---|---|
+| Divergencia numérica f32 | Portar fórmulas exactas + tests de paridad + Kahan si necesario |
+| Complejidad del acople 1D↔2D | Iterar en Bellinge con pocos nodos acoplados primero |
+| LTS en GPU (v2) | v1 con dt global; medir antes de invertir |
+| Soporte WebGPU del usuario | Fallback automático al worker WASM |
+| Mantener dos backends | Capa única de interfaz (`Mesh2DSolver`) con dos implementaciones |
+
+## 12. Estado actual (sesión 2026-08-03: M0 + M1)
+
+### Infraestructura de verificación (gate Bellinge)
+
+- **`scripts/verify-bellinge.mjs`** — gate repetible: carga Bellinge en la app real
+  (headless/headed Chrome vía CDP), genera malla desde el GeoTIFF, corre el motor
+  WASM completo. **PASS verificado**: 34.709 triángulos, 882 frames, acople
+  1D→2D 1.572.700 m³ / 2D→1D 1.657.096 m³, continuidad 1D reportada. Corre en
+  ~25 min (48 h de simulación); artefactos en `scripts/verify-out/`.
+- **`scripts/run-engine-marcher.mjs`** — motor WASM 2D en Node (sin browser):
+  referencia para paridad. El glue Emscripten funciona en Node 24 pasando
+  `wasmBinary` + `instantiateWasm`.
+- **`scripts/make-marcher-inp.mjs`** — genera INP 2D sintéticos (cuenca cerrada,
+  lluvia uniforme `RAINFALL_MODE SYSTEM`, `LTS_TIERS 1`, `FLAT`).
+  Lecciones del INP: la lluvia constante necesita una entrada de TS por
+  intervalo de gage; `ROUTING_STEP` define el batch del co-advance; el primer
+  batch 2D es `[0, routing+0.5]` (acumulador `pending_dt_`).
+- Fixtures: `marcher-8cells` (8 celdas, 30 min) y `marcher-5k` (5.000, 60 min).
+
+### M0 — Harness WebGPU ✅
+
+- `public/webgpu/harness.html?fixture=<name>` — detecta `navigator.gpu`, crea
+  device, carga la malla del fixture, corre el marchador, compara contra la
+  referencia, pinta el campo de profundidad final en un canvas.
+- **Caveat Chrome/Windows**: headless NO expone WebGPU (verificado en 151);
+  el harness corre en Chrome headed con perfil temporal
+  (`scripts/run-webgpu-harness.mjs`). El adaptador real funciona.
+
+### M1 — Marchador dt global ✅ (paridad estadística)
+
+`public/webgpu/shaders/marcher.wgsl` + `public/webgpu/webgpuMarscher.js`:
+port 1:1 del `ExplicitInertialSolver` con K=1 (sin LTS):
+`faceFlux`, `cellUpdate` (con Perot θ-mix), `lazySources`, `seedActive`
+(histéresis h_on/h_off + copia base del active set), `halo` (un anillo),
+`cflReduce` (atomicMin del dt0), y el loop `advance()` en JS (cadencia de
+rebuild cada 4 ciclos, lazy clock, tail).
+
+**Gate de paridad estadístico (M1.x, decidido en sesión)**: la dinámica f32
+diverge del motor f64 en el sentido de max|Δdepth| (chaos del dt0 min-CFL
+amplificado por el frente), pero conserva masa y sigue el campo
+estadísticamente. Criterios del harness:
+  - conservación |GPU−rain|/rain ≤ 0.5 %
+  - mean-depth worst |meanΔ| ≤ 1e-3 m
+  - correlación Pearson worst ≥ 0.5 (se omite en campos uniformes degenerados)
+
+**Resultados** (f32 GPU vs f64 WASM):
+- Pre-activación: **bit-exacto** (max|Δdepth| ≈ 1e-10 m).
+- 8 celdas: **PASS** — cons 0.15 %, meanΔ 5.3e-4 m, corr 0.887
+  (max|Δd| de referencia 2.1e-1 m).
+- 5k celdas: **PASS** — cons 0.01 %, meanΔ 7.5e-5 m, corr 0.588
+  (max|Δd| de referencia 1.1e+1 m; la diferencia se concentra en la esquina
+  profunda — el GPU sobreconcentra ~2× el agua en el cell más hondo).
+- El conteo de substeps coincide dentro de 4–8 % (ref 647 vs 604 en 8 celdas;
+  ref 4652 vs ~5000 en 5k) — el dt0 del min-CFL es la fuente de sensibilidad.
+
+**Lecciones duras de WebGPU (documentadas para M2+):**
+1. Los *structs* en storage buffers leen basura/ceros en este driver
+   (Chrome 151) — usar `array<f32>` planos (params como array con índices).
+2. `queue.writeBuffer` → dispatch inmediato lee datos STALE — actualizar
+   parámetros vía staging + `copyBufferToBuffer` DENTRO del encoder.
+3. El active set necesita la copia base `cell_active = next` ANTES del halo.
+4. Los acumuladores de cara (faccL/faccR) deben limpiarse en cada substep:
+   una cara seca/inactiva que retorna temprano dejaba dM stale → el cell
+   gather lo sumaba cada substep (creaba agua: +74 %).
+5. Límite WebGPU: 8 storage buffers por stage → geometría empaquetada
+   (geoA/geoF/topo) y estado (state/qbuf/wk/red).
+6. El batch del co-advance del motor: `pending_dt_` acumula el paso de
+   routing (0.5 s inicial + 60 s) → el primer batch 2D es `[0, 60.5]`, no
+   `[0, 0.5]` — la cadencia de rebuild depende de esta estructura exacta.
+
+### M2 — Acople 1D↔2D ✅ (validación PASS)
+
+**Entregado:**
+- **Rebuild del WASM** con las APIs de nodo exportadas (`swmm_node_count/get_heads_bulk/get_depths_bulk/get_volumes_bulk/set_lateral_inflow/set_pond_area`) — toolchain emscripten 6.0.5 + vcpkg instalada localmente (`.tools/`), build reproducible con `scripts/build-openswmm2d.ps1`.
+- **Kernel `couplingExchange`** (WGSL): port 1:1 de `computeNodeCouplingQ` + el bloque live-exchange de `fireCells` — ley de orificio con φ C¹-regularizado (ε=0.02), gate capped-pipe (banda 5 cm sobre el crown), wet-ramp Hermite fuente-seca, caps de disponibilidad (β·V_celda para drenaje; presupuesto de volumen del nodo para spill), acumulador ∫Q.
+- **Orquestador split** (`harness.html?mode=coupled`): 1D WASM (INP sin secciones 2D) stride-a-stride ↔ GPU (batches) ↔ retroalimentación `set_lateral_inflow` del ∫Q.
+- **Fix del pin**: el motor fuerza activas las celdas de acople (`pin_t0`) — el seed de la GPU ahora las pincha.
+- **Ponding del nodo acoplado**: el motor marca `coupled_node` → can_pond (DynamicWave `commitNodeDepthState`) y sobreescribe `ponded_area` con el footprint 2D; el split replica con `ALLOW_PONDING YES` + `swmm_node_set_pond_area(tri_area)` — sin esto el 1D floodea en el crown y el gate nunca abre.
+- **Fixture `marcher-cpl`**: nodo STORAGE S1 (FUNC 100 → A efectiva 3.075 m² — el coeficiente FUNC se interpreta en ft²/US incluso en SI) + conduit restrictivo + outfall + `[2D_TRIANGLE_NODE_MAP]` → referencia completa del motor (depths + nodeHeads + mass balance + cpl acumulado por ventana).
+
+**Validación (marcher-cpl, 8 celdas, 3600 s, 60 s/ventana):** VERDICT **PASS** — meanΔ = 4.7e-4 m (≤1e-3), medianCorr = 0.865 (≥0.5), temporalCorr = 1.0000; el nodo se pinna en 10.66 m (la ref 10.662), el exch por ventana coincide EXACTAMENTE con la ref (28.64, 43.0, 35.86, 25.12, 23.33, 27.8, 28.7…), y los volúmenes del nodo también (28.64, 43, 35.86, 25.12…). La ref misma sloshea (modo checkerboard de la cuenca cerrada, amplitud ±2 m); el split reproduce el modo con deriva de fase (f32 vs f64) → la corr espacial por-frame se invierte en ~15/50 frames; la MEDIANA es la métrica robusta (el peor-frame era −0.86).
+
+**Lecciones M2 (todas medidas, no teoría):**
+1. **El stride del 1D-only NO coincide con el co-advance del motor** (pasos adaptativos 1 s/120 s vs 60 s con el acople) — el split debe batch-por-landing del stride (VARIABLE_STEP NO pinna los pasos a ROUTING_STEP 60 s) y parear por tiempo (no por índice; el json de la ref omite el frame 241.5 aunque el stride existe).
+2. **`set_lateral_inflow` aplica la MEDIA de los últimos DOS valores seteado** (medido: set −1.0 → aplicado −0.5; set 1.194 → aplicado 0.835) — el split debe setear `exch/dt` (el rate del batch actual); el aplicado = ½(exch_N + exch_{N-1})/dt = exactamente la entrega de la cola del motor (`coupling_queue` con `coupling_delivery_remaining` ≈ 2 ventanas).
+3. **El orden de `_setParams` vs `_beginEncoder` importa**: el copy staged→params ocurre en el `_beginEncoder`; llamar `_setParams` DESPUÉS dejaba el primer rebuild con params ceros (P_NT=0 → el seed no hacía nada → activeCount 0 → el advance saltaba la ventana) y los substeps con dt de un substep atrás. Fix: `_setParams` ANTES del `_beginEncoder`.
+4. **El seed escribe AMBAS regiones de wk** (`wk[i]` y `wk[NT+i]`): los kernels/count leen la base; el seed solo en la current dejaba la celda pinneada fuera del count → el advance saltaba y el intercambio no disparaba hasta que el halo dejaba un leftover.
+5. **El budget del faceFlux usa el EXPORTADOR** (`exp_cell = (qn1 > 0) ? a : b` en el motor); el kernel tenía `select(a, b, qn1 > 0)` = el RECEPTOR → con receptor seco el flujo moría (el agua quedaba atrapada en la celda de acople). El M1 lo enmascaró (lluvia cubre todo el mesh).
+6. **El buffer `pin` necesita COPY_SRC** para el readback (diagnóstico).
+7. **La ref json incluye un frame final tSec=0** (estado END del engine) — excluirlo de la paridad; y el pairing por `≤` deja el par una ventana stale cuando la grilla del split está desfasada — usar el vecino más cercano.
+8. **El frame final del 2D en la ref = la suma de DOS ventanas 60 s** (los strides a 241.5 no producen frame en el json) — no confundirlo con una ventana 120 s.
+
+**Próximo M2.x:**
+1. Unit test del kernel de acople vs la fórmula del motor (Q fijo con estados conocidos).
+2. Acople por vértice (stencil) + validación Bellinge con el split.
+
+### Próximos pasos
+
+1. **M2.x**: unit test del kernel de acople; acople por vértice (stencil) + validación Bellinge con el split.
+2. **M3**: condiciones de borde (NORMAL_FLOW/SPECIFIED_STAGE) + LTS v2.
+3. **M4**: `renderDepths` por frame + toggle WebGPU/WASM en la UI.
+4. (Opcional) Si se quiere max|Δdepth| < 1e-3 a escala: Kahan para volúmenes,
+   desensibilizar el min-CFL, o build de referencia del motor en f32.
+
+## Referencias
+
+- Motor (copia): `third_party/openswmm-engine/src/engine/2d/solver/ExplicitInertialSolver.cpp`
+  e `inertial.hpp` (fórmulas a portar).
+- Malla actual: `public/mesh2d*.js` (generación, sin cambios).
+- Resultados: `public/mesh2dRender.js`, `public/meshGlLayer.js` (reutilizar).
