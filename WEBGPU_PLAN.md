@@ -248,6 +248,44 @@ estadísticamente. Criterios del harness:
 4. (Opcional) Si se quiere max|Δdepth| < 1e-3 a escala: Kahan para volúmenes,
    desensibilizar el min-CFL, o build de referencia del motor en f32.
 
+## Integración producción UI (branch `experimental`)
+
+Estado: el 2D WebGPU corre **en la app de producción** como backend por defecto
+(cuando `navigator.gpu` existe), con fallback automático al worker WASM.
+
+- `public/webgpu/gpu2dWorker.js` — worker de producción con el **mismo contrato**
+  que `openSwmm2dWorker.js` (`status2d`/`progress2d`/`results2d`/`error`): 1D en
+  WASM + 2D en GPU (split M2), frames `{elapsedMs, depth, head, velocity,
+  velocityX, velocityY}` (sin campos `vertex` — el render cae al derivado de
+  celdas), `report` del 1D + `massBalance` del split (exch acumulado).
+- `public/webgpu/couplingSplit.js` — maquinaria M2 compartida (worker-safe):
+  `parse2DMesh`, `parse2DOptions`, `parseCoupling` (mapa por triángulo y por
+  vértice), `build1DInp`, `simStartSec`/`simEndSec`, `rainMpsAt` (lluvia
+  uniforme = media de los gages del modelo), `runSplit` (el loop completo).
+- `public/app.js` — `run2DSimulationInWorker` intenta `webgpu/gpu2dWorker.js`
+  primero; errores `WEBGPU_*`/`VERTEX_COUPLING_*` → reintenta con el worker
+  WASM. Toggle `Net.useGpu2d !== false` (por defecto GPU).
+- `public/webgpu/webgpuMarscher.js` — `sample()` ahora devuelve también
+  `qx`/`qy` (velocidad Perot por celda) para los frames de producción.
+- `scripts/test-gpu-worker.mjs` — drive del worker por el contrato real vía
+  CDP (`--inp <path>`): fixture marcher-cpl → 51 frames, volume final 1707.0 m³
+  (ref del engine 1706.8) ✓; Bellinge → `VERTEX_COUPLING_UNSUPPORTED` (cae al
+  WASM) ✓.
+
+Validado en el fixture de acople por triángulo (marcher-cpl): volumen 2D final
+y acople 1D→2D coinciden con la referencia del motor.
+
+### Pendiente para Bellinge en GPU
+
+1. **Acople por vértice** (stencil): `[2D_VERTEX_NODE_MAP]` — el kernel de
+   acople actual solo soporta `[2D_TRIANGLE_NODE_MAP]` (una celda por punto).
+   El motor scatter Q sobre el stencil (weights upwind/geométricos) y la head
+   2D del vértice usa reconstrucción (vertexHeadAt) — portar
+   `NodeCoupling.cpp` vertexHeadAt/scatterCouplingFlux + stencil
+   vertex→celdas en el marcher.
+2. **Rain NATURAL_NEIGHBOUR** en la lluvia uniforme del split (hoy: media de
+   gages por ventana).
+
 ## Referencias
 
 - Motor (copia): `third_party/openswmm-engine/src/engine/2d/solver/ExplicitInertialSolver.cpp`
