@@ -1,0 +1,372 @@
+
+> build:2d-wasm
+> powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-openswmm2d.ps1
+
+-- Running vcpkg install
+A suitable version of cmake was not found (required v4.4.0).
+Downloading https://github.com/Kitware/CMake/releases/download/v4.4.0/cmake-4.4.0-windows-x86_64.zip -> cmake-4.4.0-windows-x86_64.zip
+Successfully downloaded cmake-4.4.0-windows-x86_64.zip
+Extracting cmake...
+Detecting compiler hash for triplet x64-windows...
+A suitable version of powershell-core was not found (required v7.6.3).
+Downloading https://github.com/PowerShell/PowerShell/releases/download/v7.6.3/PowerShell-7.6.3-win-x64.zip -> PowerShell-7.6.3-win-x64.zip
+Successfully downloaded PowerShell-7.6.3-win-x64.zip
+Extracting powershell-core...
+Compiler found: C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe
+Detecting compiler hash for triplet wasm32-emscripten...
+Compiler found: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/emsdk/upstream/emscripten/em++.exe
+The following packages will be built and installed:
+    eigen3:wasm32-emscripten@5.0.1
+    hdf5[core,szip,zlib]:wasm32-emscripten@2.1.1#1
+  * libaec:wasm32-emscripten@1.1.7#1
+    nlohmann-json:wasm32-emscripten@3.12.0#2
+    sundials:wasm32-emscripten@7.8.0
+  * vcpkg-cmake:x64-windows@2024-04-23
+  * vcpkg-cmake-config:x64-windows@2026-07-21
+  * zlib:wasm32-emscripten@1.3.2#1
+Additional packages (*) will be modified to complete this operation.
+Restored 0 package(s) from C:\Users\joaqu\AppData\Local\vcpkg\archives in 1.21 ms. Use --debug to see more details.
+Installing 1/8 vcpkg-cmake-config:x64-windows@2026-07-21...
+vcpkg-cmake-config:x64-windows@2026-07-21 package ABI: b4e7b07431fbe712e50f48e8e180ffb99302566c3a20974461884857e1a83ea0
+Building vcpkg-cmake-config:x64-windows@2026-07-21...
+-- Installing: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/packages/vcpkg-cmake-config_x64-windows/share/vcpkg-cmake-config/vcpkg_cmake_config_fixup.cmake
+-- Installing: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/packages/vcpkg-cmake-config_x64-windows/share/vcpkg-cmake-config/vcpkg-port-config.cmake
+-- Installing: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/packages/vcpkg-cmake-config_x64-windows/share/vcpkg-cmake-config/copyright
+-- Skipping post-build validation due to VCPKG_POLICY_EMPTY_PACKAGE
+Starting submission of vcpkg-cmake-config:x64-windows@2026-07-21 to 1 binary cache(s) in the background
+Elapsed time to handle vcpkg-cmake-config:x64-windows: 138 ms
+Installing 2/8 vcpkg-cmake:x64-windows@2024-04-23...
+vcpkg-cmake:x64-windows@2024-04-23 package ABI: 0f2de566e292c057fb0a2fc75af89b181716f665aa060df587f0d62063ff67ed
+Building vcpkg-cmake:x64-windows@2024-04-23...
+-- Installing: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/packages/vcpkg-cmake_x64-windows/share/vcpkg-cmake/vcpkg_cmake_configure.cmake
+-- Installing: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/packages/vcpkg-cmake_x64-windows/share/vcpkg-cmake/vcpkg_cmake_build.cmake
+-- Installing: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/packages/vcpkg-cmake_x64-windows/share/vcpkg-cmake/vcpkg_cmake_install.cmake
+-- Installing: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/packages/vcpkg-cmake_x64-windows/share/vcpkg-cmake/vcpkg-port-config.cmake
+-- Installing: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/packages/vcpkg-cmake_x64-windows/share/vcpkg-cmake/copyright
+-- Performing post-build validation
+Starting submission of vcpkg-cmake:x64-windows@2024-04-23 to 1 binary cache(s) in the background
+Elapsed time to handle vcpkg-cmake:x64-windows: 193 ms
+Completed submission of vcpkg-cmake-config:x64-windows@2026-07-21 to 1 binary cache(s) in 58.3 ms
+Installing 3/8 eigen3:wasm32-emscripten@5.0.1...
+eigen3:wasm32-emscripten@5.0.1 package ABI: bd11efd186d8e9d11f9c22f6b7910e9bbed750ae885cd8db193b7630bdae8f1d
+Building eigen3:wasm32-emscripten@5.0.1...
+C:\Users\joaqu\Desktop\SWMM Fork\SWMM Fork WebGPU\vcpkg-triplets\wasm32-emscripten.cmake: info: loaded overlay triplet from here
+CMake Warning at scripts/cmake/vcpkg_buildpath_length_warning.cmake:4 (message):
+  eigen3's buildsystem uses very long paths and may fail on your system.
+
+  We recommend moving vcpkg to a short path such as 'C:\src\vcpkg' or using
+  the subst command.
+Call Stack (most recent call first):
+  ports/eigen3/portfile.cmake:1 (vcpkg_buildpath_length_warning)
+  scripts/ports.cmake:209 (include)
+
+
+Downloading https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.tar.gz -> libeigen-eigen-5.0.1.tar.gz
+Successfully downloaded libeigen-eigen-5.0.1.tar.gz
+-- Extracting source C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/downloads/libeigen-eigen-5.0.1.tar.gz
+-- Using source at C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/buildtrees/eigen3/src/5.0.1-d487a628b0.clean
+-- Configuring wasm32-emscripten
+-- Building wasm32-emscripten-rel
+-- Fixing pkgconfig file: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/packages/eigen3_wasm32-emscripten/lib/pkgconfig/eigen3.pc
+Downloading msys2-mingw-w64-x86_64-pkgconf-1~2.5.1-1-any.pkg.tar.zst, trying https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+Successfully downloaded msys2-mingw-w64-x86_64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+Downloading msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst, trying https://mirror.msys2.org/msys/x86_64/msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+Successfully downloaded msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/downloads/tools/msys2/3e71d1f8e22ab23f
+-- Performing post-build validation
+Starting submission of eigen3:wasm32-emscripten@5.0.1 to 1 binary cache(s) in the background
+Elapsed time to handle eigen3:wasm32-emscripten: 25 s
+Completed submission of vcpkg-cmake:x64-windows@2024-04-23 to 1 binary cache(s) in 56.2 ms
+Installing 4/8 zlib:wasm32-emscripten@1.3.2#1...
+zlib:wasm32-emscripten@1.3.2#1 package ABI: accab89b2e75aee85f368534a198fc37de4181fe09af2a9aecc0dcfe0b5ee3af
+Building zlib:wasm32-emscripten@1.3.2#1...
+C:\Users\joaqu\Desktop\SWMM Fork\SWMM Fork WebGPU\vcpkg-triplets\wasm32-emscripten.cmake: info: loaded overlay triplet from here
+Downloading https://github.com/madler/zlib/archive/v1.3.2.tar.gz -> madler-zlib-v1.3.2.tar.gz
+Successfully downloaded madler-zlib-v1.3.2.tar.gz
+-- Extracting source C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/downloads/madler-zlib-v1.3.2.tar.gz
+-- Applying patch 0001-no-version-script-on-ohos.patch
+-- Using source at C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/buildtrees/zlib/src/v1.3.2-c19a0bfd23.clean
+-- Configuring wasm32-emscripten
+-- Building wasm32-emscripten-rel
+-- Fixing pkgconfig file: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/packages/zlib_wasm32-emscripten/lib/pkgconfig/zlib.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/downloads/tools/msys2/3e71d1f8e22ab23f
+-- Installing: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/packages/zlib_wasm32-emscripten/share/zlib/vcpkg-cmake-wrapper.cmake
+-- Installing: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/packages/zlib_wasm32-emscripten/share/zlib/copyright
+-- Performing post-build validation
+Starting submission of zlib:wasm32-emscripten@1.3.2#1 to 1 binary cache(s) in the background
+Elapsed time to handle zlib:wasm32-emscripten: 29 s
+Completed submission of eigen3:wasm32-emscripten@5.0.1 to 1 binary cache(s) in 257 ms
+Installing 5/8 libaec:wasm32-emscripten@1.1.7#1...
+libaec:wasm32-emscripten@1.1.7#1 package ABI: 2092d2d3decab3c23aa5e4f9cb92bc9aa4ac57eefbdd6134482967dbfc87e11c
+Building libaec:wasm32-emscripten@1.1.7#1...
+C:\Users\joaqu\Desktop\SWMM Fork\SWMM Fork WebGPU\vcpkg-triplets\wasm32-emscripten.cmake: info: loaded overlay triplet from here
+Downloading https://github.com/Deutsches-Klimarechenzentrum/libaec/archive/v1.1.7.tar.gz -> Deutsches-Klimarechenzentrum-libaec-v1.1.7.tar.gz
+Successfully downloaded Deutsches-Klimarechenzentrum-libaec-v1.1.7.tar.gz
+-- Extracting source C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/downloads/Deutsches-Klimarechenzentrum-libaec-v1.1.7.tar.gz
+-- Using source at C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/buildtrees/libaec/src/v1.1.7-b4dded4bf7.clean
+-- Configuring wasm32-emscripten
+-- Building wasm32-emscripten-rel
+-- Installing: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/packages/libaec_wasm32-emscripten/share/libaec/usage
+-- Installing: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/packages/libaec_wasm32-emscripten/share/libaec/copyright
+-- Performing post-build validation
+Starting submission of libaec:wasm32-emscripten@1.1.7#1 to 1 binary cache(s) in the background
+Elapsed time to handle libaec:wasm32-emscripten: 18 s
+Completed submission of zlib:wasm32-emscripten@1.3.2#1 to 1 binary cache(s) in 85.7 ms
+Installing 6/8 hdf5[core,szip,zlib]:wasm32-emscripten@2.1.1#1...
+hdf5[core,szip,zlib]:wasm32-emscripten@2.1.1#1 package ABI: 729a795e84aab04eb03964ff96ac27e341593e4fb16a7675d06ecf2d02da1bff
+Building hdf5[core,szip,zlib]:wasm32-emscripten@2.1.1#1...
+C:\Users\joaqu\Desktop\SWMM Fork\SWMM Fork WebGPU\vcpkg-triplets\wasm32-emscripten.cmake: info: loaded overlay triplet from here
+Downloading https://github.com/HDFGroup/hdf5/archive/2.1.1.tar.gz -> HDFGroup-hdf5-2.1.1.tar.gz
+Successfully downloaded HDFGroup-hdf5-2.1.1.tar.gz
+-- Extracting source C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/downloads/HDFGroup-hdf5-2.1.1.tar.gz
+-- Applying patch default-plugin-dir.diff
+-- Applying patch libaec-config.diff
+-- Applying patch mpi-flags.diff
+-- Applying patch win-compile-flags.diff
+-- Applying patch arm64-msvc-ice.diff
+-- Using source at C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/buildtrees/hdf5/src/2.1.1-069e2b61be.clean
+-- Configuring wasm32-emscripten-rel
+-- Building wasm32-emscripten-rel
+-- Fixing pkgconfig file: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/packages/hdf5_wasm32-emscripten/lib/pkgconfig/hdf5.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/downloads/tools/msys2/3e71d1f8e22ab23f
+-- Performing post-build validation
+Starting submission of hdf5[core,szip,zlib]:wasm32-emscripten@2.1.1#1 to 1 binary cache(s) in the background
+Elapsed time to handle hdf5:wasm32-emscripten: 5.5 min
+Completed submission of libaec:wasm32-emscripten@1.1.7#1 to 1 binary cache(s) in 80.8 ms
+Installing 7/8 nlohmann-json:wasm32-emscripten@3.12.0#2...
+nlohmann-json:wasm32-emscripten@3.12.0#2 package ABI: 3d7c6c1a651e1edb4c45fe8fadedb0974030e4bc74aedc76d5ee63a4184ae358
+Building nlohmann-json:wasm32-emscripten@3.12.0#2...
+C:\Users\joaqu\Desktop\SWMM Fork\SWMM Fork WebGPU\vcpkg-triplets\wasm32-emscripten.cmake: info: loaded overlay triplet from here
+Downloading https://github.com/nlohmann/json/archive/v3.12.0.tar.gz -> nlohmann-json-v3.12.0.tar.gz
+Successfully downloaded nlohmann-json-v3.12.0.tar.gz
+-- Extracting source C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/downloads/nlohmann-json-v3.12.0.tar.gz
+-- Applying patch fix-4736_char8_t.patch
+-- Applying patch fix-4742_std_optional.patch
+-- Using source at C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/buildtrees/nlohmann-json/src/v3.12.0-89fed620e6.clean
+-- Configuring wasm32-emscripten
+-- Building wasm32-emscripten-rel
+-- Fixing pkgconfig file: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/packages/nlohmann-json_wasm32-emscripten/share/pkgconfig/nlohmann_json.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/downloads/tools/msys2/3e71d1f8e22ab23f
+-- Installing: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/packages/nlohmann-json_wasm32-emscripten/share/nlohmann-json/copyright
+-- Performing post-build validation
+Starting submission of nlohmann-json:wasm32-emscripten@3.12.0#2 to 1 binary cache(s) in the background
+Elapsed time to handle nlohmann-json:wasm32-emscripten: 6.8 s
+Completed submission of hdf5[core,szip,zlib]:wasm32-emscripten@2.1.1#1 to 1 binary cache(s) in 752 ms
+Installing 8/8 sundials:wasm32-emscripten@7.8.0...
+sundials:wasm32-emscripten@7.8.0 package ABI: 60f1157246d1498e5e1c9e7ebbbf35453b115e75c2b0d7be6e4af67bdb36fffc
+Building sundials:wasm32-emscripten@7.8.0...
+C:\Users\joaqu\Desktop\SWMM Fork\SWMM Fork WebGPU\vcpkg-triplets\wasm32-emscripten.cmake: info: loaded overlay triplet from here
+Downloading https://github.com/LLNL/sundials/archive/v7.8.0.tar.gz -> LLNL-sundials-v7.8.0.tar.gz
+Successfully downloaded LLNL-sundials-v7.8.0.tar.gz
+-- Extracting source C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/downloads/LLNL-sundials-v7.8.0.tar.gz
+-- Using source at C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/buildtrees/sundials/src/v7.8.0-fd9925eeb5.clean
+-- Configuring wasm32-emscripten
+-- Building wasm32-emscripten-rel
+-- Installing: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/.tools/vcpkg/packages/sundials_wasm32-emscripten/share/sundials/copyright
+-- Performing post-build validation
+Starting submission of sundials:wasm32-emscripten@7.8.0 to 1 binary cache(s) in the background
+Elapsed time to handle sundials:wasm32-emscripten: 1 min
+Installed contents are licensed to you by owners. Microsoft is not responsible for, nor does it grant any licenses to, third-party packages.
+Some packages did not declare an SPDX license. Check the `copyright` file for each package for more information about their licensing.
+Packages installed in this vcpkg installation declare the following licenses:
+BSD-2-Clause
+BSD-3-Clause
+MIT
+MPL-2.0
+Zlib
+eigen3 provides CMake targets:
+
+  # this is heuristically generated, and may not be correct
+  find_package(Eigen3 CONFIG REQUIRED)
+  target_link_libraries(main PRIVATE Eigen3::Eigen)
+
+eigen3 provides pkg-config modules:
+
+  # A C++ template library for linear algebra: vectors, matrices, and related algorithms
+  eigen3
+
+hdf5 provides CMake targets:
+
+  # this is heuristically generated, and may not be correct
+  find_package(hdf5 CONFIG REQUIRED)
+  target_link_libraries(main PRIVATE hdf5::hdf5-static)
+
+hdf5 provides pkg-config modules:
+
+  # HDF5 (Hierarchical Data Format 5) Software Library
+  hdf5
+
+The package nlohmann-json provides CMake targets:
+
+    find_package(nlohmann_json CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE nlohmann_json::nlohmann_json)
+
+The package nlohmann-json can be configured to not provide implicit conversions via a custom triplet file:
+
+    set(nlohmann-json_IMPLICIT_CONVERSIONS OFF)
+
+For more information, see the docs here:
+    
+    https://json.nlohmann.me/api/macros/json_use_implicit_conversions/
+
+sundials provides CMake targets:
+
+  # this is heuristically generated, and may not be correct
+  find_package(SUNDIALS CONFIG REQUIRED)
+  # note: 26 additional targets are not displayed.
+  target_link_libraries(main PRIVATE SUNDIALS::KLU SUNDIALS::HYPRE SUNDIALS::MAGMA SUNDIALS::PETSC)
+
+Completed submission of nlohmann-json:wasm32-emscripten@3.12.0#2 to 1 binary cache(s) in 117 ms
+Waiting for 1 remaining binary cache submissions...
+Completed submission of sundials:wasm32-emscripten@7.8.0 to 1 binary cache(s) in 168 ms (1/1)
+All requested installations completed successfully in: 7.8 min
+-- Running vcpkg install - done
+-- OpenSWMM Engine version (refactored): 6.0.0-alpha.3
+-- OpenSWMM Engine version (legacy):     5.3.0-beta.3
+CMake Warning at src/legacy/engine/CMakeLists.txt:43 (message):
+  OpenMP not found - building legacy engine without parallel support
+
+
+-- Performing Test COMPILER_HAS_HIDDEN_INLINE_VISIBILITY
+-- Performing Test COMPILER_HAS_HIDDEN_INLINE_VISIBILITY - Success
+-- Performing Test COMPILER_HAS_DEPRECATED_ATTR
+-- Performing Test COMPILER_HAS_DEPRECATED_ATTR - Success
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- OpenSWMM Engine: OpenMP not found â€” single-threaded solver
+-- OpenSWMM Engine: SIMD disabled â€” using scalar fallback
+-- OpenSWMM Engine: fast kernels â€” xsect_lookup=ON manning_pow=ON (ON â‡’ ~10% faster DW routing, NOT bit-exact vs legacy)
+-- OpenSWMM Engine: 2D surface routing module enabled (explicit LTS marcher + HDF5)
+-- OpenSWMM Engine: GeoPackage I/O disabled (set -DOPENSWMM_WITH_GEOPACKAGE=ON to enable)
+-- Configuring done (544.3s)
+-- Generating done (0.3s)
+-- Build files have been written to: C:/Users/joaqu/Desktop/SWMM Fork/SWMM Fork WebGPU/build/openswmm2d-wasm-emscripten
+[1/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_datetime_impl.cpp.o
+[2/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/ErrorCodes.cpp.o
+[3/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/UnitConversion.cpp.o
+[4/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_hotstart_impl.cpp.o
+[5/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/PathResolver.cpp.o
+[6/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_inflows_impl.cpp.o
+[7/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/InterfaceFile.cpp.o
+[8/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_infrastructure_impl.cpp.o
+[9/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_massbalance_impl.cpp.o
+[10/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_forcing_impl.cpp.o
+[11/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_climate_impl.cpp.o
+[12/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_engine_impl.cpp.o
+[13/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_controls_impl.cpp.o
+[14/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_edit_impl.cpp.o
+[15/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_links_impl.cpp.o
+[16/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/HotStartManager.cpp.o
+[17/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_gages_impl.cpp.o
+[18/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/data/TableData.cpp.o
+[19/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_spatial_impl.cpp.o
+[20/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_statistics_impl.cpp.o
+[21/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_pollutants_impl.cpp.o
+[22/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_quality_impl.cpp.o
+[23/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_xsect_impl.cpp.o
+[24/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/Culvert.cpp.o
+[25/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/edit/TypeConverter.cpp.o
+[26/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/ForceMain.cpp.o
+[27/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_tables_impl.cpp.o
+[28/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/controls/Controls.cpp.o
+[29/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/Divider.cpp.o
+[30/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_nodes_impl.cpp.o
+[31/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_model_impl.cpp.o
+[32/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/openswmm_subcatchments_impl.cpp.o
+[33/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/Roadway.cpp.o
+[34/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/Link.cpp.o
+[35/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/Node.cpp.o
+[36/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/Street.cpp.o
+[37/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/TopoSort.cpp.o
+[38/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/Transect.cpp.o
+[39/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/Exfiltration.cpp.o
+[40/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/DynamicWave.cpp.o
+[41/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/TimestepController.cpp.o
+[42/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydrology/Climate.cpp.o
+[43/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydrology/ClimateFile.cpp.o
+[44/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/XSection.cpp.o
+[45/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/KinematicWave.cpp.o
+[46/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/Outfall.cpp.o
+[47/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/Inlet.cpp.o
+[48/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/HydStructures.cpp.o
+[49/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/Routing.cpp.o
+[50/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydrology/Infiltration.cpp.o
+[51/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydraulics/XSectBatch.cpp.o
+[52/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydrology/RunoffInterface.cpp.o
+[53/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydrology/Snow.cpp.o
+[54/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydrology/Gage.cpp.o
+[55/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/edit/ObjectDeleter.cpp.o
+[56/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/Tokenizer.cpp.o
+[57/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/SectionRegistry.cpp.o
+[58/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydrology/Runoff.cpp.o
+[59/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydrology/Groundwater.cpp.o
+[60/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydrology/RdiiInterface.cpp.o
+[61/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/InpWriter.cpp.o
+[62/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydrology/Inflow.cpp.o
+[63/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/InputReader.cpp.o
+[64/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydrology/LID.cpp.o
+[65/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/handlers/ControlsHandler.cpp.o
+[66/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/hydrology/RDII.cpp.o
+[67/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/core/SWMMEngine.cpp.o
+[68/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/handlers/FilesHandler.cpp.o
+[69/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/handlers/PluginsHandler.cpp.o
+[70/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/handlers/OptionsHandler.cpp.o
+[71/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/handlers/InflowsHandler.cpp.o
+[72/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/handlers/InfraHandler.cpp.o
+[73/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/handlers/TitleHandler.cpp.o
+[74/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/handlers/SpatialHandler.cpp.o
+[75/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/handlers/CatchmentHandler.cpp.o
+[76/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/math/FindRoot.cpp.o
+[77/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/math/OdeSolver.cpp.o
+[78/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/handlers/UserFlagValuesHandler.cpp.o
+[79/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/handlers/TablesHandler.cpp.o
+[80/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/output/OutputReader.cpp.o
+[81/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/output/openswmm_output_impl.cpp.o
+[82/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/handlers/QualityHandler.cpp.o
+[83/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/output/IOThread.cpp.o
+[84/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/handlers/HydrologyHandler.cpp.o
+[85/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/handlers/NodesHandler.cpp.o
+[86/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/math/MathExpr.cpp.o
+[87/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/handlers/UserFlagsHandler.cpp.o
+[88/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/PostParseResolver.cpp.o
+[89/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/plugins/BuiltinPluginInfos.cpp.o
+[90/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/input/handlers/LinksHandler.cpp.o
+[91/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/quality/Landuse.cpp.o
+[92/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/plugins/PluginDiscovery.cpp.o
+[93/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/2d/mesh/MeshBuilder.cpp.o
+[94/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/2d/mesh/VertexReconstruction.cpp.o
+[95/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/2d/mesh/RainfallInterpolator.cpp.o
+[96/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/2d/solver/SurfaceFluxCalculator.cpp.o
+[97/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/2d/solver/InertialEdges.cpp.o
+[98/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/2d/output/Default2DOutputPlugin.cpp.o
+[99/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/plugins/DefaultInputPlugin.cpp.o
+[100/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/plugins/DefaultStateIOPlugin.cpp.o
+[101/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/plugins/DefaultOutputPlugin.cpp.o
+[102/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/quality/Treatment.cpp.o
+[103/114] Building CXX object CMakeFiles/openswmm2d_wasm.dir/C_/Users/joaqu/Desktop/SWMM_Fork/SWMM_Fork_WebGPU/wasm/openswmm2d_exports.cpp.o
+[104/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/2d/coupling/NodeCoupling.cpp.o
+[105/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/2d/solver/ExplicitInertialSolver.cpp.o
+[106/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/quality/QualityRouting.cpp.o
+[107/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/2d/solver/SurfaceSolverFactory.cpp.o
+[108/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/plugins/DefaultReportPlugin.cpp.o
+[109/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/2d/api/Api2D.cpp.o
+[110/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/plugins/PluginFactory.cpp.o
+[111/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/2d/SurfaceRouter2D.cpp.o
+[112/114] Building CXX object src/engine/CMakeFiles/openswmm_engine.dir/2d/input/SectionHandlers2D.cpp.o
+[113/114] Linking CXX static library src\engine\libopenswmm.engine.a
+[114/114] Linking CXX executable "C:\Users\joaqu\Desktop\SWMM Fork\SWMM Fork WebGPU\public\openswmm2d.js"
+fatal: not a git repository: (NULL)
+No se puede llamar a un m‚todo en una expresi¢n con valor NULL.
+En C:\Users\joaqu\Desktop\SWMM Fork\SWMM Fork WebGPU\scripts\build-openswmm2d.ps1: 77 Car cter: 1
++ $EngineCommit = (& git -C $Source rev-parse HEAD).Trim()
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+ 

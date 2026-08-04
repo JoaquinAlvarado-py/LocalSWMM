@@ -1,0 +1,118 @@
+{
+  "script": "verify-bellinge.mjs",
+  "ranAtUtc": "2026-08-03T23:21:30.620Z",
+  "app": "http://127.0.0.1:8080/",
+  "checks": [
+    {
+      "name": "app server on :8080",
+      "ok": true,
+      "detail": "http://127.0.0.1:8080/api/status"
+    },
+    {
+      "name": "chrome CDP endpoint",
+      "ok": true,
+      "detail": "http://127.0.0.1:9222"
+    },
+    {
+      "name": "Bellinge INP parsed + loaded into Net",
+      "ok": true,
+      "detail": "{\"step\":\"loaded\",\"nodes\":1022,\"links\":1044,\"subs\":713,\"units\":\"SI\",\"tifReady\":true,\"hasMap\":true}"
+    },
+    {
+      "name": "bundled Bellinge2.tif auto-loaded for mesh DTM",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "2D mesh generated",
+      "ok": true,
+      "detail": "34709 triangles, 17772 vertices"
+    },
+    {
+      "name": "results2d received with frames",
+      "ok": true,
+      "detail": "882 frames, last elapsed 0 ms"
+    },
+    {
+      "name": "per-frame depth arrays match cell count",
+      "ok": true,
+      "detail": "34709 cells vs 34709 triangles"
+    },
+    {
+      "name": "1D engine ran (mass balance present)",
+      "ok": true,
+      "detail": "coupling 1D→2D 1572700.369 m³, 2D→1D 1657096.670 m³"
+    },
+    {
+      "name": "2D solver advanced (solver steps > 0)",
+      "ok": true,
+      "detail": "38 internal steps"
+    },
+    {
+      "name": "RPT report produced (1D summary present)",
+      "ok": true,
+      "detail": "report 531007 chars"
+    },
+    {
+      "name": "1D continuity reported",
+      "ok": true,
+      "detail": "  Runoff Quantity Continuity     hectare-m            mm"
+    },
+    {
+      "name": "mass continuity error finite",
+      "ok": true,
+      "detail": "cont. error -0.09261184206370378"
+    }
+  ],
+  "summary": {
+    "mesh": {
+      "nt": 34709,
+      "nv": 17772
+    },
+    "run": {
+      "frames": 882,
+      "cellCount": 34709,
+      "lastElapsedMs": 0,
+      "massBalance": {
+        "initialVolume": 0,
+        "finalVolume": 1751563.374699356,
+        "rainfall": 1816528.9808841476,
+        "coupling1DTo2D": 1572700.3687073868,
+        "coupling2DTo1D": 1657096.6704215875,
+        "outfallIn": 34479.37606660341,
+        "outfallOut": 332124.6523099702,
+        "boundaryIn": 0,
+        "boundaryOut": 0,
+        "evaporation": 0,
+        "continuityError": -0.09261184206370378
+      },
+      "solverSteps": {
+        "internalSteps": 38
+      },
+      "reportLength": 531007,
+      "reportInterest": [
+        "  Routing Time Step ........ 10.00 sec",
+        "  Runoff Quantity Continuity     hectare-m            mm",
+        "  Surface Runoff ...........         2.600         9.613",
+        "  Continuity Error (%) .....        -0.136",
+        "  Flow Routing Continuity        hectare-m      10^6 ltr",
+        "  Dry Weather Inflow .......         0.214         2.143",
+        "  Continuity Error (%) .....         2.071",
+        "  Continuity Error (%) .....        -9.261",
+        "  Highest Continuity Errors",
+        "  Routing Time Step Summary",
+        "  Subcatchment Runoff Summary",
+        "  Node Depth Summary",
+        "  Link Flow Summary",
+        "  Analysis begun on:  Mon Aug  3 19:21:44 2026",
+        "  Analysis ended on:  Mon Aug  3 19:55:50 2026"
+      ],
+      "reportTail": " 0.00     41.70         0.00\n  G80F66Y_G80F310_l1          0.00      0.00      0.00     42.95         0.00\n  G80F66X_G80F66Y_l1          0.00      0.00      0.00     42.20         0.00\n  G80F330_G80F320_l1          0.00      0.00      0.00     41.62         0.00\n  G61F043_G61F042_l1          0.00      0.00      0.00      0.32         0.00\n  G73R440_G73R430_l1          0.00      0.00      0.00      1.18         0.00\n  \n  \n  ***************\n  Pumping Summary\n  ***************\n\n  ---------------------------------------------------------------------------------------------------------\n                                                  Min       Avg       Max     Total     Power    % Time Off\n                        Percent   Number of      Flow      Flow      Flow    Volume     Usage    Pump Curve\n  Pump                 Utilized   Start-Ups       CMS       CMS       CMS  10^6 ltr     Kw-hr    Low   High\n  ---------------------------------------------------------------------------------------------------------\n  G70F11Pp1               90.12           5      0.00      0.02      0.04     3.218     15.54    0.0    0.0\n  G71F12Pp1               45.06         254      0.00      0.01      0.01     1.167     11.31    0.0    0.0\n  G71F12Pp2               34.21           3      0.00      0.00      0.00     0.236      1.75    0.0    0.0\n  G71F68Yp1                0.00           0      0.00      0.00      0.00     0.000      0.00    0.0    0.0\n  G80F13Pp1               88.09          10      0.00      0.03      0.03     3.954    126.07    0.0    0.0\n  G70F11Pp2               87.84           5      0.00      0.01      0.04     1.670      7.98    0.0    0.0\n  \n  \n\n  Analysis begun on:  Mon Aug  3 19:21:44 2026\n  Analysis ended on:  Mon Aug  3 19:55:50 2026\n  Total elapsed time: 00:34:06\n"
+    },
+    "fixtures": {
+      "inpBytes": 2940672,
+      "meshBytes": 3005967
+    },
+    "verdict": "PASS"
+  }
+}
