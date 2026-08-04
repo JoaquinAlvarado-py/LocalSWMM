@@ -1115,53 +1115,69 @@
         return 3500;
     }
 
-    async function run2DSimulationInWorker(inpText, triangleIds, meshFile) {
-        fetch('openswmm2d.version.json')
-            .then(r => r.ok ? r.json() : null)
-            .then(v => { if (v) console.info('OpenSWMM 2D engine build:', v.engineDescribe || v.engineCommit, '| built', v.builtAtUtc); })
-            .catch(() => { });
-        return new Promise((resolve, reject) => {
-            if (sim2DWorker) {
-                try { sim2DWorker.terminate(); } catch (e) { }
-            }
-            sim2DWorker = new Worker('openSwmm2dWorker.js?v=' + Date.now());
-            let stderrCount = 0;
-            sim2DWorker.onmessage = event => {
-                const message = event.data || {};
-                if (message.type === 'stdout') console.log('OpenSWMM 2D:', message.text);
-                else if (message.type === 'stderr') {
-                    stderrCount++;
-                    if (stderrCount <= 50) {
-                        console.warn('OpenSWMM 2D:', message.text);
-                    } else if (stderrCount === 51) {
-                        console.warn('OpenSWMM 2D: Throttling excessive console warnings (>50 messages received).');
+    function run2DSimulationInWorker(inpText, triangleIds, meshFile) {
+        // WebGPU 2D first (the production path), WASM worker as the fallback.
+        const wantGpu = window.Net && Net.useGpu2d !== false && typeof navigator !== 'undefined' && !!navigator.gpu;
+        const attempt = (workerUrl) => {
+            fetch('openswmm2d.version.json')
+                .then(r => r.ok ? r.json() : null)
+                .then(v => { if (v) console.info('OpenSWMM 2D engine build:', v.engineDescribe || v.engineCommit, '| built', v.builtAtUtc); })
+                .catch(() => { });
+            return new Promise((resolve, reject) => {
+                if (sim2DWorker) {
+                    try { sim2DWorker.terminate(); } catch (e) { }
+                }
+                sim2DWorker = new Worker(workerUrl + '?v=' + Date.now());
+                let stderrCount = 0;
+                sim2DWorker.onmessage = event => {
+                    const message = event.data || {};
+                    if (message.type === 'stdout') console.log('OpenSWMM 2D:', message.text);
+                    else if (message.type === 'stderr') {
+                        stderrCount++;
+                        if (stderrCount <= 50) {
+                            console.warn('OpenSWMM 2D:', message.text);
+                        } else if (stderrCount === 51) {
+                            console.warn('OpenSWMM 2D: Throttling excessive console warnings (>50 messages received).');
+                        }
                     }
-                }
-                else if (message.type === 'progress2d') console.debug('OpenSWMM 2D elapsed milliseconds:', message.elapsedMs);
-                else if (message.type === 'results2d') {
+                    else if (message.type === 'progress2d') console.debug('OpenSWMM 2D elapsed milliseconds:', message.elapsedMs);
+                    else if (message.type === 'results2d') {
+                        if (sim2DWorker) { sim2DWorker.terminate(); sim2DWorker = null; }
+                        resolve(message);
+                    } else if (message.type === 'error') {
+                        if (sim2DWorker) { sim2DWorker.terminate(); sim2DWorker = null; }
+                        const detail = message.detail ? `\n${message.detail}` : '';
+                        const err = new Error((message.message || 'OpenSWMM 2D worker failed.') + detail);
+                        err.workerMessage = message.message || '';
+                        reject(err);
+                    }
+                };
+                sim2DWorker.onerror = event => {
                     if (sim2DWorker) { sim2DWorker.terminate(); sim2DWorker = null; }
-                    resolve(message);
-                } else if (message.type === 'error') {
-                    if (sim2DWorker) { sim2DWorker.terminate(); sim2DWorker = null; }
-                    const detail = message.detail ? `\n${message.detail}` : '';
-                    reject(new Error((message.message || 'OpenSWMM 2D worker failed.') + detail));
-                }
-            };
-            sim2DWorker.onerror = event => {
-                if (sim2DWorker) { sim2DWorker.terminate(); sim2DWorker = null; }
-                const missingBuild = /openswmm2d/i.test(event.message || '');
-                reject(new Error(missingBuild
-                    ? 'OpenSWMM 2D WebAssembly is not built. Run npm run build:2d-wasm, then reload the application.'
-                    : (event.message || 'OpenSWMM 2D worker failed to start.')));
-            };
-            sim2DWorker.postMessage({
-                type: 'run2d', inp: inpText, triangleIds,
-                meshFile: meshFile || null,
-                triangleVertices: Net.mesh2DIndexed ? Net.mesh2DIndexed.triangles.map(t => t.v) : null,
-                dryDepth: Net.mesh2DIndexed && Net.mesh2DIndexed.options ? Net.mesh2DIndexed.options.dryDepth : 0.001,
-                wantVertexFields: true, frameIntervalMs: 60000
+                    const missingBuild = /openswmm2d/i.test(event.message || '');
+                    reject(new Error(missingBuild
+                        ? 'OpenSWMM 2D WebAssembly is not built. Run npm run build:2d-wasm, then reload the application.'
+                        : (event.message || 'OpenSWMM 2D worker failed to start.')));
+                };
+                sim2DWorker.postMessage({
+                    type: 'run2d', inp: inpText, triangleIds,
+                    meshFile: meshFile || null,
+                    triangleVertices: Net.mesh2DIndexed ? Net.mesh2DIndexed.triangles.map(t => t.v) : null,
+                    dryDepth: Net.mesh2DIndexed && Net.mesh2DIndexed.options ? Net.mesh2DIndexed.options.dryDepth : 0.001,
+                    wantVertexFields: true, frameIntervalMs: 60000
+                });
             });
-        });
+        };
+        const tryGpu = async () => {
+            try {
+                return await attempt('webgpu/gpu2dWorker.js');
+            } catch (e) {
+                if (!/WEBGPU_|VERTEX_COUPLING/.test(e.workerMessage || e.message || '')) throw e;
+                console.warn('WebGPU 2D unavailable, falling back to the WASM worker:', e.message);
+                return await attempt('openSwmm2dWorker.js');
+            }
+        };
+        return wantGpu ? tryGpu() : attempt('openSwmm2dWorker.js');
     }
 
     function apply2DResults(result) {
