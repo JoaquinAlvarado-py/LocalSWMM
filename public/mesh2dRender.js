@@ -61,7 +61,7 @@
         return { type: 'FeatureCollection', features: fs };
     }
     function velocityArrows(mesh, velocities, max, vx, vy) {
-        var fs = []; (mesh.triangles || []).forEach(function (t, i) { var a = mesh.vertices[t.v[0]], b = mesh.vertices[t.v[1]], c = mesh.vertices[t.v[2]], mag = Number(velocities && velocities[i]) || 0; if (!a || !b || !c || mag < 0.01) return; var dx = vx && Number(vx[i]), dy = vy && Number(vy[i]); if (!isFinite(dx) || !isFinite(dy)) { dx = c.x - a.x; dy = c.y - a.y; } fs.push(feature('Point', [(a.lng + b.lng + c.lng) / 3, (a.lat + b.lat + c.lat) / 3], { angle: 90 - (Math.atan2(dy, dx) * 180 / Math.PI), mag: mag, size: Math.max(0.5, Math.min(2, mag / (max || 1))) }, 'vel-' + i)); }); return { type: 'FeatureCollection', features: fs };
+        var fs = []; (mesh.triangles || []).forEach(function (t, i) { var a = mesh.vertices[t.v[0]], b = mesh.vertices[t.v[1]], c = mesh.vertices[t.v[2]], mag = Number(velocities && velocities[i]) || 0; if (!a || !b || !c || mag < 0.002) return; var dx = vx && Number(vx[i]), dy = vy && Number(vy[i]); if (!isFinite(dx) || !isFinite(dy)) { dx = c.x - a.x; dy = c.y - a.y; } fs.push(feature('Point', [(a.lng + b.lng + c.lng) / 3, (a.lat + b.lat + c.lat) / 3], { angle: 90 - (Math.atan2(dy, dx) * 180 / Math.PI), mag: mag, size: Math.max(0.4, Math.min(1.8, Math.sqrt(mag / (max || 1)))) }, 'vel-' + i)); }); return { type: 'FeatureCollection', features: fs };
     }
     function meshVertices(mesh, field) { return { type: 'FeatureCollection', features: (mesh.vertices || []).map(function (v, i) { return feature('Point', [v.lng, v.lat], { index: i, value: field ? field[i] : v.z, z: v.z }, 'mv-' + i); }) }; }
     window.Mesh2DRender = { vertexField: vertexField, levelsAuto: levelsAuto, isolines: isolines, contourBands: contourBands, velocityArrows: velocityArrows, meshVertices: meshVertices };
@@ -82,7 +82,7 @@
             layer('m2d-static-vertices', 'circle', 'm2d-vertices', { 'circle-radius': 2, 'circle-color': '#8d6e63', 'circle-opacity': 0.7 });
             layer('m2d-elevation-isolines', 'line', 'm2d-elev-isolines', { 'line-color': '#795548', 'line-width': 1, 'line-opacity': 0.65 });
             layer('m2d-elevation-bands', 'fill', 'm2d-elev-bands', { 'fill-color': '#8d6e63', 'fill-opacity': 0.16 });
-            if (!m.hasImage || !m.hasImage('m2d-arrow')) { var c = document.createElement('canvas'); c.width = c.height = 32; var x = c.getContext('2d'); x.fillStyle = '#263238'; x.beginPath(); x.moveTo(27, 16); x.lineTo(5, 6); x.lineTo(10, 16); x.lineTo(5, 26); x.closePath(); x.fill(); if (!m.hasImage('m2d-arrow')) m.addImage('m2d-arrow', { width: 32, height: 32, data: x.getImageData(0, 0, 32, 32).data }); }
+            if (!m.hasImage || !m.hasImage('m2d-arrow')) { var c = document.createElement('canvas'); c.width = c.height = 64; var x = c.getContext('2d'); x.fillStyle = '#263238'; x.fillRect(4, 29, 38, 6); x.beginPath(); x.moveTo(42, 16); x.lineTo(60, 32); x.lineTo(42, 48); x.closePath(); x.fill(); if (!m.hasImage('m2d-arrow')) m.addImage('m2d-arrow', { width: 64, height: 64, data: x.getImageData(0, 0, 64, 64).data }); }
             var mesh = window.Net && window.Net.mesh2DIndexed;
             if (mesh) {
                 var elevation = Mesh2DRender.vertexField(mesh, null, 'elevation');

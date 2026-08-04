@@ -22,16 +22,29 @@
     }
     window.rampColor = rampColor; // used by street_view_overlay.js
 
-    // min/max via loop — Math.min(...arr) overflows the stack on >100k elements
-    function arrayMinMax(arr) {
-        let min = Infinity, max = -Infinity;
-        for (let i = 0; i < arr.length; i++) {
-            const v = arr[i];
-            if (v < min) min = v;
-            if (v > max) max = v;
+        // min/max via loop — Math.min(...arr) overflows the stack on >100k elements
+        function arrayMinMax(arr) {
+            let min = Infinity, max = -Infinity;
+            for (let i = 0; i < arr.length; i++) {
+                const v = arr[i];
+                if (v < min) min = v;
+                if (v > max) max = v;
+            }
+            return { min, max };
         }
-        return { min, max };
-    }
+
+        // Robust per-frame max for depth/velocity: the global 48 h range is
+        // dominated by outlier cells (channels, ponds), which squashes the
+        // flooded extent to the bottom of the ramp. Cap the scale at 1.5× the
+        // 99th percentile so each frame stays readable.
+        function robustFrameMax(arr) {
+            let fMax = 0;
+            for (let i = 0; i < arr.length; i++) if (arr[i] > fMax) fMax = arr[i];
+            if (fMax <= 0) return 0.001;
+            const sorted = Array.from(arr).sort((a, b) => a - b);
+            const p99 = sorted[Math.floor(sorted.length * 0.99)];
+            return (p99 > 0 && fMax > 1.5 * p99) ? p99 * 1.5 : fMax;
+        }
 
     // ---------- rpt parsing ----------
     // All parsers take the pre-split lines array — the report is split ONCE
@@ -395,12 +408,17 @@
                 if (frame) {
                     const varKey = this.active2DVar; // 'depth' | 'head' | 'velocity'
                     const arr = frame[varKey];
-                    const mMin = this.mesh2DMinMax.min, mMax = this.mesh2DMinMax.max;
                     if (arr) {
                         const ids = r2d.triangleIds;
+                        // Depth/velocity: per-frame robust max (readable floods);
+                        // head keeps the global range (its gradient is the signal).
+                        const mMax = (varKey === 'depth' || varKey === 'velocity')
+                            ? robustFrameMax(arr)
+                            : this.mesh2DMinMax.max;
+                        const mMin = varKey === 'head' ? this.mesh2DMinMax.min : 0;
                         for (let i = 0; i < ids.length; i++) {
                             const val = arr[i] || 0;
-                            const t = mMax > mMin ? (val - mMin) / (mMax - mMin) : 0;
+                            const t = mMax > mMin ? Math.min(1, (val - mMin) / (mMax - mMin)) : 0;
                             const color = val > 0 ? rampColor(t) : 'rgba(0,0,0,0)';
                             if (this._applied2D.get(ids[i]) === color) continue;
                             this._applied2D.set(ids[i], color);
@@ -1296,10 +1314,11 @@
         // Color-code mesh with last-frame depth values initially
         const lastFrame = frames[frames.length - 1];
         if (lastFrame) {
-            const dMin = depthRange.min, dMax = depthRange.max;
+            const dMin = depthRange.min;
+            const dMax = robustFrameMax(lastFrame.depth || []);
             ids.forEach((id, i) => {
                 const val = lastFrame.depth[i] || 0;
-                const t = dMax > dMin ? (val - dMin) / (dMax - dMin) : 0;
+                const t = dMax > dMin ? Math.min(1, (val - dMin) / (dMax - dMin)) : 0;
                 const color = val > 0 ? rampColor(t) : 'rgba(0,0,0,0)';
                 ResultStyling.nodeColors[id] = color;
             });
