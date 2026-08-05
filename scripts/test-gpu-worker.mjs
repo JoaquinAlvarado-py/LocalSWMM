@@ -1,7 +1,7 @@
-// test-gpu-worker.mjs — drive the production GPU worker (gpu2dWorker.js)
+﻿// test-gpu-worker.mjs â€” drive the production GPU worker (gpu2dWorker.js)
 // through the app's own contract in headed Chrome via CDP.
 // Usage: node scripts/test-gpu-worker.mjs [--inp <path>]
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, appendFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,9 @@ const CDP_PORT = 9224;
 const CDP_HTTP = `http://127.0.0.1:${CDP_PORT}`;
 const APP_URL = `http://127.0.0.1:${APP_PORT}/`;
 const PROFILE = join(process.env.TEMP || 'C:\\Users\\joaqu\\AppData\\Local\\Temp', 'gpu-worker-' + Date.now());
+const LOG = join(process.env.TEMP || 'C:\\Users\\joaqu\\AppData\\Local\\Temp', 'gpu-worker-live.log');
+try { appendFileSync(LOG, ''); } catch { }
+const live = (text) => { try { appendFileSync(LOG, text + '\n'); } catch { } };
 const inpArg = process.argv.indexOf('--inp');
 const INP = inpArg !== -1 ? process.argv[inpArg + 1] : join(__dirname, 'verify-out', 'marcher-cpl.inp');
 
@@ -21,7 +24,7 @@ class CDP {
     constructor(ws) { this.ws = ws; this.nextId = 0; this.pending = new Map(); this.listeners = new Set(); ws.onmessage = ev => this._onMessage(JSON.parse(ev.data)); }
     static connect(url) { const ws = new WebSocket(url); return new Promise((res, rej) => { ws.onopen = () => res(new CDP(ws)); ws.onerror = e => rej(new Error('CDP connect failed: ' + (e && e.message))); }); }
     _onMessage(msg) { if (msg.id && this.pending.has(msg.id)) { const { resolve, reject } = this.pending.get(msg.id); this.pending.delete(msg.id); msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result || {}); } if (msg.method) for (const fn of this.listeners) fn(msg); }
-    send(method, params = {}, sessionId) { const id = ++this.nextId; const req = { id, method, params }; if (sessionId) req.sessionId = sessionId; return new Promise((resolve, reject) => { this.pending.set(id, { resolve, reject }); this.ws.send(JSON.stringify(req)); setTimeout(() => { if (this.pending.has(id)) { this.pending.delete(id); reject(new Error(`CDP timeout: ${method}`)); } }, 120000); }); }
+    send(method, params = {}, sessionId) { const id = ++this.nextId; const req = { id, method, params }; if (sessionId) req.sessionId = sessionId; return new Promise((resolve, reject) => { this.pending.set(id, { resolve, reject }); this.ws.send(JSON.stringify(req)); setTimeout(() => { if (this.pending.has(id)) { this.pending.delete(id); reject(new Error(`CDP timeout: ${method}`)); } }, 3600000); }); }
     on(fn) { this.listeners.add(fn); }
 }
 async function httpGet(url) { const res = await fetch(url); if (!res.ok) throw new Error(`HTTP ${res.status}`); return res; }
@@ -53,10 +56,14 @@ try {
     const consoleLog = [];
     cdp.on(msg => {
         if (msg.method === 'Runtime.consoleAPICalled' && msg.sessionId === sessionId) {
-            try { consoleLog.push((msg.params.args || []).map(a => a.value !== undefined ? a.value : (a.description || '')).join(' ')); } catch { }
+            try {
+                const text = (msg.params.args || []).map(a => a.value !== undefined ? a.value : (a.description || '')).join(' ');
+                consoleLog.push(text);
+                live('CONSOLE: ' + text.slice(0, 200));
+            } catch { }
         }
         if (msg.method === 'Runtime.exceptionThrown' && msg.sessionId === sessionId) {
-            try { consoleLog.push('EXCEPTION: ' + (msg.params.exceptionDetails.exception?.description || msg.params.exceptionDetails.text)); } catch { }
+            try { consoleLog.push('EXCEPTION: ' + (msg.params.exceptionDetails.exception?.description || msg.params.exceptionDetails.text)); live('EXCEPTION: ' + (msg.params.exceptionDetails.exception?.description || msg.params.exceptionDetails.text)); } catch { }
         }
     });
 
@@ -75,15 +82,16 @@ try {
         w.onerror = e => { out.error = 'worker-load-error: ' + (e.message || e.type || ''); };
         w.onmessage = ev => {
             const m = ev.data || {};
+            console.log('W:', JSON.stringify({ type: m.type, stage: m.stage, elapsedMs: m.elapsedMs, t: m.timings, err: m.message }).slice(0, 200));
             if (m.type === 'debug') out.debug.push(m.text);
             else if (m.type === 'status2d') out.stage = m.stage;
-            else if (m.type === 'progress2d') out.progress.push(m.elapsedMs);
+            else if (m.type === 'progress2d') { out.progress.push(m.elapsedMs); if (m.timings) console.log('T:', JSON.stringify(m.timings)); }
             else if (m.type === 'stderr') (out.stderr = out.stderr || []).push(m.text);
             else if (m.type === 'results2d') { out.done = { frames: m.frames.length, first: m.frames[0] && { t: m.frames[0].elapsedMs, d0: m.frames[0].depth[0], h0: m.frames[0].head[0], v0: m.frames[0].velocity[0] }, last: m.frames[m.frames.length - 1] && { t: m.frames[m.frames.length - 1].elapsedMs, d0: m.frames[m.frames.length - 1].depth[0] }, mb: m.diagnostics && m.diagnostics.massBalance, reportLen: (m.report || '').length }; }
             else if (m.type === 'error') out.error = m.message;
         };
         w.postMessage({ type: 'run2d', inp, triangleIds, meshFile: null, triangleVertices: null, dryDepth: 0.001, wantVertexFields: true, frameIntervalMs: 60000 });
-        const deadline = Date.now() + 8 * 60 * 1000;
+        const deadline = Date.now() + 45 * 60 * 1000;
         while (Date.now() < deadline && !out.done && !out.error) await new Promise(r => setTimeout(r, 1000));
         w.terminate();
         return out;

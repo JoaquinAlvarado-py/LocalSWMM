@@ -269,13 +269,26 @@
                 usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
                 label: 'redRB'
             });
-            // M2 coupling buffers (pre-created so the bind group can reference them)
+            // M2 coupling buffers (pre-created so the bind group can reference them).
+            // cplF = header [9·np] (cell, crown, cd, area, h1d, d1d, v1d,
+            // stencilPtr, stencilCount) + the static vertex-stencil tail
+            // [2·Σcount] (cell, weight) pairs written once here.
             this.couplingNp = this.options.couplingNp || 0;
-            const cplBytes = Math.max(4, this.couplingNp * (this.couplingNp ? 7 * 4 : 1));
+            const vst = this.options.vertexStencils || null;
+            const tailLen = vst && vst.idx ? vst.idx.length : 0;
+            const cplBytes = this.couplingNp ? this.couplingNp * 9 * 4 + tailLen * 8 : 4;
             this.buf.cplF = this.device.createBuffer({
-                size: this.couplingNp ? this.couplingNp * 7 * 4 : 4,
+                size: cplBytes,
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC, label: 'cplF'
             });
+            if (this.couplingNp && tailLen) {
+                const tail = new Float32Array(this.couplingNp * 9 + tailLen * 2);
+                for (let i = 0; i < tailLen; i++) {
+                    tail[this.couplingNp * 9 + 2 * i] = vst.idx[i];
+                    tail[this.couplingNp * 9 + 2 * i + 1] = vst.wt[i];
+                }
+                this.device.queue.writeBuffer(this.buf.cplF, 0, tail);
+            }
             this.buf.cplS = this.device.createBuffer({
                 size: this.couplingNp ? this.couplingNp * 2 * 4 : 4,
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC, label: 'cplS'
@@ -317,7 +330,7 @@
             const np = this.couplingNp;
             if (!np || this.buf.cplF) return;
             this.buf.cplF = this.device.createBuffer({
-                size: np * 7 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC, label: 'cplF'
+                size: np * 9 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC, label: 'cplF'
             });
             this.buf.cplS = this.device.createBuffer({
                 size: np * 2 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC, label: 'cplS'
@@ -426,14 +439,14 @@
         }
 
         // M2: freeze a batch of 1D coupling data (SI metres/m³, pre-converted).
-        // cplF32: [np × 7] (cell, crown, cd, area, h1d, d1d, v1d)
+        // cplF32: [np × 9] (cell, crown, cd, area, h1d, d1d, v1d, stPtr, stCnt)
         // cplS32: [np × 2] (drawn, exch) — pass null to reset accumulators.
         setCouplingData(cplF32, cplS32) {
-            this.couplingNp = cplF32 ? cplF32.length / 7 : 0;
+            this.couplingNp = cplF32 ? cplF32.length / 9 : 0;
             if (this.couplingNp === 0) return;
             if (!this.buf.cplFStage) {
                 const np = this.couplingNp;
-                this.buf.cplFStage = this.device.createBuffer({ size: np * 7 * 4, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST, label: 'cplFStage' });
+                this.buf.cplFStage = this.device.createBuffer({ size: np * 9 * 4, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST, label: 'cplFStage' });
                 this.buf.cplSStage = this.device.createBuffer({ size: np * 2 * 4, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST, label: 'cplSStage' });
             }
             this.device.queue.writeBuffer(this.buf.cplFStage, 0, cplF32);
@@ -453,7 +466,7 @@
         _beginEncoder(label) {
             const enc = this.device.createCommandEncoder({ label });
             if (this._couplingDirty && this.couplingNp > 0) {
-                enc.copyBufferToBuffer(this.buf.cplFStage, 0, this.buf.cplF, 0, this.couplingNp * 7 * 4);
+                enc.copyBufferToBuffer(this.buf.cplFStage, 0, this.buf.cplF, 0, this.couplingNp * 9 * 4);
                 enc.copyBufferToBuffer(this.buf.cplSStage, 0, this.buf.cplS, 0, this.couplingNp * 2 * 4);
                 this._couplingDirty = false;
             }
