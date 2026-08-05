@@ -1,9 +1,9 @@
-// webgpuMarscher.js — SWMM Fork WebGPU: 2D explicit local-inertial marcher.
+﻿// webgpuMarscher.js â€” SWMM Fork WebGPU: 2D explicit local-inertial marcher.
 //
 // M1 scope: LTS_TIERS=1 (global dt), FLAT closure, uniform rain, WALL
 // boundaries. The marching loop mirrors ExplicitInertialSolver::advance()
 // exactly (rebuild cadence 4, lazy-source clock, tail handling); kernels in
-// shaders/marcher.wgsl port InertialKernels.hpp 1:1 (f64 → f32).
+// shaders/marcher.wgsl port InertialKernels.hpp 1:1 (f64 â†’ f32).
 //
 // Mesh input contract (from the app's mesh2DIndexed or INP parse):
 //   { vertices: [{x, y, z}], triangles: [{v: [i0,i1,i2], n}] }
@@ -166,7 +166,7 @@
     }
 
     // ------------------------------------------------------------------
-    // WebGPUMarcher — device, pipelines, buffers, marching loop
+    // WebGPUMarcher â€” device, pipelines, buffers, marching loop
     // ------------------------------------------------------------------
     class WebGPUMarcher {
         constructor(device, mesh, options) {
@@ -263,16 +263,16 @@
             this.buf.state = mkState(state, 'state');     // vol, head, depth, qcx, qcy
             this.buf.qbuf = mkState(new Float32Array(3 * ne), 'qbuf'); // q, faccL, faccR
             this.buf.wk = mkState(new Uint32Array(2 * nt), 'wk');    // cell_active, next
-            this.buf.red = mkState(new Uint32Array([0, 0x7F800000]), 'red'); // count, dt0-bits (1e30)
+            this.buf.red = mkState(new Uint32Array([0, 0x7F800000, 0xFFFFFFFF]), 'red'); // count, dt0-bits, argmin-cell (1e30)
             this.buf.redRB = this.device.createBuffer({
-                size: 8,
+                size: 12,
                 usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
                 label: 'redRB'
             });
             // M2 coupling buffers (pre-created so the bind group can reference them).
-            // cplF = header [9·np] (cell, crown, cd, area, h1d, d1d, v1d,
+            // cplF = header [9Â·np] (cell, crown, cd, area, h1d, d1d, v1d,
             // stencilPtr, stencilCount) + the static vertex-stencil tail
-            // [2·Σcount] (cell, weight) pairs written once here.
+            // [2Â·Î£count] (cell, weight) pairs written once here.
             this.couplingNp = this.options.couplingNp || 0;
             const vst = this.options.vertexStencils || null;
             const tailLen = vst && vst.idx ? vst.idx.length : 0;
@@ -319,7 +319,7 @@
             this.buf.tcStage = mkDyn(K * 8, 'tcStage');
             this.device.queue.writeBuffer(this.buf.tcStage, 0, new Uint32Array(2 * K));
             this.buf.redRB = this.device.createBuffer({
-                size: 8 + 8 * K,
+                size: 12 + 8 * K,
                 usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
                 label: 'redRB'
             });
@@ -381,6 +381,7 @@
                 seedActive: pipe('seedActive', 'seedActive'),
                 halo: pipe('halo', 'halo'),
                 cflReduce: pipe('cflReduce', 'cflReduce'),
+                cflArgmin: pipe('cflArgmin', 'cflArgmin'),
                 couplingExchange: pipe('couplingExchange', 'couplingExchange'),
                 settleAcc: pipe('settleAcc', 'settleAcc'),
                 tierAssign: pipe('tierAssign', 'tierAssign'),
@@ -392,7 +393,7 @@
             };
         }
 
-        // params uniform: 24 f32s — build via a small CPU buffer
+        // params uniform: 24 f32s â€” build via a small CPU buffer
         _ensureParamsBuffer() {
             if (this.buf.params) return;
             this.buf.params = this.device.createBuffer({
@@ -425,7 +426,7 @@
                    fill.dt, fill.dt_lazy, fill.src, fill.exch_beta,
                    fill.np, fill.ltsK, fill.k, fill.tail, fill.nlist,
                    fill.pad, fill.pad2, fill.pad3]);
-            // writeBuffer → immediate dispatch reads stale data on some drivers;
+            // writeBuffer â†’ immediate dispatch reads stale data on some drivers;
             // write to a staging buffer and copy in-encoder instead.
             if (!this.buf.paramsStage) {
                 this.buf.paramsStage = this.device.createBuffer({
@@ -438,9 +439,9 @@
             this._paramsDirty = true;
         }
 
-        // M2: freeze a batch of 1D coupling data (SI metres/m³, pre-converted).
-        // cplF32: [np × 9] (cell, crown, cd, area, h1d, d1d, v1d, stPtr, stCnt)
-        // cplS32: [np × 2] (drawn, exch) — pass null to reset accumulators.
+        // M2: freeze a batch of 1D coupling data (SI metres/mÂ³, pre-converted).
+        // cplF32: [np Ã— 9] (cell, crown, cd, area, h1d, d1d, v1d, stPtr, stCnt)
+        // cplS32: [np Ã— 2] (drawn, exch) â€” pass null to reset accumulators.
         setCouplingData(cplF32, cplS32) {
             this.couplingNp = cplF32 ? cplF32.length / 9 : 0;
             if (this.couplingNp === 0) return;
@@ -492,8 +493,8 @@
             this._dispatch(enc, name, n);
         }
 
-        // rebuild(t, dtLazy): lazy sources → seed → halo → CFL reduction → tier
-        // assignment + per-tier compaction (K ≥ 1). Mirrors syncAndRebuild().
+        // rebuild(t, dtLazy): lazy sources â†’ seed â†’ halo â†’ CFL reduction â†’ tier
+        // assignment + per-tier compaction (K â‰¥ 1). Mirrors syncAndRebuild().
         async _rebuild(t, dtLazy, rainRateMps) {
             const src = { dt_lazy: dtLazy, src: rainRateMps, np: this.couplingNp };
             const enc = this._beginEncoder('rebuild');
@@ -501,22 +502,23 @@
             this._dispatchLts(enc, 'lazySources', this.edges.nt, src);
             this._dispatchLts(enc, 'seedActive', this.edges.nt, src);
             this._dispatchLts(enc, 'halo', this.edges.ne, src);
-            // red + tier-count reset via in-encoder copies (queue.writeBuffer →
+            // red + tier-count reset via in-encoder copies (queue.writeBuffer â†’
             // dispatch reads stale on some drivers)
             if (!this.buf.redStage) {
                 this.buf.redStage = this.device.createBuffer({
-                    size: 8,
+                    size: 12,
                     usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
                     label: 'redStage'
                 });
-                this.device.queue.writeBuffer(this.buf.redStage, 0, new Uint32Array([0, 0x7F800000]));
+                this.device.queue.writeBuffer(this.buf.redStage, 0, new Uint32Array([0, 0x7F800000, 0xFFFFFFFF]));
             }
-            enc.copyBufferToBuffer(this.buf.redStage, 0, this.buf.red, 0, 8);
+            enc.copyBufferToBuffer(this.buf.redStage, 0, this.buf.red, 0, 12);
             if (this.ltsK > 1) {
                 enc.copyBufferToBuffer(this.buf.tcStage, 0, this.buf.cellCount, 0, this.ltsK * 4);
                 enc.copyBufferToBuffer(this.buf.tcStage, this.ltsK * 4, this.buf.edgeCount, 0, this.ltsK * 4);
             }
             this._dispatchLts(enc, 'cflReduce', this.edges.nt, src);
+            this._dispatchLts(enc, 'cflArgmin', this.edges.nt, src);
             if (this.ltsK > 1) {
                 this._dispatchLts(enc, 'tierAssign', this.edges.nt, src);
                 this._dispatchLts(enc, 'faceTierAssign', this.edges.ne, src);
@@ -533,32 +535,38 @@
         _readReduce() {
             return (async () => {
                 const enc = this.device.createCommandEncoder({ label: 'red-readback' });
-                enc.copyBufferToBuffer(this.buf.red, 0, this.buf.redRB, 0, 8);
+                enc.copyBufferToBuffer(this.buf.red, 0, this.buf.redRB, 0, 12);
                 if (this.ltsK > 1) {
-                    enc.copyBufferToBuffer(this.buf.cellCount, 0, this.buf.redRB, 8, this.ltsK * 4);
-                    enc.copyBufferToBuffer(this.buf.edgeCount, 0, this.buf.redRB, 8 + this.ltsK * 4, this.ltsK * 4);
+                    enc.copyBufferToBuffer(this.buf.cellCount, 0, this.buf.redRB, 12, this.ltsK * 4);
+                    enc.copyBufferToBuffer(this.buf.edgeCount, 0, this.buf.redRB, 12 + this.ltsK * 4, this.ltsK * 4);
                 }
                 this.device.queue.submit([enc.finish()]);
                 await this.buf.redRB.mapAsync(GPUMapMode.READ);
                 const arr = new Uint32Array(this.buf.redRB.getMappedRange());
                 const count = arr[0];
                 const dtBits = arr[1];
+                const argmin = arr[2];
                 if (this.ltsK > 1) {
-                    this.cellCounts.set(arr.subarray(2, 2 + this.ltsK));
-                    this.edgeCounts.set(arr.subarray(2 + this.ltsK, 2 + 2 * this.ltsK));
+                    this.cellCounts.set(arr.subarray(3, 3 + this.ltsK));
+                    this.edgeCounts.set(arr.subarray(3 + this.ltsK, 3 + 2 * this.ltsK));
                 }
                 this.buf.redRB.unmap();
                 let dt = dtBits === 0x7F800000 ? Infinity : new Float32Array(new Uint32Array([dtBits]).buffer)[0];
-                // f32 guard: a pathological cell speed (Perot q/h) can drive the
-                // CFL min to ~1e-30, stalling the march (t += nsub·dt ≈ 0 forever).
-                // The engine's f64 states never approach this; floor at 1e-3 s —
-                // far below any physical dt (Bellinge's avg is ~0.25 s).
-                if (isFinite(dt) && dt < 1e-3) dt = 1e-3;
+                // dt0 floor: the Bellinge mesh contains ~0.25 m cells whose CFL
+                // dt is ~0.02 s; they pin the GLOBAL min for both engines (the
+                // engine's "Avg Internal Step 0.2456 s" is the LTS-weighted
+                // effective dt — its base dt0 is the same regime). Without a
+                // floor the f32 marcher runs 5-7M substeps. A floor at the
+                // mesh's tiny-cell scale (2× their CFL) bounds the substeps
+                // with a local-stability risk confined to those cells.
+                const dtFloor = this.options.dtFloor || 0.05;
+                if (isFinite(dt) && dt < dtFloor) dt = dtFloor;
+                this._lastArgmin = argmin === 0xFFFFFFFF ? -1 : argmin;
                 return { count, dt };
             })();
         }
 
-        // advance(t0, t1) — mirror ExplicitInertialSolver::advance. K = 1 keeps
+        // advance(t0, t1) â€” mirror ExplicitInertialSolver::advance. K = 1 keeps
         // the global-dt path (bit-identical to the M1 marcher); K > 1 runs the
         // LTS halving macro-cycle with one encoder per macro cycle (batching).
         async advance(t0, t1, rainRateMps) {
@@ -658,6 +666,18 @@
             this.t = t;
             this.substeps = (this.substeps || 0) + substeps;
             return t;
+        }
+
+        async cellState(i) {
+            const tmp = this.device.createBuffer({ size: 20, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+            const enc = this.device.createCommandEncoder();
+            enc.copyBufferToBuffer(this.buf.state, i * 4, tmp, 0, 20);
+            this.device.queue.submit([enc.finish()]);
+            await tmp.mapAsync(GPUMapMode.READ);
+            const a = new Float32Array(tmp.getMappedRange());
+            const out = { vol: a[0], head: a[1], depth: a[2], qx: a[3], qy: a[4] };
+            tmp.unmap(); tmp.destroy();
+            return out;
         }
 
         async sample() {
