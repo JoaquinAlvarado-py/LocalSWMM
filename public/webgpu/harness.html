@@ -223,7 +223,7 @@ async function main() {
     // M0: paint one frame (final depth field) on a canvas
     // -----------------------------------------------------------------------
     paint(marcher, gpuDepths[gpuDepths.length - 1]);
-    statusEl.textContent = `done — verdict ${pass ? 'PASS' : 'FAIL'} (cons ${(consErr * 100).toFixed(2)}%, meanΔ ${worstMeanDev.toExponential(1)}, corr ${worstCorr.toFixed(3)})`;
+    statusEl.textContent = `done — verdict ${pass ? 'PASS' : 'FAIL'} (cons ${(consErr * 100).toFixed(2)}%, meanΔ ${worstMeanDev.toExponential(1)}, corr ${medCorr.toFixed(3)})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -266,6 +266,7 @@ function parseOptions(text) {
         froudeMax: get('FROUDE_MAX', 1.0),
         dryDepth: get('DRY_DEPTH', 0.001),
         maxTimestep: get('MAX_TIMESTEP', 10.0),
+        ltsTiers: get('LTS_TIERS', 1),
         exchangeBeta: 0.8
     };
 }
@@ -551,9 +552,11 @@ async function runBench(device, fixture, params) {
     const inpText = await (await fetch(inpUrl)).text();
     const mesh = parseInp(inpText);
     const opts = parseOptions(inpText);
-    log(`bench fixture: ${mesh.triangles.length} triangles, ${mesh.vertices.length} vertices`);
+    const ltsOv = Number(params.get('lts'));
+    if (ltsOv >= 1) opts.ltsTiers = ltsOv;
+    log(`bench fixture: ${mesh.triangles.length} triangles, ${mesh.vertices.length} vertices, LTS_TIERS=${opts.ltsTiers}`);
     const marcher = await WebGPUMarcher.create(device, mesh, opts);
-    const totalSec = 48 * 3600;      // the Bellinge gate window (48 h)
+    const totalSec = (Number(params.get('hours')) || 48) * 3600;   // bench gate window
     const winSec = 3600;
     const rainMps = 2.78e-6;         // 10 mm/h constant rain
     const t0 = performance.now();
