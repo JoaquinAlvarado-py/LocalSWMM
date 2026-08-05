@@ -1,12 +1,12 @@
-// couplingSplit.js — M2 1D↔2D split machinery shared by the harness and the
+﻿// couplingSplit.js â€” M2 1Dâ†”2D split machinery shared by the harness and the
 // production GPU worker. Worker-safe (no DOM). Exposes:
 //   parse2DMesh, parse2DOptions, parseCoupling, build1DInp, simEndSec,
 //   rainMpsAt, runSplit
 //
 // The split replicates the engine's windowless co-advance: stride the 1D
 // (one routing step per landing), freeze the node state, advance the GPU
-// marcher over the window, feed ∫Q back via set_lateral_inflow. All the
-// hard-won M2 lessons live here (see WEBGPU_PLAN.md §M2).
+// marcher over the window, feed âˆ«Q back via set_lateral_inflow. All the
+// hard-won M2 lessons live here (see WEBGPU_PLAN.md Â§M2).
 (function (global) {
     'use strict';
 
@@ -32,6 +32,11 @@
             if (p.length < 4) continue;
             triangles.push({ v: [+p[0], +p[1], +p[2]], n: +p[3] });
         }
+        for (const t of triangles) {
+            const a = vertices[t.v[0]], b = vertices[t.v[1]], c = vertices[t.v[2]];
+            t.cx = (a.x + b.x + c.x) / 3;
+            t.cy = (a.y + b.y + c.y) / 3;
+        }
         return { vertices, triangles };
     }
 
@@ -54,7 +59,7 @@
     }
 
     // Node order = the order the node sections appear in the INP (the engine
-    // indexes nodes by parse order) — ALL sections sorted by global text
+    // indexes nodes by parse order) â€” ALL sections sorted by global text
     // position (a fixed [JUNCTIONS, OUTFALLS, STORAGE, DIVIDERS] walk
     // mis-indexes storage-before-outfall INPs).
     function nodeOrder(text) {
@@ -78,6 +83,60 @@
             }
         }
         return order;
+    }
+
+    // Vertex stencil CSR for the pseudo-Laplacian head reconstruction
+    // (VertexReconstruction.cpp): incident triangles in ascending order, with
+    // the Jawahar-Kamath partition-of-unity weights (moment-fit Î», negative
+    // clipping, renormalization; uniform fallback on degenerate/collinear or
+    // all-clipped stencils). Returns { ptr, idx, wt } (Float64/Int32 arrays).
+    function buildVertexStencil(mesh) {
+        const nv = mesh.vertices.length, nt = mesh.triangles.length;
+        const vertTris = Array.from({ length: nv }, () => []);
+        for (let t = 0; t < nt; t++) {
+            const v = mesh.triangles[t].v;
+            vertTris[v[0]].push(t); vertTris[v[1]].push(t); vertTris[v[2]].push(t);
+        }
+        const ptr = new Int32Array(nv + 1);
+        const idx = [], wt = [];
+        for (let b = 0; b < nv; b++) {
+            ptr[b] = idx.length;
+            const tris = vertTris[b];
+            const M = tris.length;
+            if (M === 0) continue;
+            const xb = mesh.vertices[b].x, yb = mesh.vertices[b].y;
+            let Ixx = 0, Iyy = 0, Ixy = 0;
+            for (const t of tris) {
+                const dx = mesh.triangles[t].cx - xb, dy = mesh.triangles[t].cy - yb;
+                Ixx += dx * dx; Iyy += dy * dy; Ixy += dx * dy;
+            }
+            const det = Ixx * Iyy - Ixy * Ixy;
+            let weights;
+            if (Math.abs(det) < 1e-30) {
+                weights = tris.map(() => 1 / M);
+            } else {
+                let Sx = 0, Sy = 0;
+                for (const t of tris) {
+                    Sx += mesh.triangles[t].cx - xb;
+                    Sy += mesh.triangles[t].cy - yb;
+                }
+                const Rx = -Sx / M, Ry = -Sy / M;
+                const invDet = 1 / det;
+                const lx = (Iyy * Rx - Ixy * Ry) * invDet;
+                const ly = (Ixx * Ry - Ixy * Rx) * invDet;
+                weights = tris.map(t => {
+                    const dx = mesh.triangles[t].cx - xb, dy = mesh.triangles[t].cy - yb;
+                    const w = (1 / M) + lx * dx + ly * dy;
+                    return w < 0 ? 0 : w;
+                });
+                const wSum = weights.reduce((a, b) => a + b, 0);
+                if (wSum > 1e-30) weights = weights.map(w => w / wSum);
+                else weights = tris.map(() => 1 / M);
+            }
+            for (let i = 0; i < M; i++) { idx.push(tris[i]); wt.push(weights[i]); }
+        }
+        ptr[nv] = idx.length;
+        return { ptr, idx: Int32Array.from(idx), wt: Float64Array.from(wt) };
     }
 
     function parseCoupling(text, mesh) {
@@ -142,16 +201,41 @@
             }));
         }
         const vertexPoints = [];
+        const vRows = [];
         for (const line of sec(text, '2D_VERTEX_NODE_MAP').split('\n').slice(1)) {
             const t = line.trim();
             if (!t || t.startsWith(';') || t.startsWith('[')) continue;
             const p = t.split(/\s+/);
             if (p.length < 2) continue;
-            vertexPoints.push(finish({
-                kind: 'vertex', vertex: +p[0], node: p[1],
-                cd: p.length > 2 ? +p[2] : 0.65,
-                area: p.length > 3 ? +p[3] : 1.0
-            }));
+            vRows.push({ vertex: +p[0], node: p[1], cd: p.length > 2 ? +p[2] : 0.65, area: p.length > 3 ? +p[3] : 1.0 });
+        }
+        if (vRows.length) {
+            // Live vertex-coupled points become SINGLE-CELL points on the
+            // LOWEST-BED incident cell (SurfaceRouter2D.cpp:394-412: "the
+            // lowest-bed incident cell, where water pools â€” the wet/dry ramp
+            // then reflects the real pond, not an incidentally-dry neighbour";
+            // vertex_idx is cleared so the live exchange uses the CELL head,
+            // not the pseudo-Laplacian). The vertex-head/scatter machinery
+            // only applies to the outfall injection path (not in the marcher).
+            const st = buildVertexStencil(mesh);
+            const bed = (t) => {
+                const v = mesh.triangles[t].v;
+                return (mesh.vertices[v[0]].z + mesh.vertices[v[1]].z + mesh.vertices[v[2]].z) / 3;
+            };
+            for (const r of vRows) {
+                const v = r.vertex;
+                if (v < 0 || v >= mesh.vertices.length) continue;
+                const cnt = st.ptr[v + 1] - st.ptr[v];
+                if (!cnt) continue;
+                let lo = st.idx[st.ptr[v]], zlo = bed(lo);
+                for (let j = 1; j < cnt; j++) {
+                    const t = st.idx[st.ptr[v] + j];
+                    const z = bed(t);
+                    if (z < zlo) { zlo = z; lo = t; }
+                }
+                const p = finish({ kind: 'vertex', vertex: v, node: r.node, cd: r.cd, area: r.area, cell: lo, stPtr: 0, stCnt: 0 });
+                vertexPoints.push(p);
+            }
         }
         return { points, vertexPoints };
     }
@@ -201,8 +285,8 @@
     }
 
     // Uniform 2D rain: the mean over the model's gages of their rate at tSec.
-    // mm/hr → m/s. NATURAL_NEIGHBOUR spatial variation is not modelled by the
-    // marcher yet (M3 item) — documented limitation.
+    // mm/hr â†’ m/s. NATURAL_NEIGHBOUR spatial variation is not modelled by the
+    // marcher yet (M3 item) â€” documented limitation.
     function rainMpsAt(text) {
         const start0 = simStartSec(text);
         const gages = [];
@@ -266,10 +350,17 @@
 
     // The M2 split loop (see harness runCoupled). Returns { frames, report,
     // massBalance }. `api` must expose stride/nodeHeads/nodeDepths/nodeVolumes/
-    // setLatInflow; `coupling.points` are tri-coupled only. `rainAt(tSec)`
-    // returns the uniform rain rate (m/s) for the window.
+    // setLatInflow; `coupling.points` are tri-coupled, `coupling.vertexPoints`
+    // vertex-coupled (engine order: vertex points first). `rainAt(tSec)`
+    // returns the uniform rain rate (m/s) for the window. The 1D strides
+    // `couplingWindowSec` of sim per GPU window (default 60 s): the engine
+    // delivers each window's exchange through a queue at a uniform rate, so a
+    // 60 s coupling cadence is the M2-validated equivalence (the fixture's
+    // routing step is 60 s; production models with 10 s routing stride 6Ã— per
+    // window â€” 2,880 windows per 48 h instead of 17,280 batches).
     async function runSplit({ Module, api, engine, marcher, coupling, simEndSec,
-                              frameIntervalSec, rainAt, onStatus, onProgress }) {
+                              frameIntervalSec, rainAt, onStatus, onProgress,
+                              couplingWindowSec }) {
         const nNodes = api.nodeCount(engine);          // returns the count directly
         const hPtr = Module._malloc(nNodes * 8), dPtr = Module._malloc(nNodes * 8), vPtr = Module._malloc(nNodes * 8);
         const elPtr = Module._malloc(8);
@@ -278,46 +369,57 @@
             for (let i = 0; i < n; i++) a[i] = Module.getValue(ptr + i * 8, 'double');
             return a;
         };
-        const cplF = new Float32Array(coupling.points.length * 7);
-        const zeroS = new Float32Array(coupling.points.length * 2);
-        const np = coupling.points.length;
+        const allPoints = [...(coupling.vertexPoints || []), ...(coupling.points || [])];
+        const np = allPoints.length;
+        const cplF = new Float32Array(np * 9);
+        const zeroS = new Float32Array(np * 2);
         const frames = [];
         let prevT = 0, elapsed = 0;
         let nextFrameSec = 0;
         let exch1d2d = 0, exch2d1d = 0;
-        const dry = marcher.options.dryDepth || 0.001;
         while (elapsed < simEndSec) {
+            const t0 = performance.now();
+            // One 1D routing step per GPU window (the M2-validated coupling
+            // grid: the engine delivers each window's exchange through a queue
+            // at a uniform rate; the mean-of-last-two delivery quirk of
+            // set_lateral_inflow aligns with single-stride windows only).
             const err = api.stride(engine, 1, elPtr);
+            const t1 = performance.now();
             if (err !== 0) throw new Error('1D stride failed with code ' + err);
             elapsed = Module.getValue(elPtr, 'double') * 86400;
             if (elapsed <= prevT) continue;
             const dtBatch = elapsed - prevT;
-            // freeze the 1D state (project units m / m / m³)
+            // freeze the 1D state (project units m / m / mÂ³)
             api.nodeHeads(engine, hPtr, nNodes);
             api.nodeDepths(engine, dPtr, nNodes);
             api.nodeVolumes(engine, vPtr, nNodes);
+            const t2 = performance.now();
             const heads = readDoubles(hPtr, nNodes);
             const depths = readDoubles(dPtr, nNodes);
             const vols = readDoubles(vPtr, nNodes);
             for (let k = 0; k < np; k++) {
-                const p = coupling.points[k];
-                cplF[k * 7 + 0] = p.cell;
-                cplF[k * 7 + 1] = p.crown;
-                cplF[k * 7 + 2] = p.cd;
-                cplF[k * 7 + 3] = p.area;
-                cplF[k * 7 + 4] = heads[p.node];
-                cplF[k * 7 + 5] = depths[p.node];
-                cplF[k * 7 + 6] = vols[p.node];
+                const p = allPoints[k];
+                cplF[k * 9 + 0] = p.cell;
+                cplF[k * 9 + 1] = p.crown;
+                cplF[k * 9 + 2] = p.cd;
+                cplF[k * 9 + 3] = p.area;
+                cplF[k * 9 + 4] = heads[p.node];
+                cplF[k * 9 + 5] = depths[p.node];
+                cplF[k * 9 + 6] = vols[p.node];
+                cplF[k * 9 + 7] = p.stPtr || 0;
+                cplF[k * 9 + 8] = p.stCnt || 0;
             }
             marcher.setCouplingData(cplF, zeroS);
             await marcher.advance(prevT, elapsed, rainAt ? rainAt(prevT) : 0);
+            const t3 = performance.now();
             const ex = await marcher.readExch();
+            const t4 = performance.now();
             for (let k = 0; k < np; k++) {
                 // The engine delivers the exchange through a queue whose
                 // per-window rate is the MEAN of the last two windows' exchs;
                 // set_lateral_inflow applies the mean of the last two SET
                 // values (measured), so setting exch/dt lands exactly there.
-                api.setLatInflow(engine, coupling.points[k].node, ex.exch[k] / dtBatch);
+                api.setLatInflow(engine, allPoints[k].node, ex.exch[k] / dtBatch);
                 if (ex.exch[k] < 0) exch1d2d += -ex.exch[k];
                 else exch2d1d += ex.exch[k];
             }
@@ -337,6 +439,7 @@
                 if (onProgress) onProgress(elapsed * 1000);
             }
             prevT = elapsed;
+            if (onProgress) onProgress(elapsed * 1000, { totalMs: Math.round(performance.now() - t0), strideMs: Math.round(t1 - t0), freezeMs: Math.round(t2 - t1), advanceMs: Math.round(t3 - t2), exchMs: Math.round(t4 - t3), win: Math.round(dtBatch) });
         }
         let report = '';
         try {
@@ -367,6 +470,6 @@
 
     global.CouplingSplit = {
         parse2DMesh, parse2DOptions, parseCoupling, build1DInp,
-        simEndSec, rainMpsAt, runSplit
+        simEndSec, rainMpsAt, runSplit, buildVertexStencil
     };
 })(globalThis);

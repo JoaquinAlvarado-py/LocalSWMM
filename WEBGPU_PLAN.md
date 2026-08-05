@@ -310,6 +310,48 @@ refire = 2^(tier_exp − face_tier). Todo el macro ciclo en un solo encoder
   en f64 nunca lo alcanza). Verificado: sin el piso el bench colgaba (TDR).
 - Diagnóstico: `console.log('LTS[...]')` por rebuild cada 64 (dt0 + tiers).
 
+### Acople por vértice (M2.x) — hecho
+
+`[2D_VERTEX_NODE_MAP]` en el marcher + el split. Descubrimiento clave leyendo
+`SurfaceRouter2D.cpp:394-412`: el **live path del motor NO usa el stencil** —
+cada punto por vértice se convierte en un punto de UNA celda sobre **la celda
+incidente de menor cota de lecho** (`sc.cell_idx = lo`, `vertex_idx = -1` → la
+head del exchange = la head de la celda, no la pseudo-Laplaciana). El stencil
+(head del vértice + scatter upwind) solo aplica al path de inyección de
+outfalls (router), fuera del marcher.
+
+- `parseCoupling` (split + harness): vertex → celda de menor cota del stencil
+  (stencil Jawahar-Kamath portado de `VertexReconstruction.cpp`), crown/área
+  igual que triángulos; pin = la misma celda.
+- `couplingExchange` (WGSL): layout cplF 7→9 floats (cell, crown, cd, area,
+  h1d, d1d, v1d, stPtr, stCnt) — el branch de stencil queda para el futuro
+  path de outfalls (stCnt=0 hoy).
+- Fixture `marcher-cplv` (vertex 0↔S1) + ref del motor (51 frames, 1705.9 m³):
+  **PASS** — exch Δ 1.62%, medianCorr 0.860, temporalCorr 1.0 (el triángulo:
+  1.67% / 0.865). Gates coupled robustos (el worst-frame meanΔ no es robusto
+  ante el seiche anti-fase del basin cerrado — documentado en el harness).
+- El worker de producción ya NO rechaza modelos con coupling por vértice:
+  **Bellinge corre en GPU**.
+
+### Estado honesto del rendimiento (Bellinge, medido)
+
+- Bench 2D-only (GPU, LTS): 48 h en 1830 s — pero el bench rain-only pincha
+  UNA celda tier-0 con dt0 = 3.5 ms → 13.8M substeps (el run acoplado tiene
+  ~1020 celdas tier-0 con dt0 ~0.25 s → ~700k substeps → ~2-4 min de 2D).
+- El split de producción (worker) mide: batches de ~10-120 ms (stride 3-5 ms,
+  advance 5-120 ms, exch ~3 ms) — pero el 1D a `VARIABLE_STEP NO` fijo (10 s)
+  es patológico para Bellinge (los strides del motor se degradan a ~1 s en
+  nodos rígidos) y 17 280 batches × ~100 ms ≈ 30 min solo de overhead →
+  el run completo ≈ horas vs 24 min del motor.
+- Ventanas de acople de 60 s (2 880 batches) rompieron la paridad del fixture
+  (1502 vs 1707 m³): la quirk mean-of-last-two de `set_lateral_inflow` se
+  desalinea con ventanas multi-stride — revertido; requiere re-derivar la
+  entrega de la cola para el multi-stride (siguiente paso).
+- Conclusión: el 2D GPU es rápido por substep (0.13 ms) pero el split de
+  producción NO gana al motor hoy: el 1D (fijo o variable) + el overhead por
+  batch dominan. El siguiente lever = ventanas multi-stride con la entrega de
+  la cola alineada + 1D VARIABLE (sin VARIABLE_STEP NO).
+
 ## Referencias
 
 - Motor (copia): `third_party/openswmm-engine/src/engine/2d/solver/ExplicitInertialSolver.cpp`

@@ -63,8 +63,14 @@ const P_NLIST: u32 = 20u;
 @group(0) @binding(7) var<storage, read_write> red: array<atomic<u32>>; // 2
 
 // M2 coupling (needs the maxStorageBuffersPerShaderStage=16 opt-in):
-//   cplF [7*np]: cell(f32), crown_m, cd, area, h1d_m, d1d_m, v1d_m3
-//                (frozen per batch; rewritten by the orchestrator)
+//   cplF: header [9*np]: cell(f32), crown_m, cd, area, h1d_m, d1d_m, v1d_m3,
+//                stencilPtr, stencilCount — then the static vertex stencil
+//                tail [2*Σcount]: (cell, weight) pairs. Vertex-coupled points
+//                (stencilCount > 0) reconstruct h_2d via the pseudo-Laplacian
+//                (vertexHeadAt) and use the stencil-max depth for the wet/dry
+//                ramp; triangle points (stencilCount == 0) use the cell
+//                directly. Q always applies to the point's FIRST stencil cell
+//                (the engine's cp.cell_idx).
 //   cplS [2*np]: drawn_m3, exch_m3 (accumulators, reset per batch)
 @group(0) @binding(8) var<storage, read> cplF: array<f32>;
 @group(0) @binding(9) var<storage, read_write> cplS: array<f32>;
@@ -221,22 +227,40 @@ fn halo(@builtin(global_invocation_id) gid: vec3<u32>) {
 // (tier-0 cadence; K=1 = every substep). Runs AFTER cellUpdate, mirroring the
 // engine's order (faces → cells → coupling). The 1D state is frozen per batch
 // by the orchestrator (h1d/d1d/v1d pre-converted to SI metres/m³).
-// Q > 0 drains 2D→1D; Q < 0 spills 1D→2D.
+// Q > 0 drains 2D→1D; Q < 0 spills 1D→2D. Vertex-coupled points reconstruct
+// h_2d with the pseudo-Laplacian weights (vertexHeadAt, FLAT closure) and cap
+// the wet/dry ramp on the stencil-max depth (computeNodeCouplingQ's
+// depth_2d_avail); the exchange itself applies to the FIRST stencil cell
+// (the engine's cp.cell_idx).
 @compute @workgroup_size(64)
 fn couplingExchange(@builtin(global_invocation_id) gid: vec3<u32>) {
     let k = gid.x;
     if (k >= u32(params[P_NP])) { return; }
-    let ci = u32(cplF[7u * k + 0u]);
+    let base = 9u * k;
+    let ci = u32(cplF[base + 0u]);
     if (ci >= u32(params[P_NT])) { return; }
     if (wk[ci] == 0u) { return; }                 // engine: !cell_active_[ci]
-    let h2d = state[u32(params[P_NT]) + ci];
-    let d2d = state[2u * u32(params[P_NT]) + ci];
-    let h1d = cplF[7u * k + 4u];
-    let crown = cplF[7u * k + 1u];
-    let cd = cplF[7u * k + 2u];
-    let area = cplF[7u * k + 3u];
-    let d1d = cplF[7u * k + 5u];
-    let v1d = cplF[7u * k + 6u];
+    let crown = cplF[base + 1u];
+    let cd = cplF[base + 2u];
+    let area = cplF[base + 3u];
+    let h1d = cplF[base + 4u];
+    let d1d = cplF[base + 5u];
+    let v1d = cplF[base + 6u];
+    let stPtr = u32(cplF[base + 7u]);
+    let stCnt = u32(cplF[base + 8u]);
+    var h2d: f32 = state[u32(params[P_NT]) + ci];
+    var dAvail: f32 = state[2u * u32(params[P_NT]) + ci];
+    if (stCnt > 0u) {
+        let tailBase = u32(params[P_NP]) * 9u;
+        h2d = 0.0;
+        dAvail = 0.0;
+        for (var j = 0u; j < stCnt; j++) {
+            let c = u32(cplF[tailBase + 2u * (stPtr + j) + 0u]);
+            let w = cplF[tailBase + 2u * (stPtr + j) + 1u];
+            h2d += w * state[u32(params[P_NT]) + c];
+            dAvail = max(dAvail, state[2u * u32(params[P_NT]) + c]);
+        }
+    }
 
     // effectiveArea(h_max, crown, full_depth, A_inlet, 2·A_inlet)
     let h_max = max(h1d, h2d);
@@ -260,12 +284,13 @@ fn couplingExchange(@builtin(global_invocation_id) gid: vec3<u32>) {
     // capped-pipe gate over a 5 cm band above the crown
     let ct = clamp((h_max - crown) / 0.05, 0.0, 1.0);
     Q *= ct * ct * (3.0 - 2.0 * ct);
-    // source-side wet/dry Hermite ramp (Q → 0 as the source empties)
-    let tR = select(clamp(d1d / params[P_DRY], 0.0, 1.0), clamp(d2d / params[P_DRY], 0.0, 1.0), Q > 0.0);
+    // source-side wet/dry Hermite ramp (Q → 0 as the source empties);
+    // vertex points use the stencil-max depth (engine depth_2d_avail)
+    let tR = select(clamp(d1d / params[P_DRY], 0.0, 1.0), clamp(dAvail / params[P_DRY], 0.0, 1.0), Q > 0.0);
     Q *= tR * tR * (3.0 - 2.0 * tR);
     if (Q == 0.0) { return; }
     if (Q > 0.0) {
-        // 2D→1D drain: availability share of the source cell
+        // 2D→1D drain: availability share of the FIRST stencil cell
         Q = min(Q, params[P_EXCHBETA] * max(state[ci], 0.0) / params[P_DT]);
     } else {
         // 1D→2D spill: node stored-volume budget (drawn ledger per batch)
