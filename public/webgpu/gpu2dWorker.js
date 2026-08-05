@@ -1,4 +1,4 @@
-// gpu2dWorker.js — production 2D worker: 1D WASM engine + WebGPU marcher
+﻿// gpu2dWorker.js â€” production 2D worker: 1D WASM engine + WebGPU marcher
 // (M2 split), same message contract as openSwmm2dWorker.js:
 //   status2d / progress2d / results2d / error / stdout / stderr
 //
@@ -109,7 +109,7 @@ async function run2d(payload) {
         couplingNp: coupling.points.length + coupling.vertexPoints.length,
         couplingPoints: [...coupling.vertexPoints, ...coupling.points].map(p => ({ cell: p.cell }))
     }));
-    // Pond-capable coupling nodes: the engine flags them coupled → can pond;
+    // Pond-capable coupling nodes: the engine flags them coupled â†’ can pond;
     // replicate with ALLOW_PONDING YES + the 2D footprint as ponded area.
     for (const p of [...coupling.vertexPoints, ...coupling.points]) {
         api.setPondArea(engine, p.node, marcher.getTriArea(p.cell));
@@ -124,6 +124,8 @@ async function run2d(payload) {
     const result = await CouplingSplit.runSplit({
         Module, api, engine, marcher, coupling,
         simEndSec, frameIntervalSec, rainAt,
+        couplingWindowSec: 60,
+        routingStepSec: CouplingSplit.routingStepSec(inp),
         onStatus: status,
         onProgress: (elapsedMs, t) => self.postMessage({ type: 'progress2d', elapsedMs, timings: t })
     });

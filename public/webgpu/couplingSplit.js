@@ -252,8 +252,14 @@
             .replace(/^(ROUTING_STEP\s+.*)$/mi, '$1\nVARIABLE_STEP        NO');
     }
 
-    function simStartSec(text) {
-        const s = sec(text, 'OPTIONS');
+    function routingStepSec(text) {
+        const m = sec(text, 'OPTIONS').match(/^ROUTING_STEP\s+(\S+)/m);
+        if (!m) return 60;
+        const p = m[1].split(':').map(Number);
+        return (p.length === 3) ? p[0] * 3600 + p[1] * 60 + p[2] : (parseFloat(m[1]) || 60);
+    }
+
+    function simStartSec(text) {        const s = sec(text, 'OPTIONS');
         const get = (key) => {
             const m = s.match(new RegExp(`^\\s*${key}\\s+(\\S+)`, 'm'));
             return m ? m[1] : null;
@@ -360,7 +366,7 @@
     // window â€” 2,880 windows per 48 h instead of 17,280 batches).
     async function runSplit({ Module, api, engine, marcher, coupling, simEndSec,
                               frameIntervalSec, rainAt, onStatus, onProgress,
-                              couplingWindowSec }) {
+                              couplingWindowSec, routingStepSec }) {
         const nNodes = api.nodeCount(engine);          // returns the count directly
         const hPtr = Module._malloc(nNodes * 8), dPtr = Module._malloc(nNodes * 8), vPtr = Module._malloc(nNodes * 8);
         const elPtr = Module._malloc(8);
@@ -375,19 +381,28 @@
         const zeroS = new Float32Array(np * 2);
         const frames = [];
         let prevT = 0, elapsed = 0;
+        const windowSec = Math.max(1, couplingWindowSec || 60);
+        const nStrides = Math.max(1, Math.min(200, Math.round(windowSec / (routingStepSec || 60))));
         let nextFrameSec = 0;
         let exch1d2d = 0, exch2d1d = 0;
         while (elapsed < simEndSec) {
             const t0 = performance.now();
-            // One 1D routing step per GPU window (the M2-validated coupling
-            // grid: the engine delivers each window's exchange through a queue
-            // at a uniform rate; the mean-of-last-two delivery quirk of
-            // set_lateral_inflow aligns with single-stride windows only).
-            const err = api.stride(engine, 1, elPtr);
-            const t1 = performance.now();
-            if (err !== 0) throw new Error('1D stride failed with code ' + err);
-            elapsed = Module.getValue(elPtr, 'double') * 86400;
+            // Stride the 1D EXACTLY nStrides routing steps per GPU window
+            // (nStrides = round(window / routing_step): 1 for a 60 s model —
+            // bit-identical to the single-stride grid that the mean-of-last-two
+            // delivery quirk was measured against — 6 for a 10 s model). A
+            // time-based target would merge windows on the ~1 s landing
+            // offset (measured: 50 vs 51 windows → −12 % exchange).
+            let guard = 0;
+            let strideErr = 0;
+            do {
+                strideErr = api.stride(engine, 1, elPtr);
+                if (strideErr !== 0) break;      // sim finished mid-window
+                elapsed = Module.getValue(elPtr, 'double') * 86400;
+            } while (guard++ < nStrides - 1 && elapsed < simEndSec);
+            if (strideErr !== 0 && elapsed < simEndSec) throw new Error('1D stride failed with code ' + strideErr);
             if (elapsed <= prevT) continue;
+            const t1 = performance.now();
             const dtBatch = elapsed - prevT;
             // freeze the 1D state (project units m / m / mÂ³)
             api.nodeHeads(engine, hPtr, nNodes);
@@ -470,6 +485,6 @@
 
     global.CouplingSplit = {
         parse2DMesh, parse2DOptions, parseCoupling, build1DInp,
-        simEndSec, rainMpsAt, runSplit, buildVertexStencil
+        simEndSec, rainMpsAt, runSplit, buildVertexStencil, routingStepSec
     };
 })(globalThis);
