@@ -89,9 +89,6 @@ async function run2d(payload) {
     if (!mesh.triangles.length) throw new Error('No [2D_TRIANGLES] in the generated input.');
     const opts = CouplingSplit.parse2DOptions(inp);
     const coupling = CouplingSplit.parseCoupling(inp, mesh);
-    if (coupling.vertexPoints.length) {
-        throw new Error('VERTEX_COUPLING_UNSUPPORTED: vertex-based 2D coupling is not in the GPU marcher yet — falling back to the WASM worker.');
-    }
 
     const device = await requestGpuDevice();
     status('gpu-ready');
@@ -109,12 +106,12 @@ async function run2d(payload) {
     status('model-opened');
 
     const marcher = await WebGPUMarcher.create(device, mesh, Object.assign({}, opts, {
-        couplingNp: coupling.points.length,
-        couplingPoints: coupling.points.map(p => ({ cell: p.cell }))
+        couplingNp: coupling.points.length + coupling.vertexPoints.length,
+        couplingPoints: [...coupling.vertexPoints, ...coupling.points].map(p => ({ cell: p.cell }))
     }));
     // Pond-capable coupling nodes: the engine flags them coupled → can pond;
     // replicate with ALLOW_PONDING YES + the 2D footprint as ponded area.
-    for (const p of coupling.points) {
+    for (const p of [...coupling.vertexPoints, ...coupling.points]) {
         api.setPondArea(engine, p.node, marcher.getTriArea(p.cell));
     }
     api.initialize(engine);
@@ -128,7 +125,7 @@ async function run2d(payload) {
         Module, api, engine, marcher, coupling,
         simEndSec, frameIntervalSec, rainAt,
         onStatus: status,
-        onProgress: elapsedMs => self.postMessage({ type: 'progress2d', elapsedMs })
+        onProgress: (elapsedMs, t) => self.postMessage({ type: 'progress2d', elapsedMs, timings: t })
     });
 
     api.close(engine);

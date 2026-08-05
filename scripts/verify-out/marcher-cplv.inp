@@ -1,0 +1,97 @@
+;; UNITS: SI (m)
+[TITLE]
+WebGPU M2 — 1D/2D junction coupling parity
+
+[OPTIONS]
+FLOW_UNITS           CMS
+INFILTRATION         HORTON
+FLOW_ROUTING         DYNWAVE
+LINK_OFFSETS         DEPTH
+MIN_SLOPE            0
+ALLOW_PONDING        NO
+SKIP_STEADY_STATE    NO
+
+START_DATE           06/29/2012
+START_TIME           00:00:00
+REPORT_START_DATE    06/29/2012
+REPORT_START_TIME    00:00:00
+END_DATE             06/29/2012
+END_TIME             01:00:00
+SWEEP_START          06/16
+SWEEP_END            06/17
+DRY_DAYS             0
+REPORT_STEP          00:15:00
+WET_STEP             00:01:00
+DRY_STEP             00:15:00
+ROUTING_STEP         00:01:00
+
+[TIMESERIES]
+TS_INFLOW  06/29/2012 00:00   0.500
+TS_INFLOW  06/29/2012 23:59   0.500
+
+[STORAGE]
+S1          0.0        10.0       0        0        FUNC       100.0
+
+[OUTFALLS]
+O1          0.0         FREE        NO
+
+[CONDUITS]
+C1          S1          O1          100.0     0.01     0       0       0
+
+[XSECTIONS]
+C1          CIRCULAR    0.1        0        0        0        0        0
+
+[COORDINATES]
+S1          10.0        55.0
+O1          10.05       55.0
+
+[INFLOWS]
+S1          FLOW        TS_INFLOW
+
+[2D_OPTIONS]
+MAX_TIMESTEP         10.0
+DRY_DEPTH            0.001
+COUPLING_SYNC        1.0
+THETA                0.5
+CFL_NUMBER           0.8
+H_MOVE               0.003
+FROUDE_MAX           1.0
+LTS_TIERS            1
+LIMITER_EPSILON      1e-6
+FLUX_DH_EPS          1e-6
+CELL_CLOSURE         FLAT
+FACE_RECONSTRUCTION  MEAN
+VFR_MIN_WET_FRAC     0.1
+INTEGRATOR           EXPLICIT
+COUPLING_CD          0.65
+COUPLING_AREA        DEFAULT
+RAINFALL_MODE        NONE
+REPORT_2D            YES
+
+[2D_VERTICES]
+;;X               Y               Z               TAG
+0.0000          0.0000          0.0000          -
+10.0000         0.0000          0.5000          -
+20.0000         0.0000          1.0000          -
+0.0000          10.0000         0.2000          -
+10.0000         10.0000         0.7000          -
+20.0000         10.0000         1.2000          -
+0.0000          20.0000         0.4000          -
+10.0000         20.0000         0.9000          -
+20.0000         20.0000         1.4000          -
+
+[2D_TRIANGLES]
+;;V1      V2       V3       MANNINGS_N   TAG
+0        1        4        0.03000     -
+0        4        3        0.03000     -
+1        2        5        0.03000     -
+1        5        4        0.03000     -
+3        4        7        0.03000     -
+3        7        6        0.03000     -
+4        5        8        0.03000     -
+4        8        7        0.03000     -
+
+[2D_VERTEX_NODE_MAP]
+;;IDX NODE CD AREA
+0 S1 0.65 1.0
+
