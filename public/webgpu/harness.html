@@ -538,7 +538,7 @@ async function runCoupled(device, fixture, params) {
         // it with the previous batch's exch.
         const ex = await marcher.readExch();
         const sA = await marcher.sample();
-        console.log(`batch t=${elapsed.toFixed(0)} dt=${dtBatch.toFixed(0)} J1h=${heads[allPoints[0].node].toFixed(2)}m d=[${Array.from(sA.depth).map(x => x.toFixed(2)).join(',')}] cell=${allPoints[0].cell} exch=[${Array.from(ex.exch).map(x => x.toFixed(4)).join(',')}]`);
+        console.log(`batch t=${elapsed.toFixed(0)} dt=${dtBatch.toFixed(0)} J1h=${heads[allPoints[0].node].toFixed(2)}m d=[${Array.from(sA.depth).map(x => x.toFixed(2)).join(',')}] cell=${allPoints[0].cell} exch=[${Array.from(ex.exch).map(x => x.toFixed(4)).join(',')}] sub=${marcher.substeps} dt0=${marcher.dt0.toExponential(2)}`);
         for (let k = 0; k < allPoints.length; k++) {
             // The engine delivers the exchange through a queue whose per-window
             // rate is the MEAN of the last two windows' exchanges. The

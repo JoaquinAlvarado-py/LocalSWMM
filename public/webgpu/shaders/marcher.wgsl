@@ -329,6 +329,31 @@ fn cflReduce(@builtin(global_invocation_id) gid: vec3<u32>) {
     atomicMin(&red[1], bitcast<u32>(dt));
 }
 
+// ---- cflArgmin: the cell whose CFL dt equals the reduced min (for the
+// dt0-collapse investigation: an f32 Perot speed qm/h can blow a single cell's
+// dt to ~1e-30, stalling the whole march — identify it).
+@compute @workgroup_size(64)
+fn cflArgmin(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= u32(params[P_NT])) { return; }
+    if (wk[i] == 0u) { return; }
+    let h = state[2u * u32(params[P_NT]) + i];
+    var speed: f32 = 0.0;
+    if (h > F32_1E_6) {
+        let qm = sqrt(state[3u * u32(params[P_NT]) + i] * state[3u * u32(params[P_NT]) + i] + state[4u * u32(params[P_NT]) + i] * state[4u * u32(params[P_NT]) + i]);
+        speed = qm / h;
+    }
+    var dt: f32 = F32_1E30;
+    if (h > params[P_DRY]) {
+        let c = sqrt(params[P_G] * h) + speed;
+        dt = select(F32_1E30, params[P_CFL] * geoA[4u * u32(params[P_NT]) + i] / c, c > F32_1E_12);
+    }
+    dt = min(dt, params[P_MAXDT]);
+    if (dt == bitcast<f32>(atomicLoad(&red[1]))) {
+        atomicMin(&red[2], i);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // LTS v2 (M3): tiered local timestepping, port of the engine's halving scheme
 // (ExplicitInertialSolver.cpp). K = params[P_LTSK] tiers; tier k fires every

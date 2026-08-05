@@ -243,13 +243,17 @@
     // The 1D-only INP: strip the 2D sections, let coupling nodes pond above
     // the brim (the engine flags coupled nodes pond-capable regardless of
     // ALLOW_PONDING), and pin the routing step (the 1D-only adaptive step
-    // does not match the co-advance grid).
+    // does not match the co-advance grid). The existing VARIABLE_STEP line
+    // is REPLACED (a second line would lose to the original's later position
+    // in the parse — measured: Bellinge ran variable steps despite the pin).
     function build1DInp(text) {
+        const hasVar = /^VARIABLE_STEP\s+\S+/m.test(text);
         return text
             .replace(/(^|\n)\[2D_[A-Z_]+\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
             .replace(/(^|\n)\[2D_OPTIONS\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
             .replace(/ALLOW_PONDING\s+NO/i, 'ALLOW_PONDING        YES')
-            .replace(/^(ROUTING_STEP\s+.*)$/mi, '$1\nVARIABLE_STEP        NO');
+            .replace(/^VARIABLE_STEP\s+\S+.*$/mi, 'VARIABLE_STEP        NO')
+            .replace(/^(ROUTING_STEP\s+.*)$/mi, hasVar ? '$1' : '$1\nVARIABLE_STEP        NO');
     }
 
     function routingStepSec(text) {
@@ -454,7 +458,18 @@
                 if (onProgress) onProgress(elapsed * 1000);
             }
             prevT = elapsed;
-            if (onProgress) onProgress(elapsed * 1000, { totalMs: Math.round(performance.now() - t0), strideMs: Math.round(t1 - t0), freezeMs: Math.round(t2 - t1), advanceMs: Math.round(t3 - t2), exchMs: Math.round(t4 - t3), win: Math.round(dtBatch) });
+            // dt0-collapse diagnosis: sample the argmin cell's state when the
+            // CFL min is pathological (f32 Perot speed qm/h at a pinned
+            // coupling cell).
+            if (marcher._lastArgmin >= 0 && marcher.dt0 < 0.05) {
+                try {
+                    const cs = await marcher.cellState(marcher._lastArgmin);
+                    const lchar = marcher.edges.cell_lchar[marcher._lastArgmin];
+                    const speed = cs.depth > 1e-6 ? Math.hypot(cs.qx, cs.qy) / cs.depth : Infinity;
+                    if (onProgress) onProgress(elapsed * 1000, { cell: marcher._lastArgmin, h: cs.depth, qm: Math.hypot(cs.qx, cs.qy), speed, lchar, dt0: marcher.dt0 });
+                } catch (e) { }
+            }
+            if (onProgress) onProgress(elapsed * 1000, { totalMs: Math.round(performance.now() - t0), strideMs: Math.round(t1 - t0), freezeMs: Math.round(t2 - t1), advanceMs: Math.round(t3 - t2), exchMs: Math.round(t4 - t3), win: Math.round(dtBatch), dt0: marcher.dt0, sub: marcher.substeps, arg: marcher._lastArgmin });
         }
         let report = '';
         try {
