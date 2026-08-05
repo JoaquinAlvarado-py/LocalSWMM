@@ -180,6 +180,10 @@
             this.cycles = 1000;               // force rebuild on first advance
             this.dt0 = options.maxTimestep;
             this.activeCount = 0;
+            this.ltsK = Math.max(1, Math.min(8, Math.floor(options.ltsTiers || 1)));
+            this.cellCounts = new Uint32Array(this.ltsK);
+            this.edgeCounts = new Uint32Array(this.ltsK);
+            this._dbgRebuilds = 0;
         }
 
         static async create(device, mesh, options) {
@@ -286,6 +290,26 @@
                 if (pnt.cell < this.edges.nt) pins[pnt.cell] = 1;
             }
             this.device.queue.writeBuffer(this.buf.pin, 0, pins);
+            // LTS v2 buffers (M3): tier map + per-tier compacted lists.
+            const K = this.ltsK;
+            const mkU32 = (data, label) => {
+                const b = mkDyn(data.byteLength, label);
+                this.device.queue.writeBuffer(b, 0, data);
+                return b;
+            };
+            this.buf.tierBuf = mkU32(new Uint32Array(nt + ne), 'tierBuf');
+            this.buf.cellList = mkU32(new Uint32Array(K * nt), 'cellList');
+            this.buf.edgeList = mkU32(new Uint32Array(K * ne), 'edgeList');
+            this.buf.cellCount = mkU32(new Uint32Array(K), 'cellCount');
+            this.buf.edgeCount = mkU32(new Uint32Array(K), 'edgeCount');
+            // staged zeroes for the per-rebuild count reset + combined readback
+            this.buf.tcStage = mkDyn(K * 8, 'tcStage');
+            this.device.queue.writeBuffer(this.buf.tcStage, 0, new Uint32Array(2 * K));
+            this.buf.redRB = this.device.createBuffer({
+                size: 8 + 8 * K,
+                usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+                label: 'redRB'
+            });
             this._ensureParamsBuffer();
         }
 
@@ -302,7 +326,7 @@
 
         _compile(code) {
             this.shader = this.device.createShaderModule({ code, label: 'marcher.wgsl' });
-            const nBindings = 11;
+            const nBindings = 16;
             const layout = this.device.createBindGroupLayout({
                 entries: Array.from({ length: nBindings }, (_, i) => ({
                     binding: i,
@@ -324,7 +348,12 @@
                     { binding: 7, resource: { buffer: this.buf.red } },
                     { binding: 8, resource: { buffer: this.buf.cplF } },
                     { binding: 9, resource: { buffer: this.buf.cplS } },
-                    { binding: 10, resource: { buffer: this.buf.pin } }
+                    { binding: 10, resource: { buffer: this.buf.pin } },
+                    { binding: 11, resource: { buffer: this.buf.tierBuf } },
+                    { binding: 12, resource: { buffer: this.buf.cellList } },
+                    { binding: 13, resource: { buffer: this.buf.cellCount } },
+                    { binding: 14, resource: { buffer: this.buf.edgeList } },
+                    { binding: 15, resource: { buffer: this.buf.edgeCount } }
                 ]
             });
             const pipe = (name, entry) => this.device.createComputePipeline({
@@ -339,19 +368,26 @@
                 seedActive: pipe('seedActive', 'seedActive'),
                 halo: pipe('halo', 'halo'),
                 cflReduce: pipe('cflReduce', 'cflReduce'),
-                couplingExchange: pipe('couplingExchange', 'couplingExchange')
+                couplingExchange: pipe('couplingExchange', 'couplingExchange'),
+                settleAcc: pipe('settleAcc', 'settleAcc'),
+                tierAssign: pipe('tierAssign', 'tierAssign'),
+                faceTierAssign: pipe('faceTierAssign', 'faceTierAssign'),
+                degenTier: pipe('degenTier', 'degenTier'),
+                degenFaceTier: pipe('degenFaceTier', 'degenFaceTier'),
+                faceFluxLts: pipe('faceFluxLts', 'faceFluxLts'),
+                cellUpdateLts: pipe('cellUpdateLts', 'cellUpdateLts')
             };
         }
 
-        // params uniform: 16 f32s — build via a small CPU buffer
+        // params uniform: 24 f32s — build via a small CPU buffer
         _ensureParamsBuffer() {
             if (this.buf.params) return;
             this.buf.params = this.device.createBuffer({
-                size: 80,
+                size: 96,
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
                 label: 'params'
             });
-            this._paramData = new Float32Array(20);
+            this._paramData = new Float32Array(24);
         }
 
         _setParams(patch) {
@@ -367,19 +403,20 @@
                 g: G, eta_deadband: 1e-12,
                 h_on: o.hMove + 0.001, h_off: Math.max(0, o.hMove - 0.001),
                 dt: 0, dt_lazy: 0, src: 0, exch_beta: o.exchangeBeta ?? 0.8,
-                np: 0, pad: 0, pad2: 0, pad3: 0
+                np: 0, ltsK: this.ltsK, k: 0, tail: 0, nlist: 0, pad: 0, pad2: 0, pad3: 0
             };
             Object.assign(fill, patch);
             p.set([fill.nt, fill.ne, fill.dry_depth, fill.theta,
                    fill.froude_max, fill.beta_share, fill.cfl_alpha, fill.max_timestep,
                    fill.g, fill.eta_deadband, fill.h_on, fill.h_off,
                    fill.dt, fill.dt_lazy, fill.src, fill.exch_beta,
-                   fill.np, fill.pad, fill.pad2, fill.pad3]);
+                   fill.np, fill.ltsK, fill.k, fill.tail, fill.nlist,
+                   fill.pad, fill.pad2, fill.pad3]);
             // writeBuffer → immediate dispatch reads stale data on some drivers;
             // write to a staging buffer and copy in-encoder instead.
             if (!this.buf.paramsStage) {
                 this.buf.paramsStage = this.device.createBuffer({
-                    size: 80,
+                    size: 96,
                     usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
                     label: 'paramsStage'
                 });
@@ -415,10 +452,6 @@
 
         _beginEncoder(label) {
             const enc = this.device.createCommandEncoder({ label });
-            if (this._paramsDirty) {
-                enc.copyBufferToBuffer(this.buf.paramsStage, 0, this.buf.params, 0, 80);
-                this._paramsDirty = false;
-            }
             if (this._couplingDirty && this.couplingNp > 0) {
                 enc.copyBufferToBuffer(this.buf.cplFStage, 0, this.buf.cplF, 0, this.couplingNp * 7 * 4);
                 enc.copyBufferToBuffer(this.buf.cplSStage, 0, this.buf.cplS, 0, this.couplingNp * 2 * 4);
@@ -428,6 +461,12 @@
         }
 
         _dispatch(enc, name, n) {
+            // params travel via an in-encoder copy at every dispatch (LTS fires
+            // different tiers with different dt within one encoder).
+            if (this._paramsDirty) {
+                enc.copyBufferToBuffer(this.buf.paramsStage, 0, this.buf.params, 0, 96);
+                this._paramsDirty = false;
+            }
             const pass = enc.beginComputePass({ label: name });
             pass.setPipeline(this.pipes[name]);
             pass.setBindGroup(0, this.bindGroup);
@@ -435,15 +474,22 @@
             pass.end();
         }
 
-        // rebuild(t, dtLazy): lazy sources → seed → halo → CFL reduction.
-        // Mirrors syncAndRebuild() + the tier-0 reduction (K = 1).
+        _dispatchLts(enc, name, n, patch) {
+            this._setParams(patch);
+            this._dispatch(enc, name, n);
+        }
+
+        // rebuild(t, dtLazy): lazy sources → seed → halo → CFL reduction → tier
+        // assignment + per-tier compaction (K ≥ 1). Mirrors syncAndRebuild().
         async _rebuild(t, dtLazy, rainRateMps) {
-            this._setParams({ dt_lazy: dtLazy, src: rainRateMps });
+            const src = { dt_lazy: dtLazy, src: rainRateMps, np: this.couplingNp };
             const enc = this._beginEncoder('rebuild');
-            this._dispatch(enc, 'lazySources', this.edges.nt);
-            this._dispatch(enc, 'seedActive', this.edges.nt);
-            this._dispatch(enc, 'halo', this.edges.ne);
-            // red reset via in-encoder copy (queue.writeBuffer → dispatch reads stale)
+            if (this.ltsK > 1) this._dispatchLts(enc, 'settleAcc', this.edges.nt, { ...src, dt_lazy: 0 });
+            this._dispatchLts(enc, 'lazySources', this.edges.nt, src);
+            this._dispatchLts(enc, 'seedActive', this.edges.nt, src);
+            this._dispatchLts(enc, 'halo', this.edges.ne, src);
+            // red + tier-count reset via in-encoder copies (queue.writeBuffer →
+            // dispatch reads stale on some drivers)
             if (!this.buf.redStage) {
                 this.buf.redStage = this.device.createBuffer({
                     size: 8,
@@ -453,35 +499,64 @@
                 this.device.queue.writeBuffer(this.buf.redStage, 0, new Uint32Array([0, 0x7F800000]));
             }
             enc.copyBufferToBuffer(this.buf.redStage, 0, this.buf.red, 0, 8);
-            this._dispatch(enc, 'cflReduce', this.edges.nt);
+            if (this.ltsK > 1) {
+                enc.copyBufferToBuffer(this.buf.tcStage, 0, this.buf.cellCount, 0, this.ltsK * 4);
+                enc.copyBufferToBuffer(this.buf.tcStage, this.ltsK * 4, this.buf.edgeCount, 0, this.ltsK * 4);
+            }
+            this._dispatchLts(enc, 'cflReduce', this.edges.nt, src);
+            if (this.ltsK > 1) {
+                this._dispatchLts(enc, 'tierAssign', this.edges.nt, src);
+                this._dispatchLts(enc, 'faceTierAssign', this.edges.ne, src);
+            }
             this.t_last_sync = t;
             this.device.queue.submit([enc.finish()]);
-            return this._readReduce();
+            const r = await this._readReduce();
+            if (this.ltsK > 1 && this._dbgRebuilds++ % 64 === 0) {
+                console.log(`LTS[${this.t.toFixed(1)}s] dt0=${r.dt.toExponential(3)} active=${r.count} cells=[${Array.from(this.cellCounts).join(',')}] edges=[${Array.from(this.edgeCounts).join(',')}]`);
+            }
+            return r;
         }
 
         _readReduce() {
             return (async () => {
                 const enc = this.device.createCommandEncoder({ label: 'red-readback' });
                 enc.copyBufferToBuffer(this.buf.red, 0, this.buf.redRB, 0, 8);
+                if (this.ltsK > 1) {
+                    enc.copyBufferToBuffer(this.buf.cellCount, 0, this.buf.redRB, 8, this.ltsK * 4);
+                    enc.copyBufferToBuffer(this.buf.edgeCount, 0, this.buf.redRB, 8 + this.ltsK * 4, this.ltsK * 4);
+                }
                 this.device.queue.submit([enc.finish()]);
                 await this.buf.redRB.mapAsync(GPUMapMode.READ);
                 const arr = new Uint32Array(this.buf.redRB.getMappedRange());
                 const count = arr[0];
                 const dtBits = arr[1];
+                if (this.ltsK > 1) {
+                    this.cellCounts.set(arr.subarray(2, 2 + this.ltsK));
+                    this.edgeCounts.set(arr.subarray(2 + this.ltsK, 2 + 2 * this.ltsK));
+                }
                 this.buf.redRB.unmap();
-                const dt = dtBits === 0x7F800000 ? Infinity : new Float32Array(new Uint32Array([dtBits]).buffer)[0];
+                let dt = dtBits === 0x7F800000 ? Infinity : new Float32Array(new Uint32Array([dtBits]).buffer)[0];
+                // f32 guard: a pathological cell speed (Perot q/h) can drive the
+                // CFL min to ~1e-30, stalling the march (t += nsub·dt ≈ 0 forever).
+                // The engine's f64 states never approach this; floor at 1e-3 s —
+                // far below any physical dt (Bellinge's avg is ~0.25 s).
+                if (isFinite(dt) && dt < 1e-3) dt = 1e-3;
                 return { count, dt };
             })();
         }
 
-        // advance(t0, t1) — mirror ExplicitInertialSolver::advance (K=1)
+        // advance(t0, t1) — mirror ExplicitInertialSolver::advance. K = 1 keeps
+        // the global-dt path (bit-identical to the M1 marcher); K > 1 runs the
+        // LTS halving macro-cycle with one encoder per macro cycle (batching).
         async advance(t0, t1, rainRateMps) {
             this.options.rainRateMps = rainRateMps;
             if (t1 <= t0) return t1;
+            const K = this.ltsK;
             let t = t0;
             if (this.t_last_sync > t0) this.t_last_sync = t0;
             let cycles = this.cycles;
             let substeps = 0;
+            const base = { src: rainRateMps, np: this.couplingNp };
 
             while (t < t1) {
                 if (cycles >= 4) {
@@ -496,18 +571,59 @@
                     break;
                 }
                 const remaining = t1 - t;
-                const step = Math.min(this.dt0, remaining);
-                if (this.dt0 > remaining) {
-                    cycles = 4;                              // tail: rebuild after
+                if (K <= 1) {
+                    const step = Math.min(this.dt0, remaining);
+                    if (!(step > 0) || !isFinite(step)) { t = t1; break; }   // dt floor guard
+                    if (this.dt0 > remaining) cycles = 4;   // tail: rebuild after
+                    const enc = this._beginEncoder('substep');
+                    this._dispatchLts(enc, 'faceFlux', this.edges.ne, { dt: step, ...base });
+                    this._dispatchLts(enc, 'cellUpdate', this.edges.nt, { dt: step, ...base });
+                    if (this.couplingNp > 0) this._dispatchLts(enc, 'couplingExchange', this.couplingNp, { dt: step, ...base });
+                    this.device.queue.submit([enc.finish()]);
+                    t += step;
+                    substeps++;
+                    cycles++;
+                    continue;
                 }
-                this._setParams({ dt: step, src: rainRateMps, np: this.couplingNp });
-                const enc = this._beginEncoder('substep');
-                this._dispatch(enc, 'faceFlux', this.edges.ne);
-                this._dispatch(enc, 'cellUpdate', this.edges.nt);
-                if (this.couplingNp > 0) this._dispatch(enc, 'couplingExchange', this.couplingNp);
+
+                // ---- LTS path: one encoder per macro cycle ----
+                const nsubFull = 1 << (K - 1);
+                let dt0 = Math.min(this.dt0, remaining);
+                if (!(dt0 > 0) || !isFinite(dt0)) { t = t1; break; }   // dt floor guard
+                let nsub = nsubFull;
+                let tail = false;
+                if (nsubFull * this.dt0 > remaining) {
+                    tail = true;                       // degenerate to global dt
+                    nsub = 1;
+                    cycles = 4;                        // rebuild after the tail
+                }
+                const enc = this._beginEncoder('macro');
+                if (tail) {
+                    this._dispatchLts(enc, 'settleAcc', this.edges.nt, { ...base, dt_lazy: 0 });
+                    this._dispatchLts(enc, 'degenTier', this.edges.nt, { ...base, dt_lazy: 0 });
+                    this._dispatchLts(enc, 'degenFaceTier', this.edges.ne, { ...base, dt_lazy: 0 });
+                }
+                for (let s = 0; s < nsub; s++) {
+                    for (let k = 0; k < K; k++) {
+                        if (s % (1 << k)) continue;
+                        const dt = dt0 * (1 << k);
+                        const n = tail ? (k === 0 ? this.edges.ne : 0) : this.edgeCounts[k];
+                        if (n > 0) this._dispatchLts(enc, 'faceFluxLts', n, { dt, ...base, k, tail: tail ? 1 : 0, nlist: n });
+                    }
+                    for (let k = 0; k < K; k++) {
+                        if (s % (1 << k)) continue;
+                        const dt = dt0 * (1 << k);
+                        const n = tail ? (k === 0 ? this.edges.nt : 0) : this.cellCounts[k];
+                        if (n > 0) this._dispatchLts(enc, 'cellUpdateLts', n, { dt, ...base, k, tail: tail ? 1 : 0, nlist: n });
+                    }
+                    // live coupling at tier-0 cadence (engine: fireCells(tier 0))
+                    if (this.couplingNp > 0) {
+                        this._dispatchLts(enc, 'couplingExchange', this.couplingNp, { dt: dt0, ...base, k: 0, tail: 0, nlist: this.couplingNp });
+                    }
+                }
                 this.device.queue.submit([enc.finish()]);
-                t += step;
-                substeps++;
+                t += nsub * dt0;
+                substeps += nsub;
                 cycles++;
             }
             // final lazy-source landing
@@ -518,7 +634,7 @@
                     this.dt0 = r.count > 0 ? r.dt : this.options.maxTimestep;
                     cycles = 0;
                 } else {
-                    this._setParams({ dt_lazy: t1 - this.t_last_sync, src: rainRateMps });
+                    this._setParams({ dt_lazy: t1 - this.t_last_sync, src: rainRateMps, np: this.couplingNp });
                     const enc = this._beginEncoder('final-lazy');
                     this._dispatch(enc, 'lazySources', this.edges.nt);
                     this.device.queue.submit([enc.finish()]);

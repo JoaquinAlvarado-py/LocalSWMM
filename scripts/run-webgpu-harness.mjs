@@ -19,8 +19,10 @@ const PROFILE = join(process.env.TEMP || 'C:\\Users\\joaqu\\AppData\\Local\\Temp
 const FIXTURES_OUT = join(ROOT, 'public', 'webgpu', 'fixtures');
 const coupled = process.argv.includes('--coupled');
 const bench = process.argv.includes('--bench');
-const fixtures = process.argv.filter(a => !a.startsWith('--')).slice(2).length
-    ? process.argv.filter(a => !a.startsWith('--')).slice(2)
+const ltsIdx = process.argv.indexOf('--lts');
+const ltsOv = ltsIdx !== -1 ? parseInt(process.argv[ltsIdx + 1], 10) : 0;
+const fixtures = process.argv.filter((a, i) => !a.startsWith('--') && process.argv[i - 1] !== '--lts').slice(2).length
+    ? process.argv.filter((a, i) => !a.startsWith('--') && process.argv[i - 1] !== '--lts').slice(2)
     : (coupled ? ['marcher-cpl'] : (bench ? ['bellinge'] : ['marcher-8cells', 'marcher-5k']));
 
 class CDP {
@@ -154,13 +156,16 @@ async function main() {
         for (const fixture of fixtures) {
             console.log(`\n==== fixture: ${fixture} ====`);
             const mode = coupled ? '&mode=coupled' : (bench ? '&mode=bench' : '');
-            await cdp.send('Page.navigate', { url: `${APP_URL}?fixture=${fixture}${mode}` }, sessionId);
+            const ltsArg = ltsOv ? `&lts=${ltsOv}` : '';
+            await cdp.send('Page.navigate', { url: `${APP_URL}?fixture=${fixture}${mode}${ltsArg}` }, sessionId);
             const deadline = Date.now() + (bench ? 90 : 15) * 60 * 1000;
             let done = false;
             let status = '';
             let lastPrinted = '';
             while (Date.now() < deadline) {
-                status = await evalInPage(cdp, sessionId, `document.getElementById('status').textContent`);
+                try {
+                    status = await evalInPage(cdp, sessionId, `document.getElementById('status') ? document.getElementById('status').textContent : ''`);
+                } catch (e) { status = ''; }
                 if (status !== lastPrinted) {
                     lastPrinted = status;
                     process.stdout.write(`  [status] ${status.slice(0, 140)}\n`);
