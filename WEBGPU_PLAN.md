@@ -359,6 +359,30 @@ Fixture: 51 frames, 1707.0 m³ ✓ (paridad intacta).
   que acelerar el 1D (fuera de alcance) o relajar el paso del 1D aceptando
   menos fidelidad.
 
+### Investigación dt0 collapse — raíz encontrada (hecho)
+
+El dt0 del split colapsaba al piso (1e-3 → 6.6M substeps, advance 400-700 ms/ventana).
+Con el kernel `cflArgmin` (la celda cuyo CFL = el min): **las celdas que pinchan
+el dt0 son celdas de acople con lchar = 0.25-0.30 m** (celdas diminutas del
+mesh de Bellinge) — su dt CFL real = 0.018-0.023 s, NO un blow-up f32. El
+report del motor lo confirma: "Avg Internal Step 0.2456 s" es el dt EFECTIVO
+ponderado por LTS (tier 3 = 8×dt0) — el dt0 BASE del motor es el mismo régimen
+(~0.03 s). El motor también corre ~5M substeps base — el 2D es caro en ambos
+por las celdas tiny del mesh, no por la GPU.
+
+- **Piso dt0 configurable** (`options.dtFloor`, default 0.05 s = 2× el CFL de
+  las celdas tiny): 4× menos substeps, advance 13× más rápido (29-38 ms).
+  Riesgo de estabilidad local acotado a las celdas tiny (artefactos del mesh).
+- **Bug del 1D fijo**: `build1DInp` agregaba una segunda línea VARIABLE_STEP
+  que perdía contra la original (el parser toma la última → el 1D corría
+  VARIABLE pese al pin). Ahora reemplaza la línea existente.
+- **El piso real final**: el 1D de Bellinge corre ~230k pasos INTERNOS del
+  dynamic wave (~0.5 s — la rigidez; el stride API avanza el paso interno, no
+  el routing step) × ~6 ms = **~23 min — idéntico en el motor**. El 2D del
+  motor ya es barato (LTS + WASM: ~1-3 min de los 24) — **el 1D es el ~90 %
+  del tiempo en ambos — WebGPU no puede ganar porque el 2D no es el cuello**.
+  El 2D GPU (con el piso) ≈ 4 min — a la par del motor.
+
 ## Referencias
 
 - Motor (copia): `third_party/openswmm-engine/src/engine/2d/solver/ExplicitInertialSolver.cpp`
