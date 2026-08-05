@@ -48,6 +48,7 @@
             froudeMax: get('FROUDE_MAX', 1.0),
             dryDepth: get('DRY_DEPTH', 0.001),
             maxTimestep: get('MAX_TIMESTEP', 10.0),
+            ltsTiers: get('LTS_TIERS', 1),
             exchangeBeta: 0.8
         };
     }

@@ -34,6 +34,10 @@ const P_DTLAZY: u32 = 13u;
 const P_SRC: u32 = 14u;
 const P_EXCHBETA: u32 = 15u;
 const P_NP: u32 = 16u;
+const P_LTSK: u32 = 17u;
+const P_K: u32 = 18u;
+const P_TAIL: u32 = 19u;
+const P_NLIST: u32 = 20u;
 
 @group(0) @binding(0) var<storage, read> params: array<f32>;
 
@@ -65,6 +69,17 @@ const P_NP: u32 = 16u;
 @group(0) @binding(8) var<storage, read> cplF: array<f32>;
 @group(0) @binding(9) var<storage, read_write> cplS: array<f32>;
 @group(0) @binding(10) var<storage, read> pin: array<u32>;   // [nt] pinned cells
+
+// LTS (M3): tiered local timestepping — power-of-two tiers, the engine's
+// halving scheme (ExplicitInertialSolver.cpp runMacroCycle):
+//   tierBuf: [0,nt) cell tier | [nt,nt+ne) face tier (255 = inactive/walled)
+//   cellList/edgeList: compacted per-tier work lists (built at rebuild)
+//   cellCount/edgeCount: atomic counts per tier (read back at rebuild)
+@group(0) @binding(11) var<storage, read_write> tierBuf: array<u32>;
+@group(0) @binding(12) var<storage, read_write> cellList: array<u32>;
+@group(0) @binding(13) var<storage, read_write> cellCount: array<atomic<u32>>;
+@group(0) @binding(14) var<storage, read_write> edgeList: array<u32>;
+@group(0) @binding(15) var<storage, read_write> edgeCount: array<atomic<u32>>;
 
 const F32_1E30: f32 = 1e30;
 const F32_1E_12: f32 = 1e-12;
@@ -287,4 +302,211 @@ fn cflReduce(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     dt = min(dt, params[P_MAXDT]);
     atomicMin(&red[1], bitcast<u32>(dt));
+}
+
+// ---------------------------------------------------------------------------
+// LTS v2 (M3): tiered local timestepping, port of the engine's halving scheme
+// (ExplicitInertialSolver.cpp). K = params[P_LTSK] tiers; tier k fires every
+// 2^k base substeps with dt = 2^k·dt0. Face tier = min of incident cell tiers
+// so a face always integrates at the sharper side's cadence; every face firing
+// books ±dM into per-side accumulators (faccL/faccR) which the cell pass
+// drains+zeroes at the cell's own cadence — conservation across tier
+// interfaces is exact by construction.
+// ---------------------------------------------------------------------------
+
+// ---- settleAcc: apply + clear pending face accumulators (settleAccumulators)
+@compute @workgroup_size(64)
+fn settleAcc(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= u32(params[P_NT])) { return; }
+    let ptrBase = 2u * u32(params[P_NE]);
+    let p0 = topo[ptrBase + i];
+    let p1 = topo[ptrBase + i + 1u];
+    let edgeBase = ptrBase + u32(params[P_NT]) + 1u;
+    var pending: f32 = 0.0;
+    for (var p = p0; p < p1; p++) {
+        let e = topo[edgeBase + p];
+        let s = geoF[8u * u32(params[P_NE]) + p];
+        if (s > 0.0) {
+            pending += qbuf[u32(params[P_NE]) + e];
+            qbuf[u32(params[P_NE]) + e] = 0.0;
+        } else {
+            pending += qbuf[2u * u32(params[P_NE]) + e];
+            qbuf[2u * u32(params[P_NE]) + e] = 0.0;
+        }
+    }
+    if (pending == 0.0) { return; }
+    let v = max(state[i] + pending, 0.0);
+    state[i] = v;
+    let d = v / geoA[u32(params[P_NT]) + i];
+    state[2u * u32(params[P_NT]) + i] = d;
+    state[u32(params[P_NT]) + i] = geoA[i] + d;
+}
+
+// ---- tierAssign: CFL tier per active cell + compaction (runs AFTER cflReduce)
+// syncAndRebuild() step 4: ratio = dt_cell/dt0; tk = ratio>=2 ? min(K-1,
+// floor(log2(ratio))) : 0; coupling/pinned cells pin to tier 0.
+@compute @workgroup_size(64)
+fn tierAssign(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= u32(params[P_NT])) { return; }
+    if (wk[i] == 0u) { tierBuf[i] = 255u; return; }
+    let K = u32(params[P_LTSK]);
+    let dt0 = bitcast<f32>(atomicLoad(&red[1]));
+    let h = state[2u * u32(params[P_NT]) + i];
+    var speed: f32 = 0.0;
+    if (h > F32_1E_6) {
+        let qm = sqrt(state[3u * u32(params[P_NT]) + i] * state[3u * u32(params[P_NT]) + i] + state[4u * u32(params[P_NT]) + i] * state[4u * u32(params[P_NT]) + i]);
+        speed = qm / h;
+    }
+    var dt: f32 = F32_1E30;
+    if (h > params[P_DRY]) {
+        let c = sqrt(params[P_G] * h) + speed;
+        dt = select(F32_1E30, params[P_CFL] * geoA[4u * u32(params[P_NT]) + i] / c, c > F32_1E_12);
+    }
+    dt = min(dt, params[P_MAXDT]);
+    var tk: u32 = 0u;
+    if (K > 1u) {
+        let ratio = dt / dt0;
+        if (ratio >= 2.0) { tk = min(K - 1u, u32(floor(log2(ratio)))); }
+        if (pin[i] != 0u) { tk = 0u; }
+    }
+    tierBuf[i] = tk;
+    let pos = atomicAdd(&cellCount[tk], 1u);
+    cellList[tk * u32(params[P_NT]) + pos] = i;
+}
+
+// ---- faceTierAssign: face tier = min(cell tiers) + compaction; walled faces
+// carry no stale momentum (q = 0, like the engine's rebuild).
+@compute @workgroup_size(64)
+fn faceTierAssign(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let e = gid.x;
+    if (e >= u32(params[P_NE])) { return; }
+    let a = topo[2u * e + 0u];
+    let b = topo[2u * e + 1u];
+    if (wk[a] == 0u || wk[b] == 0u) {
+        qbuf[e] = 0.0;
+        tierBuf[u32(params[P_NT]) + e] = 255u;
+        return;
+    }
+    let ft = min(tierBuf[a], tierBuf[b]);
+    tierBuf[u32(params[P_NT]) + e] = ft;
+    let pos = atomicAdd(&edgeCount[ft], 1u);
+    edgeList[ft * u32(params[P_NE]) + pos] = e;
+}
+
+// ---- degenTier/degenFaceTier: tail — collapse the active set to tier 0 so a
+// single global-dt substep lands the window exactly (advance() tail branch).
+@compute @workgroup_size(64)
+fn degenTier(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= u32(params[P_NT])) { return; }
+    tierBuf[i] = select(255u, 0u, wk[i] != 0u);
+}
+
+@compute @workgroup_size(64)
+fn degenFaceTier(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let e = gid.x;
+    if (e >= u32(params[P_NE])) { return; }
+    let a = topo[2u * e + 0u];
+    let b = topo[2u * e + 1u];
+    tierBuf[u32(params[P_NT]) + e] = select(255u, 0u, wk[a] != 0u && wk[b] != 0u);
+}
+
+// ---- faceFluxLts: local-inertial update for one tier's face list.
+// dt = params[P_DT] (already scaled to 2^k·dt0 by the dispatcher). The
+// accumulators are NOT cleared here — the cell pass drains them (a slow cell
+// gathers the sum of its fast-side bookings over its own interval). Positivity
+// budget divided by refire = 2^(tier_exp − face_tier): a face that fires
+// multiple times within the exporter's cell cycle takes a β/3 share each time.
+@compute @workgroup_size(64)
+fn faceFluxLts(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let pos = gid.x;
+    if (pos >= u32(params[P_NLIST])) { return; }
+    let k = u32(params[P_K]);
+    let tail = u32(params[P_TAIL]);
+    let e = select(edgeList[k * u32(params[P_NE]) + pos], pos, tail != 0u);
+    if (tail != 0u && tierBuf[u32(params[P_NT]) + e] != k) { return; }
+    let a = topo[2u * e + 0u];
+    let b = topo[2u * e + 1u];
+    let headA = state[u32(params[P_NT]) + a];
+    let headB = state[u32(params[P_NT]) + b];
+    let hf = max(headA, headB) - geoF[5u * u32(params[P_NE]) + e];
+    if (hf <= params[P_DRY]) {
+        qbuf[e] = 0.0;
+        return;
+    }
+    var qhat: f32 = qbuf[e];
+    var q_mag: f32 = abs(qbuf[e]);
+    let qfx = 0.5 * (state[3u * u32(params[P_NT]) + a] + state[3u * u32(params[P_NT]) + b]);
+    let qfy = 0.5 * (state[4u * u32(params[P_NT]) + a] + state[4u * u32(params[P_NT]) + b]);
+    let qn = qfx * geoF[3u * u32(params[P_NE]) + e] + qfy * geoF[4u * u32(params[P_NE]) + e];
+    qhat = params[P_THETA] * qbuf[e] + (1.0 - params[P_THETA]) * qn;
+    q_mag = max(q_mag, sqrt(qfx * qfx + qfy * qfy));
+    var deta = headB - headA;
+    if (abs(deta) < params[P_DEAD]) { deta = 0.0; }
+    let slope = deta * geoF[1u * u32(params[P_NE]) + e];
+    let h73 = hf * hf * pow(hf, 0.33333334);
+    let num = qhat - params[P_G] * hf * params[P_DT] * slope;
+    let den = 1.0 + params[P_G] * params[P_DT] * geoF[2u * u32(params[P_NE]) + e] * q_mag / h73;
+    var qn1 = num / den;
+    let qcap = params[P_FROUDE] * hf * sqrt(params[P_G] * hf);
+    qn1 = clamp(qn1, -qcap, qcap);
+    let exp_cell = select(b, a, qn1 > 0.0);
+    let refire = 1u << (tierBuf[exp_cell] - tierBuf[u32(params[P_NT]) + e]);
+    let budget = params[P_BETA] * max(state[exp_cell], 0.0) / f32(refire);
+    let take = abs(qn1) * geoF[e] * params[P_DT];
+    if (take > budget) {
+        qn1 *= select(0.0, budget / take, take > 0.0);
+    }
+    qbuf[e] = qn1;
+    let dM = qn1 * geoF[e] * params[P_DT];
+    qbuf[u32(params[P_NE]) + e] -= dM;       // faccL (book, no clear)
+    qbuf[2u * u32(params[P_NE]) + e] += dM;  // faccR
+}
+
+// ---- cellUpdateLts: one tier's cell list — gather + clear own-side face
+// accumulators, apply sources, closure + Perot (fireCells in the engine).
+@compute @workgroup_size(64)
+fn cellUpdateLts(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let pos = gid.x;
+    if (pos >= u32(params[P_NLIST])) { return; }
+    let k = u32(params[P_K]);
+    let tail = u32(params[P_TAIL]);
+    let i = select(cellList[k * u32(params[P_NT]) + pos], pos, tail != 0u);
+    if (tail != 0u && tierBuf[i] != k) { return; }
+    let ptrBase = 2u * u32(params[P_NE]);
+    let p0 = topo[ptrBase + i];
+    let p1 = topo[ptrBase + i + 1u];
+    let edgeBase = ptrBase + u32(params[P_NT]) + 1u;
+    var flux_m3: f32 = 0.0;
+    for (var p = p0; p < p1; p++) {
+        let e = topo[edgeBase + p];
+        let s = geoF[8u * u32(params[P_NE]) + p];
+        if (s > 0.0) {
+            flux_m3 += qbuf[u32(params[P_NE]) + e];
+            qbuf[u32(params[P_NE]) + e] = 0.0;
+        } else {
+            flux_m3 += qbuf[2u * u32(params[P_NE]) + e];
+            qbuf[2u * u32(params[P_NE]) + e] = 0.0;
+        }
+    }
+    let src = params[P_SRC];
+    let v = max(state[i] + flux_m3 + params[P_DT] * src * geoA[u32(params[P_NT]) + i], 0.0);
+    state[i] = v;
+    let d = v / geoA[u32(params[P_NT]) + i];
+    state[2u * u32(params[P_NT]) + i] = d;
+    state[u32(params[P_NT]) + i] = geoA[i] + d;
+    var sx: f32 = 0.0;
+    var sy: f32 = 0.0;
+    for (var p = p0; p < p1; p++) {
+        let e = topo[edgeBase + p];
+        let s = geoF[8u * u32(params[P_NE]) + p];
+        let f = s * qbuf[e] * geoF[e];
+        sx += f * (geoF[6u * u32(params[P_NE]) + e] - geoA[2u * u32(params[P_NT]) + i]);
+        sy += f * (geoF[7u * u32(params[P_NE]) + e] - geoA[3u * u32(params[P_NT]) + i]);
+    }
+    let inv_a = 1.0 / geoA[u32(params[P_NT]) + i];
+    state[3u * u32(params[P_NT]) + i] = sx * inv_a;
+    state[4u * u32(params[P_NT]) + i] = sy * inv_a;
 }

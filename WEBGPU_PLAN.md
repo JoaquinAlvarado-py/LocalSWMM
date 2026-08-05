@@ -286,6 +286,30 @@ y acople 1D→2D coinciden con la referencia del motor.
 2. **Rain NATURAL_NEIGHBOUR** en la lluvia uniforme del split (hoy: media de
    gages por ventana).
 
+### LTS v2 (M3) — hecho
+
+Tiered local timestepping en GPU, port del esquema halving del motor
+(`ExplicitInertialSolver.cpp` runMacroCycle): tier k de una celda se dispara
+cada 2^k substeps con Δt = 2^k·dt0; face tier = min(celdas); cada firing de
+cara bookea ±dM en acumuladores por lado (faccL/faccR) que el cell pass drena
+en su cadencia — conservación exacta por construcción (mismos productos f32,
+bookeados en tiempos distintos). Budget de positividad dividido por
+refire = 2^(tier_exp − face_tier). Todo el macro ciclo en un solo encoder
+(batching: 0.8 → 0.13 ms/substep).
+
+- Kernels nuevos: settleAcc, tierAssign (CFL ratio → tier + compactación con
+  atomics), faceTierAssign, degenTier/degenFaceTier (tail), faceFluxLts,
+  cellUpdateLts. K=1 mantiene el path bit-idéntico del marcher M1.
+- Validez: M1 8-cell y 5k con `--lts 4` → números idénticos a K=1 (cons 0.00%,
+  meanΔ 1.1e-6, corr 0.923); bench Bellinge 48 h: 3372 s (K=1) → **1830 s**
+  (LTS, 13.8M substeps @ 0.13 ms). El dt0 del bench rain-only colapsa a ~3.5 ms
+  por UNA celda tier-0 (sin drenajes — el run acoplado de producción tiene
+  ~1900 celdas tier-0 con dt0 ~0.25 s → expectativa ~1M substeps → ~3-5 min).
+- Guard f32: piso dt0 = 1e-3 s (una velocidad Perot patológica q/h en f32 puede
+  llevar el CFL min a ~1e-30 y colgar el march — `t += nsub·dt ≈ 0`; el motor
+  en f64 nunca lo alcanza). Verificado: sin el piso el bench colgaba (TDR).
+- Diagnóstico: `console.log('LTS[...]')` por rebuild cada 64 (dt0 + tiers).
+
 ## Referencias
 
 - Motor (copia): `third_party/openswmm-engine/src/engine/2d/solver/ExplicitInertialSolver.cpp`
