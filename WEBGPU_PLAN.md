@@ -333,24 +333,31 @@ outfalls (router), fuera del marcher.
 - El worker de producción ya NO rechaza modelos con coupling por vértice:
   **Bellinge corre en GPU**.
 
+### Ventanas de acople multi-stride (N-strides) — hecho
+
+`runSplit` stridea exactamente `N = round(couplingWindowSec / routing_step)` pasos
+1D por ventana GPU (worker: 60 s → N = 6 para routing 10 s; N = 1 para modelos
+de 60 s — bit-idéntico al grid single-stride). Lección medida: un target
+basado en tiempo MERGEA ventanas por el offset de ~1 s de los landings (50 vs
+51 ventanas → −12 % de intercambio); el conteo exacto de strides lo evita.
+Fixture: 51 frames, 1707.0 m³ ✓ (paridad intacta).
+
 ### Estado honesto del rendimiento (Bellinge, medido)
 
 - Bench 2D-only (GPU, LTS): 48 h en 1830 s — pero el bench rain-only pincha
   UNA celda tier-0 con dt0 = 3.5 ms → 13.8M substeps (el run acoplado tiene
   ~1020 celdas tier-0 con dt0 ~0.25 s → ~700k substeps → ~2-4 min de 2D).
-- El split de producción (worker) mide: batches de ~10-120 ms (stride 3-5 ms,
-  advance 5-120 ms, exch ~3 ms) — pero el 1D a `VARIABLE_STEP NO` fijo (10 s)
-  es patológico para Bellinge (los strides del motor se degradan a ~1 s en
-  nodos rígidos) y 17 280 batches × ~100 ms ≈ 30 min solo de overhead →
-  el run completo ≈ horas vs 24 min del motor.
-- Ventanas de acople de 60 s (2 880 batches) rompieron la paridad del fixture
-  (1502 vs 1707 m³): la quirk mean-of-last-two de `set_lateral_inflow` se
-  desalinea con ventanas multi-stride — revertido; requiere re-derivar la
-  entrega de la cola para el multi-stride (siguiente paso).
-- Conclusión: el 2D GPU es rápido por substep (0.13 ms) pero el split de
-  producción NO gana al motor hoy: el 1D (fijo o variable) + el overhead por
-  batch dominan. El siguiente lever = ventanas multi-stride con la entrega de
-  la cola alineada + 1D VARIABLE (sin VARIABLE_STEP NO).
+- El split de producción (worker, ventanas de 60 s) mide: batches de
+  ~100-700 ms (stride 3-7 ms, advance 60-700 ms, exch ~2 ms) — el 1D de
+  Bellinge DEGRADA sus strides a ~0.5-4 s aun con VARIABLE_STEP NO (rigidez
+  de los nodos — el report del motor: min 0.38 s) → ~20-40k ventanas → el
+  run completo ≈ 25-35 min vs 24 min del motor. El 1D es el piso irreducible
+  (~20 min en ambos); el GPU quita el 2D de la CPU (~2-4 min del total) pero
+  el total no gana al motor hoy.
+- Conclusión: el 2D GPU es rápido por substep (0.13 ms) y la paridad del
+  split es sólida (M1/M2/vertex verdes) — para ganar de verdad al motor hay
+  que acelerar el 1D (fuera de alcance) o relajar el paso del 1D aceptando
+  menos fidelidad.
 
 ## Referencias
 
