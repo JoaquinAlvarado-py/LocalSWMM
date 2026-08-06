@@ -56,7 +56,7 @@ $EmscriptenToolchain = Join-Path $LocalEmsdk 'upstream/emscripten/cmake/Modules/
     "-DVCPKG_MANIFEST_DIR=$Root" `
     "-DOPENSWMM_BUILD_2D=ON" `
     "-DOPENSWMM_FORCE_SCALAR=ON" `
-    "-DOPENSWMM_ENABLE_LTO=OFF" `
+    "-DOPENSWMM_ENABLE_LTO=ON" `
     "-DOPENSWMM_WITH_GEOPACKAGE=OFF" `
     "-DOPENSWMM_WITH_HYPRE=OFF" `
     "-DOPENSWMM_BUILD_GPU_PLUGIN=OFF" `
@@ -67,6 +67,8 @@ $EmscriptenToolchain = Join-Path $LocalEmsdk 'upstream/emscripten/cmake/Modules/
     "-DOpenMP_C_FOUND=FALSE" `
     "-DOpenMP_CXX_FOUND=FALSE" `
     "-DCMAKE_DISABLE_FIND_PACKAGE_OpenMP=TRUE" `
+    "-DCMAKE_C_FLAGS=-msimd128" `
+    "-DCMAKE_CXX_FLAGS=-msimd128" `
     "-DOPENSWMM_WASM_INJECT_FILE=$Root/cmake/OpenSwmm2DWasm.cmake"
 
 & cmake --build $Build --target openswmm2d_wasm --parallel
@@ -74,11 +76,19 @@ $EmscriptenToolchain = Join-Path $LocalEmsdk 'upstream/emscripten/cmake/Modules/
 Copy-Item -Force (Join-Path $Root 'public/openswmm2d.wasm') (Join-Path $Root 'public/swmm6wasm.wasm')
 Copy-Item -Force (Join-Path $Root 'public/openswmm2d.js') (Join-Path $Root 'public/swmm6wasm.js')
 
-$EngineCommit = (& git -C $Source rev-parse HEAD).Trim()
-$EngineDescribe = (& git -C $Source describe --always --dirty --tags 2>$null)
+$EngineCommit = 'unknown'
+$EngineDescribe = 'unknown'
+try {
+    $EngineCommit = (& git -C $Source rev-parse HEAD 2>$null).Trim()
+    $EngineDescribe = (& git -C $Source describe --always --dirty --tags 2>$null).Trim()
+    if (-not $EngineDescribe) { $EngineDescribe = $EngineCommit }
+} catch {
+    # The submodule checkout is not always a git repo (plain copy) — the
+    # stamp falls back to 'unknown' instead of failing the build.
+}
 $Stamp = [ordered]@{
     engineCommit   = $EngineCommit
-    engineDescribe = if ($EngineDescribe) { $EngineDescribe.Trim() } else { $EngineCommit }
+    engineDescribe = $EngineDescribe
     builtAtUtc     = (Get-Date).ToUniversalTime().ToString('o')
 }
 $Stamp | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $Root 'public/openswmm2d.version.json')
