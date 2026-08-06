@@ -57,7 +57,9 @@ const api = {
     vertexXYZ: optional('swmm_2d_vertex_get_xyz_bulk', 'number', ['number', 'number', 'number', 'number']),
     nodeCount: optional('swmm_node_count', 'number', ['number']),
     nodeHeads: optional('swmm_node_get_heads_bulk', 'number', ['number', 'number', 'number']),
-    nodeIndex: optional('swmm_node_index', 'number', ['number', 'string'])
+    nodeIndex: optional('swmm_node_index', 'number', ['number', 'string']),
+    solverSteps: optional('swmm_2d_get_solver_steps', 'number', ['number', 'number']),
+    solverLastStep: optional('swmm_2d_get_solver_last_step', 'number', ['number', 'number'])
 };
 
 function check(code, op) { if (code !== 0) throw new Error(`${op} failed with code ${code}`); }
@@ -122,13 +124,22 @@ do {
         check(api.heads(engine, headPtr), 'heads');
         check(api.maxVelocities(engine, velPtr), 'velocities');
         if (nodeHeadPtr) check(api.nodeHeads(engine, nodeHeadPtr, nNodes), 'nodeHeads');
-        frames.push({
+        const frame = {
             tSec: elapsedSec,
             depth: Array.from(readDoubles(depthPtr, nt)),
             head: Array.from(readDoubles(headPtr, nt)),
             velocity: Array.from(readDoubles(velPtr, nt)),
             nodeHeads: nodeHeadPtr ? Array.from(readDoubles(nodeHeadPtr, nNodes)) : null
-        });
+        };
+        // solver stats (the dt0 / substep cadence — for the GPU-vs-engine
+        // dt0-collapse investigation)
+        if (api.solverSteps && api.solverLastStep) {
+            const sp = Module._malloc(8), lp = Module._malloc(8);
+            if (api.solverSteps(engine, sp) === 0) frame.solverSteps = Module.getValue(sp, 'i64');
+            if (api.solverLastStep(engine, lp) === 0) frame.lastStep = Module.getValue(lp, 'double');
+            Module._free(sp); Module._free(lp);
+        }
+        frames.push(frame);
         nextFrameSec = elapsedSec + intervalSec;
         if (Date.now() - lastProgress > 10000) {
             console.error(`  ... t=${(elapsedSec / 60).toFixed(1)} min, frames=${frames.length}`);

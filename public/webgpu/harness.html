@@ -423,7 +423,10 @@ async function runCoupled(device, fixture, params) {
         // fixed routing steps: the 1D-only adaptive step (1s/120s) does not
         // match the coupled engine's ~60s co-advance grid; pinning to
         // ROUTING_STEP keeps the stride landings on the reference's grid.
-        .replace(/^(ROUTING_STEP\s+.*)$/mi, '$1\nVARIABLE_STEP        NO');
+        // (Write VARIABLE_STEP 0, not NO: the engine's from_chars parser
+        // fails on "NO" and keeps the 0.75 adaptive default.)
+        .replace(/^VARIABLE_STEP\s+\S+.*$/mi, 'VARIABLE_STEP        0')
+        .replace(/^(ROUTING_STEP\s+.*)$/mi, '$1\nVARIABLE_STEP        0');
 
     // --- the 1D engine in-page ---
     const glue = await fetch('../openswmm2d.js?v=' + Date.now()).then(r => { if (!r.ok) throw new Error('glue HTTP ' + r.status); return r.text(); });

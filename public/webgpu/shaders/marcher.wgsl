@@ -469,6 +469,9 @@ fn degenFaceTier(@builtin(global_invocation_id) gid: vec3<u32>) {
 // gathers the sum of its fast-side bookings over its own interval). Positivity
 // budget divided by refire = 2^(tier_exp − face_tier): a face that fires
 // multiple times within the exporter's cell cycle takes a β/3 share each time.
+// Stale list entries (a face whose cells are no longer both active — tier
+// 255 in the fresh map) are zeroed: the refire shift would be undefined and
+// a stale booking would land in a cell that never drains it.
 @compute @workgroup_size(64)
 fn faceFluxLts(@builtin(global_invocation_id) gid: vec3<u32>) {
     let pos = gid.x;
@@ -477,6 +480,7 @@ fn faceFluxLts(@builtin(global_invocation_id) gid: vec3<u32>) {
     let tail = u32(params[P_TAIL]);
     let e = select(edgeList[k * u32(params[P_NE]) + pos], pos, tail != 0u);
     if (tail != 0u && tierBuf[u32(params[P_NT]) + e] != k) { return; }
+    if (tierBuf[u32(params[P_NT]) + e] == 255u) { qbuf[e] = 0.0; return; }
     let a = topo[2u * e + 0u];
     let b = topo[2u * e + 1u];
     let headA = state[u32(params[P_NT]) + a];
