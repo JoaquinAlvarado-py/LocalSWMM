@@ -54,6 +54,10 @@ try {
         out.arrow = fc.features[0] && { size: fc.features[0].properties.size, angle: Math.round(fc.features[0].properties.angle), n: fc.features.length };
         // skip threshold
         out.arrowSkip = Mesh2DRender.velocityArrows(mesh, [0.0005], 2.0, vx, vy).features.length;
+        // dry contour regression: a constant zero-depth field must not paint
+        // the whole mesh as a blue contour band.
+        out.dryLevels = Mesh2DRender.levelsAuto([0, 0, 0], 8).length;
+        out.dryBands = Mesh2DRender.contourBands(mesh, [0, 0, 0], [0, 0.125], 0.001).features.length;
         // 2) robust frame max (same formula as results.js)
         const robust = (arr) => { let fMax = 0; for (let i = 0; i < arr.length; i++) if (arr[i] > fMax) fMax = arr[i]; if (fMax <= 0) return 0.001; const s = Array.from(arr).sort((a, b) => a - b); const p99 = s[Math.floor(s.length * 0.99)]; return (p99 > 0 && fMax > 1.5 * p99) ? p99 * 1.5 : fMax; };
         const spread = new Array(34000).fill(0.5); spread[100] = 6.0; // one outlier channel cell
@@ -73,10 +77,22 @@ try {
             let nonTransparent = 0; for (let i = 3; i < img.length; i += 4) if (img[i] > 0) nonTransparent++;
             out.iconPixels = nonTransparent;
         } catch (e) { out.glErr = String(e); }
+        // The completion marker may contain non-finite values. It must not
+        // turn the KPI cards into invalid values or throw during repaint.
+        window.display2DResults({
+            triangleIds: ['M2D_1'],
+            frames: [
+                { elapsedMs: 60000, depth: [0.4], head: [1], velocity: [0.2] },
+                { elapsedMs: 0, depth: [Infinity], head: [Infinity], velocity: [Infinity] }
+            ],
+            diagnostics: { massBalance: { continuityError: 0 } }
+        });
+        const resultText = document.getElementById('results-content').textContent;
+        out.resultKpisFinite = resultText.includes('0.400') && resultText.includes('0.200');
         return out;
     })()`, true);
     console.log(JSON.stringify(r, null, 2));
-    if (!r || r.shaderCompile !== 'OK' || !r.arrow || r.arrowSkip !== 0 || !r.iconPixels) { console.error('FAIL'); process.exitCode = 1; }
+    if (!r || r.shaderCompile !== 'OK' || !r.arrow || r.arrowSkip !== 0 || r.dryLevels !== 0 || r.dryBands !== 0 || !r.iconPixels || !r.resultKpisFinite) { console.error('FAIL'); process.exitCode = 1; }
     else console.log('PASS');
 } finally {
     try { cdp && cdp.ws.close(); } catch { }
