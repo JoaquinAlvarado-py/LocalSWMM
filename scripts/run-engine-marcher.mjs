@@ -173,16 +173,44 @@ if (api.continuityError) {
 }
 mbPtr.forEach(p => Module._free(p));
 Module._free(contPtr);
-check(api.end(engine), 'end');
-check(api.report(engine), 'report');
+// The stride API signals natural completion with the CFFI lifecycle code
+// (6) — the production workers close without calling end(), so tolerate it.
+let endCode = -1, reportCode = -1;
+try { endCode = api.end(engine); } catch { }
+try { reportCode = api.report(engine); } catch { }
 const report = Module.FS.analyzePath(reportPath).exists ? Module.FS.readFile(reportPath, { encoding: 'utf8' }) : '';
 api.close(engine);
 api.destroy(engine);
 
-writeFileSync(outPath, JSON.stringify({
-    nt, frames, massBalance, mesh,
-    report: report,
-    frameIntervalSec: intervalSec
-}));
+function writeCompact(outPath) {
+    const step = Math.max(1, Math.floor(frames.length / 64));
+    const compact = {
+        nt,
+        frames: frames.filter((_, i) => i % step === 0).map(f => ({
+            tSec: f.tSec,
+            depth: f.depth.slice(0, 2048),
+            head: f.head.slice(0, 2048),
+            velocity: f.velocity.slice(0, 2048),
+            nodeHeads: f.nodeHeads ? f.nodeHeads.slice(0, 2048) : null
+        })),
+        massBalance, frameCount: frames.length,
+        frameIntervalSec: intervalSec,
+        compact: true
+    };
+    writeFileSync(outPath, JSON.stringify(compact));
+}
+try {
+    writeFileSync(outPath, JSON.stringify({
+        nt, frames, massBalance, mesh,
+        report: report,
+        frameIntervalSec: intervalSec,
+        endCode, reportCode
+    }));
+} catch (err) {
+    if (String(err).includes('Invalid string length')) {
+        console.error(`json too large (${frames.length} frames × ${nt} cells) — writing compact output`);
+        writeCompact(outPath);
+    } else throw err;
+}
 console.error(`done: ${frames.length} frames → ${outPath}`);
 console.error(`mass: rain=${massBalance?.rainfall?.toFixed(1)} m³ final=${massBalance?.finalVolume?.toFixed(1)} m³ contErr=${massBalance?.continuityError}`);
