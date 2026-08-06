@@ -3,7 +3,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$SCRIPT_DIR")"
-SOURCE="$ROOT/third_party/openswmm-engine"
+SOURCE="$ROOT/cmake/wasm"
 BUILD="$ROOT/build/openswmm2d-wasm-emscripten"
 LOCAL_EMSDK="$ROOT/.tools/emsdk"
 VCPKG_ROOT="${VCPKG_ROOT:-$ROOT/.tools/vcpkg}"
@@ -15,7 +15,7 @@ if ! command -v emcmake &> /dev/null; then
     fi
 fi
 
-if [ ! -f "$SOURCE/CMakeLists.txt" ]; then
+if [ ! -f "$ROOT/third_party/openswmm-engine/CMakeLists.txt" ]; then
     echo "Error: OpenSWMM source is missing. Run: git submodule update --init --recursive"
     exit 1
 fi
@@ -44,24 +44,20 @@ emcmake cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
     -DOPENSWMM_FORCE_SCALAR=ON \
     -DOPENSWMM_ENABLE_LTO=OFF \
     -DOPENSWMM_WITH_GEOPACKAGE=OFF \
-    -DOPENSWMM_WITH_HYPRE=OFF \
     -DOPENSWMM_BUILD_GPU_PLUGIN=OFF \
     -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON \
     -DOPENSWMM_BUILD_TESTS=OFF \
-    -DOPENSWMM_BUILD_CLI=OFF \
-    -DOPENSWMM_BUILD_SHARED=OFF \
     -DOpenMP_C_FOUND=FALSE \
-    -DOpenMP_CXX_FOUND=FALSE \
     -DCMAKE_DISABLE_FIND_PACKAGE_OpenMP=TRUE \
-    -DOPENSWMM_WASM_INJECT_FILE="$ROOT/cmake/OpenSwmm2DWasm.cmake"
+    -DOPENSWMM_INSTALL=OFF
 
 cmake --build "$BUILD" --target openswmm2d_wasm --parallel
 
 cp -f "$ROOT/public/openswmm2d.wasm" "$ROOT/public/swmm6wasm.wasm"
 cp -f "$ROOT/public/openswmm2d.js" "$ROOT/public/swmm6wasm.js"
 
-ENGINE_COMMIT=$(git -C "$SOURCE" rev-parse HEAD || echo "unknown")
-ENGINE_DESCRIBE=$(git -C "$SOURCE" describe --always --dirty --tags 2>/dev/null || echo "$ENGINE_COMMIT")
+ENGINE_COMMIT=$(git -C "$ROOT/third_party/openswmm-engine" rev-parse HEAD || echo "unknown")
+ENGINE_DESCRIBE=$(git -C "$ROOT/third_party/openswmm-engine" describe --always --dirty --tags 2>/dev/null || echo "$ENGINE_COMMIT")
 DATE_NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 cat <<EOF > "$ROOT/public/openswmm2d.version.json"
