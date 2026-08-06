@@ -1185,7 +1185,11 @@
             try {
                 return await attempt('webgpu/gpu2dWorker.js');
             } catch (e) {
-                if (!/WEBGPU_|VERTEX_COUPLING/.test(e.workerMessage || e.message || '')) throw e;
+                // COUPLING_STATE_NONFINITE: the split's 1D diverged. The WASM
+                // co-advance runs the full INP through the engine's own
+                // stepping, so retrying there is worthwhile rather than
+                // surfacing a poisoned 2D field.
+                if (!/WEBGPU_|VERTEX_COUPLING|COUPLING_STATE_NONFINITE/.test(e.workerMessage || e.message || '')) throw e;
                 console.warn('WebGPU 2D unavailable, falling back to the WASM worker:', e.message);
                 return await attempt('openSwmm2dWorker.js');
             }

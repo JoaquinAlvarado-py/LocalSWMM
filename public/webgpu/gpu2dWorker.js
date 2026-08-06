@@ -89,6 +89,13 @@ async function run2d(payload) {
     if (!mesh.triangles.length) throw new Error('No [2D_TRIANGLES] in the generated input.');
     const opts = CouplingSplit.parse2DOptions(inp);
     const coupling = CouplingSplit.parseCoupling(inp, mesh);
+    if (coupling.unresolved && coupling.unresolved.length) {
+        self.postMessage({
+            type: 'stderr',
+            text: `[OpenSWMM 2D] ${coupling.unresolved.length} coupling point(s) name a node that is not in the model and were dropped: `
+                + coupling.unresolved.slice(0, 10).join(', ') + (coupling.unresolved.length > 10 ? ', …' : '')
+        });
+    }
 
     const device = await requestGpuDevice();
     status('gpu-ready');
@@ -126,7 +133,6 @@ async function run2d(payload) {
         Module, api, engine, marcher, coupling,
         simEndSec, frameIntervalSec, rainAt,
         couplingWindowSec: 60,
-        routingStepSec: CouplingSplit.routingStepSec(inp),
         onStatus: status,
         onProgress: (elapsedMs, t) => self.postMessage({ type: 'progress2d', elapsedMs, timings: t })
     });
