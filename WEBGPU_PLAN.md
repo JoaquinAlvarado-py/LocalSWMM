@@ -451,6 +451,74 @@ split.)
   y escribe salida compacta cuando el JSON de Bellinge excede el límite de
   string de Node (`Invalid string length`).
 
+## Sesión 2026-08-06: el pin de `VARIABLE_STEP` era incorrecto (medido)
+
+### Corrección: el acelerador 1D de la sesión anterior rompía el 1D
+
+`build1DInp` reescribía `VARIABLE_STEP` a `0` para forzar strides fijos de
+`ROUTING_STEP`. Se midió solo el wall time; **nunca se midió la continuidad**.
+Comparación controlada sobre `bellinge-8h.inp` (mismo INP, las mismas 1020
+`set_pond_area`, sin drenaje GPU en ninguno de los dos brazos):
+
+| | pin `VARIABLE_STEP 0` | `VARIABLE_STEP 0.75` del modelo |
+|---|---|---|
+| paso interno | 10,00 s fijo | 1,50 s medio (mín 0,50) |
+| strides / wall (8 h) | 2.874 / 4,5 s | 19.067 / 18,5 s |
+| pasos sin converger | 40,19 % | 32,79 % |
+| **heads de nodos acoplados no finitos** | **645 de 1020** | **0 de 1020** |
+| head máximo | 2,07e+300 | 49,89 m |
+| continuidad de routing | bloque corrupto por NaN | +7,33 % |
+
+Bellinge declara `MINIMUM_STEP 0.5`: el pin corría 20× más grueso de lo que el
+modelo pide. Esos heads son exactamente los que `runSplit` congela en
+`cplF[k*9+4]` y entrega al kernel `couplingExchange`, que no tiene guarda de
+NaN — el campo 2D quedaba contaminado en silencio.
+
+Un paso **fijo de 1 s** reproduce la respuesta adaptativa (+6,64 % de
+continuidad) pero cuesta 23 s contra 18,5 s: el paso fijo no tiene ninguna
+ventaja acá. El pin ahorraba ~90 s sobre un run de 48 h de ~11 min.
+
+### Lo aplicado
+
+1. **`build1DInp` respeta el paso de tiempo del modelo.** Se eliminó la
+   reescritura de `VARIABLE_STEP`.
+2. **La ventana de acople se llena por TIEMPO, no por conteo de strides.** Con
+   paso adaptativo un stride aterriza entre `MINIMUM_STEP` y `ROUTING_STEP`, así
+   que `nStrides = round(window/routing)` daba ventanas de 3 a 60 s. El
+   sobrepaso queda acotado a un paso interno y `setLatInflow(exch/dtBatch)` usa
+   el `dtBatch` real, así que la tasa entregada se autocorrige. El bucle
+   además corta si el motor deja de avanzar, en vez de girar para siempre.
+3. **Guarda de estado no finito** en `runSplit` (`COUPLING_STATE_NONFINITE`) y
+   puntos de acople con nodo inexistente descartados y reportados en vez de
+   convertirse en NaN.
+4. **Balance de masa real**: la lluvia se acumula por ventana
+   (`rate·dt·área`, el mismo término que aplican `cellUpdate`, `cellUpdateLts`
+   y `lazySources`) y la continuidad usa la convención del motor
+   `(in − out − Δalmacenado)/in`. Antes se devolvían `rainfall: 0` y
+   `continuityError: 0` cableados, que `results.js` pintaba como un chip verde
+   "2D Continuity 0.000 %". Ahora es `null` si no entró nada, y el chip se
+   esconde.
+
+### Gate nuevo: `scripts/verify-1d-split.mjs`
+
+Corre el tramo 1D exacto del split y falla si algún head de nodo acoplado se
+vuelve no finito o si la continuidad de routing sale de ±10 %. Verificado en
+ambos sentidos: **FAIL** contra el módulo anterior (nodo 24 explota a
+t=21.360 s), **PASS** contra el arreglo (1020 puntos finitos en 470 ventanas,
+continuidad 7,325 %). Acepta `--split <path>` para comparar revisiones.
+
+### Pendiente de revalidar
+
+Los fixtures `marcher-cpl` / `marcher-cplv` **no declaran** `VARIABLE_STEP`, y
+el código anterior se lo inyectaba; el default del motor resulta ser adaptativo
+(mín 0,50 s, medio 57,14 s), así que su grilla cambió: 63 strides / 50 ventanas
+contra 60 / 54. La continuidad 1D apenas se mueve (1,553 % contra 1,517 %) y el
+gate pasa, pero **la paridad GPU contra `marcher-cpl.ref.json` no se volvió a
+correr** — `scripts/test-gpu-worker.mjs` necesita Chrome con sesión gráfica.
+El script ya es multiplataforma (macOS/Linux/Windows, `CHROME_PATH` y `PYTHON`
+por entorno); falta ejecutarlo en una máquina con GPU antes de dar la paridad
+por buena.
+
 ## Referencias
 
 - Motor (copia): `third_party/openswmm-engine/src/engine/2d/solver/ExplicitInertialSolver.cpp`
