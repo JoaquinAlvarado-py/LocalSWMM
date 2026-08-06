@@ -379,14 +379,27 @@
                             for (var i = 0; i < rIdx.length; i++) {
                                 segments.push({ p1: rIdx[i], p2: rIdx[(i + 1) % rIdx.length], marker: 3 });
                             }
-                            // Polygon constraints represent exclusion areas
-                            // (e.g. building footprints), not just breaklines.
-                            // Add a Triangle hole so the hydraulic mesh cannot
-                            // create cells or flux faces through the polygon.
-                            var seed = interiorPoint(local, holeRings);
-                            if (seed && (!bndRing.length || pointInPolygon(seed, bndRing))) {
-                                holes.push({ x: seed[0], y: seed[1] });
-                                holeRings.push(local);
+                            // Cutting a Triangle hole removes cells, so it is
+                            // opt-in per layer ("block flow" in the mesh
+                            // dialog). Without the flag the polygon stays a
+                            // breakline: its edges constrain the triangulation
+                            // but water still crosses it.
+                            if (layer.asObstacle) {
+                                // A polygon that contains the whole domain
+                                // would delete every cell — a study-area
+                                // outline ticked as an obstacle by mistake.
+                                var swallowsDomain = bndRing.length > 0 && bndRing.every(function (p) {
+                                    return pointInPolygon(p, local);
+                                });
+                                if (swallowsDomain) {
+                                    warnings.push('Obstacle polygon contains the entire domain — ignored (it would remove every mesh cell).');
+                                } else {
+                                    var seed = interiorPoint(local, holeRings);
+                                    if (seed && (!bndRing.length || pointInPolygon(seed, bndRing))) {
+                                        holes.push({ x: seed[0], y: seed[1] });
+                                        holeRings.push(local);
+                                    }
+                                }
                             }
                         });
                     }
