@@ -12,6 +12,3 @@ build/
 
 # WebGPU harness fixtures (copied from scripts/verify-out at runtime)
 public/webgpu/fixtures/
-
-# engine checkout (separate repo; see .gitmodules)
-third_party/

@@ -54,6 +54,8 @@
             dryDepth: get('DRY_DEPTH', 0.001),
             maxTimestep: get('MAX_TIMESTEP', 10.0),
             ltsTiers: get('LTS_TIERS', 1),
+            rebuildCadence: Math.max(1, Math.round(get('REBUILD_CADENCE', 4))),
+            dtFloor: get('DT_FLOOR', 0.05),
             exchangeBeta: 0.8
         };
     }
@@ -246,14 +248,20 @@
     // does not match the co-advance grid). The existing VARIABLE_STEP line
     // is REPLACED (a second line would lose to the original's later position
     // in the parse — measured: Bellinge ran variable steps despite the pin).
+    // NOTE: the engine's OPTIONS parser reads VARIABLE_STEP with
+    // from_chars_double, which fails on "NO" and silently keeps the 0.75
+    // default — write "0" (parses to 0.0 → adaptive stepping disabled, fixed
+    // ROUTING_STEP strides). This is the single biggest 1D-side accelerator
+    // for Bellinge: without it the 1D runs ~230k CFL-limited internal steps
+    // (~0.5-4 s each) and the split pays per-landing overhead 20× more often.
     function build1DInp(text) {
         const hasVar = /^VARIABLE_STEP\s+\S+/m.test(text);
         return text
             .replace(/(^|\n)\[2D_[A-Z_]+\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
             .replace(/(^|\n)\[2D_OPTIONS\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
             .replace(/ALLOW_PONDING\s+NO/i, 'ALLOW_PONDING        YES')
-            .replace(/^VARIABLE_STEP\s+\S+.*$/mi, 'VARIABLE_STEP        NO')
-            .replace(/^(ROUTING_STEP\s+.*)$/mi, hasVar ? '$1' : '$1\nVARIABLE_STEP        NO');
+            .replace(/^VARIABLE_STEP\s+\S+.*$/mi, 'VARIABLE_STEP        0')
+            .replace(/^(ROUTING_STEP\s+.*)$/mi, hasVar ? '$1' : '$1\nVARIABLE_STEP        0');
     }
 
     function routingStepSec(text) {
@@ -431,6 +439,12 @@
             marcher.setCouplingData(cplF, zeroS);
             await marcher.advance(prevT, elapsed, rainAt ? rainAt(prevT) : 0);
             const t3 = performance.now();
+            if (marcher.options.debugCell >= 0) {
+                try {
+                    const cs = await marcher.cellState(marcher.options.debugCell);
+                    if (onProgress) onProgress(elapsed * 1000, { debugCell: { t: Math.round(elapsed), v: cs.vol, h: cs.head, d: cs.depth, qx: cs.qx, qy: cs.qy } });
+                } catch (e) { }
+            }
             const ex = await marcher.readExch();
             const t4 = performance.now();
             for (let k = 0; k < np; k++) {

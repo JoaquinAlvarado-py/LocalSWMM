@@ -107,7 +107,8 @@ async function run2d(payload) {
 
     const marcher = await WebGPUMarcher.create(device, mesh, Object.assign({}, opts, {
         couplingNp: coupling.points.length + coupling.vertexPoints.length,
-        couplingPoints: [...coupling.vertexPoints, ...coupling.points].map(p => ({ cell: p.cell }))
+        couplingPoints: [...coupling.vertexPoints, ...coupling.points].map(p => ({ cell: p.cell })),
+        debugCell: Number(payload.debugCell) || -1
     }));
     // Pond-capable coupling nodes: the engine flags them coupled â†’ can pond;
     // replicate with ALLOW_PONDING YES + the 2D footprint as ponded area.
