@@ -8,13 +8,19 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+// Chrome location per platform; override with CHROME_PATH.
+const CHROME = process.env.CHROME_PATH || (
+    process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+        : process.platform === 'win32' ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+            : 'google-chrome');
 const APP_PORT = 8080;
 const CDP_PORT = 9224;
 const CDP_HTTP = `http://127.0.0.1:${CDP_PORT}`;
 const APP_URL = `http://127.0.0.1:${APP_PORT}/`;
-const PROFILE = join(process.env.TEMP || 'C:\\Users\\joaqu\\AppData\\Local\\Temp', 'gpu-worker-' + Date.now());
-const LOG = join(process.env.TEMP || 'C:\\Users\\joaqu\\AppData\\Local\\Temp', 'gpu-worker-live.log');
+const TMP = process.env.TEMP || process.env.TMPDIR || '/tmp';
+const PROFILE = join(TMP, 'gpu-worker-' + Date.now());
+const LOG = join(TMP, 'gpu-worker-live.log');
+const PYTHON = process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
 try { appendFileSync(LOG, ''); } catch { }
 const live = (text) => { try { appendFileSync(LOG, text + '\n'); } catch { } };
 const inpArg = process.argv.indexOf('--inp');
@@ -38,7 +44,7 @@ const triangleCount = (inp.match(/^\[2D_TRIANGLES\]/m) ? inp.split(/^\[2D_TRIANG
 let server = null, chrome = null, cdp = null;
 try {
     if (!(await probe(`http://127.0.0.1:${APP_PORT}/api/status`))) {
-        server = spawn('python', ['server.py'], { cwd: ROOT, stdio: 'ignore' });
+        server = spawn(PYTHON, ['server.py'], { cwd: ROOT, stdio: 'ignore' });
         for (let i = 0; i < 30; i++) { if (await probe(`http://127.0.0.1:${APP_PORT}/api/status`)) break; await sleep(500); }
     }
     if (!(await probe(`${CDP_HTTP}/json/version`))) {

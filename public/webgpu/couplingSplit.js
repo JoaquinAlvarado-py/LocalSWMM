@@ -187,6 +187,10 @@
                         aPipeMax = Math.max(aPipeMax, conduitAreaM2(c));
                 if (aPipeMax > 0) p.area = Math.min(2.0, Math.max(0.05, 1.25 * aPipeMax));
             }
+            // Keep the INP name: an unresolved node would index heads[-1] →
+            // undefined → NaN in the exchange, so the caller drops the point
+            // and reports it rather than silently poisoning the 2D field.
+            p.nodeId = p.node;
             p.node = order.indexOf(p.node);
             return p;
         };
@@ -239,29 +243,48 @@
                 vertexPoints.push(p);
             }
         }
-        return { points, vertexPoints };
+        // Drop points whose node name is absent from the node sections; the
+        // caller surfaces `unresolved` so a bad map is visible instead of
+        // turning into NaN heads inside the coupling kernel.
+        const unresolved = [];
+        const resolved = (list) => list.filter(p => {
+            if (p.node >= 0) return true;
+            unresolved.push(p.nodeId);
+            return false;
+        });
+        return { points: resolved(points), vertexPoints: resolved(vertexPoints), unresolved };
     }
 
-    // The 1D-only INP: strip the 2D sections, let coupling nodes pond above
+    // The 1D-only INP: strip the 2D sections and let coupling nodes pond above
     // the brim (the engine flags coupled nodes pond-capable regardless of
-    // ALLOW_PONDING), and pin the routing step (the 1D-only adaptive step
-    // does not match the co-advance grid). The existing VARIABLE_STEP line
-    // is REPLACED (a second line would lose to the original's later position
-    // in the parse — measured: Bellinge ran variable steps despite the pin).
-    // NOTE: the engine's OPTIONS parser reads VARIABLE_STEP with
-    // from_chars_double, which fails on "NO" and silently keeps the 0.75
-    // default — write "0" (parses to 0.0 → adaptive stepping disabled, fixed
-    // ROUTING_STEP strides). This is the single biggest 1D-side accelerator
-    // for Bellinge: without it the 1D runs ~230k CFL-limited internal steps
-    // (~0.5-4 s each) and the split pays per-landing overhead 20× more often.
+    // ALLOW_PONDING).
+    //
+    // The model's OWN time stepping is preserved. An earlier revision pinned
+    // VARIABLE_STEP to 0 to force fixed ROUTING_STEP strides — measured on
+    // bellinge-8h (identical INP, same 1020 set_pond_area calls, no GPU drain
+    // in either arm):
+    //
+    //   VARIABLE_STEP 0    → 10.00 s fixed step, 2874 strides, 4.5 s wall,
+    //                        40.19 % of steps not converging,
+    //                        645 of 1020 coupling-node heads NON-FINITE
+    //                        (max 2.07e+300), routing continuity block
+    //                        corrupted by NaN.
+    //   model's 0.75       → 1.50 s mean step (min 0.50), 19067 strides,
+    //                        18.5 s wall, 32.79 % not converging,
+    //                        0 non-finite heads (max 49.89 m),
+    //                        routing continuity +7.33 %.
+    //
+    // Bellinge declares MINIMUM_STEP 0.5; the pin ran 20× coarser than the
+    // model asks for. A FIXED 1 s step reproduces the adaptive answer
+    // (+6.64 % continuity) but costs 23 s — adaptive is both cheaper and
+    // correct, so there is no fixed-step variant worth keeping. The pin
+    // bought ~90 s on a 48 h run of ~11 min and cost the entire 1D solution.
+    // See scripts/verify-1d-split.mjs for the regression gate.
     function build1DInp(text) {
-        const hasVar = /^VARIABLE_STEP\s+\S+/m.test(text);
         return text
             .replace(/(^|\n)\[2D_[A-Z_]+\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
             .replace(/(^|\n)\[2D_OPTIONS\][\s\S]*?(?=\n\[[^\]]+\]|$)/gi, '$1')
-            .replace(/ALLOW_PONDING\s+NO/i, 'ALLOW_PONDING        YES')
-            .replace(/^VARIABLE_STEP\s+\S+.*$/mi, 'VARIABLE_STEP        0')
-            .replace(/^(ROUTING_STEP\s+.*)$/mi, hasVar ? '$1' : '$1\nVARIABLE_STEP        0');
+            .replace(/ALLOW_PONDING\s+NO/i, 'ALLOW_PONDING        YES');
     }
 
     function routingStepSec(text) {
@@ -370,15 +393,13 @@
     // massBalance }. `api` must expose stride/nodeHeads/nodeDepths/nodeVolumes/
     // setLatInflow; `coupling.points` are tri-coupled, `coupling.vertexPoints`
     // vertex-coupled (engine order: vertex points first). `rainAt(tSec)`
-    // returns the uniform rain rate (m/s) for the window. The 1D strides
+    // returns the uniform rain rate (m/s) for the window. The 1D advances
     // `couplingWindowSec` of sim per GPU window (default 60 s): the engine
     // delivers each window's exchange through a queue at a uniform rate, so a
-    // 60 s coupling cadence is the M2-validated equivalence (the fixture's
-    // routing step is 60 s; production models with 10 s routing stride 6Ã— per
-    // window â€” 2,880 windows per 48 h instead of 17,280 batches).
+    // 60 s coupling cadence is the M2-validated equivalence.
     async function runSplit({ Module, api, engine, marcher, coupling, simEndSec,
                               frameIntervalSec, rainAt, onStatus, onProgress,
-                              couplingWindowSec, routingStepSec }) {
+                              couplingWindowSec }) {
         const nNodes = api.nodeCount(engine);          // returns the count directly
         const hPtr = Module._malloc(nNodes * 8), dPtr = Module._malloc(nNodes * 8), vPtr = Module._malloc(nNodes * 8);
         const elPtr = Module._malloc(8);
@@ -394,26 +415,32 @@
         const frames = [];
         let prevT = 0, elapsed = 0;
         const windowSec = Math.max(1, couplingWindowSec || 60);
-        const nStrides = Math.max(1, Math.min(200, Math.round(windowSec / (routingStepSec || 60))));
         let nextFrameSec = 0;
         let exch1d2d = 0, exch2d1d = 0;
+        // Rain enters every cell as dt·rate·area — cellUpdate, cellUpdateLts
+        // and lazySources in marcher.wgsl all apply the same term — so the
+        // domain footprint turns the window's rate into a volume.
+        let rainVolume = 0, domainArea = 0;
+        for (let i = 0; i < marcher.edges.nt; i++) domainArea += marcher.getTriArea(i);
         while (elapsed < simEndSec) {
             const t0 = performance.now();
-            // Stride the 1D EXACTLY nStrides routing steps per GPU window
-            // (nStrides = round(window / routing_step): 1 for a 60 s model —
-            // bit-identical to the single-stride grid that the mean-of-last-two
-            // delivery quirk was measured against — 6 for a 10 s model). A
-            // time-based target would merge windows on the ~1 s landing
-            // offset (measured: 50 vs 51 windows → −12 % exchange).
-            let guard = 0;
-            let strideErr = 0;
+            // Fill the window by TIME, not by stride count. The 1D runs the
+            // model's own adaptive step, so a stride lands anywhere between
+            // MINIMUM_STEP and ROUTING_STEP; a fixed count would yield windows
+            // from a few seconds to a full minute. Overshoot is bounded by one
+            // internal step, and the exchange below divides by the real
+            // dtBatch, so the delivered rate self-corrects.
+            const target = prevT + windowSec;
+            let strideErr = 0, stalled = 0, lastElapsed = elapsed;
             do {
                 strideErr = api.stride(engine, 1, elPtr);
                 if (strideErr !== 0) break;      // sim finished mid-window
                 elapsed = Module.getValue(elPtr, 'double') * 86400;
-            } while (guard++ < nStrides - 1 && elapsed < simEndSec);
+                if (elapsed > lastElapsed) { lastElapsed = elapsed; stalled = 0; }
+                else if (++stalled >= 8) break;  // engine no longer advancing
+            } while (elapsed < target && elapsed < simEndSec);
             if (strideErr !== 0 && elapsed < simEndSec) throw new Error('1D stride failed with code ' + strideErr);
-            if (elapsed <= prevT) continue;
+            if (elapsed <= prevT) break;         // no progress — stop, do not spin
             const t1 = performance.now();
             const dtBatch = elapsed - prevT;
             // freeze the 1D state (project units m / m / mÂ³)
@@ -426,18 +453,32 @@
             const vols = readDoubles(vPtr, nNodes);
             for (let k = 0; k < np; k++) {
                 const p = allPoints[k];
+                const h = heads[p.node], d = depths[p.node], v = vols[p.node];
+                // A diverged 1D solve produces NaN/Inf node state. The
+                // coupling kernel has no guard — it would feed the orifice law
+                // and silently poison the whole 2D field — so fail loudly
+                // here. The app treats this code as a fallback trigger and
+                // retries on the WASM co-advance worker.
+                if (!Number.isFinite(h) || !Number.isFinite(d) || !Number.isFinite(v)) {
+                    throw new Error(`COUPLING_STATE_NONFINITE: 1D node ${p.nodeId || p.node} `
+                        + `returned a non-finite state at t=${elapsed.toFixed(1)} s `
+                        + `(head=${h}, depth=${d}, volume=${v}). The 1D solve diverged; `
+                        + `refusing to feed it into the 2D exchange.`);
+                }
                 cplF[k * 9 + 0] = p.cell;
                 cplF[k * 9 + 1] = p.crown;
                 cplF[k * 9 + 2] = p.cd;
                 cplF[k * 9 + 3] = p.area;
-                cplF[k * 9 + 4] = heads[p.node];
-                cplF[k * 9 + 5] = depths[p.node];
-                cplF[k * 9 + 6] = vols[p.node];
+                cplF[k * 9 + 4] = h;
+                cplF[k * 9 + 5] = d;
+                cplF[k * 9 + 6] = v;
                 cplF[k * 9 + 7] = p.stPtr || 0;
                 cplF[k * 9 + 8] = p.stCnt || 0;
             }
+            const rainRate = rainAt ? rainAt(prevT) : 0;
             marcher.setCouplingData(cplF, zeroS);
-            await marcher.advance(prevT, elapsed, rainAt ? rainAt(prevT) : 0);
+            await marcher.advance(prevT, elapsed, rainRate);
+            rainVolume += rainRate * dtBatch * domainArea;
             const t3 = performance.now();
             if (marcher.options.debugCell >= 0) {
                 try {
@@ -500,15 +541,21 @@
             const s = await marcher.sample();
             for (let i = 0; i < s.vol.length; i++) finalVol += s.vol[i];
         }
+        // Continuity uses the engine's own convention (verified against
+        // swmm_2d_get_continuity_error): (in − out − Δstored) / in, as a
+        // fraction. It is NULL when nothing entered the domain, so the UI
+        // hides the chip rather than showing a fabricated 0 %.
+        const volIn = rainVolume + exch1d2d;
+        const volOut = exch2d1d;
         const massBalance = {
             initialVolume: 0,
             finalVolume: finalVol,
-            rainfall: 0,
+            rainfall: rainVolume,
             coupling1DTo2D: exch1d2d,
             coupling2DTo1D: exch2d1d,
             outfallIn: 0, outfallOut: 0, boundaryIn: 0, boundaryOut: 0,
             evaporation: 0,
-            continuityError: 0
+            continuityError: volIn > 0 ? (volIn - volOut - finalVol) / volIn : null
         };
         Module._free(hPtr); Module._free(dPtr); Module._free(vPtr); Module._free(elPtr);
         if (onStatus) onStatus('done');
