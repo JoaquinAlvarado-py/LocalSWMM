@@ -383,6 +383,74 @@ por las celdas tiny del mesh, no por la GPU.
   del tiempo en ambos — WebGPU no puede ganar porque el 2D no es el cuello**.
   El 2D GPU (con el piso) ≈ 4 min — a la par del motor.
 
+## Sesión 2026-08-05: aceleraciones aplicadas (medidas, no teoría)
+
+### Corrección del diagnóstico anterior
+
+Las cifras de arriba ("25-35 min", "el 1D es el ~90 %") están **obsoletas**:
+con el fix del VARIABLE_STEP pin (`build1DInp` reemplaza la línea) el 1D del
+split corre a **10 s de sim por stride a ~1.2-1.4 ms** (medido con
+`scripts/bench-1d.mjs`, 8 h = 2.874 strides en ~3.4 s; 48 h ≈ 17.280 strides
+≈ 24 s). El cuello actual del split es el **advance 2D GPU**: ~200 ms por
+ventana de 60 s con `dt0` clavado en el piso → **48 h ≈ 11 min en total**,
+con el 1D ≈ 2 min y el resto overhead. (La rigidez de ~0.5 s por stride solo
+aplica al co-advance del motor WASM con el INP completo, no al 1D-only del
+split.)
+
+### 1. `DT_FLOOR` default 0.05 → **0.1 s** (`couplingSplit.js parse2DOptions`)
+
+- Medido en Bellinge 8 h (fixture `bellinge-8h.inp`, worker de producción):
+  advance 195-210 ms → **85-90 ms/ventana** (~2.2×); total 230 → ~120 ms
+  (~1.9×). Mismo número de frames (435), `continuityError = 0` (conservación
+  exacta del GPU).
+- Coste: el estado final de la celda 0 deriva +1.2 mm vs el piso 0.05 (8 h) —
+  dentro de la banda estadística documentada (meanΔ ≤ 1e-3 m); el cell argmin
+  del CFL puede alternar entre celdas tiny vecinas. Configurable por modelo
+  con `DT_FLOOR` en `[2D_OPTIONS]` (control de validación:
+  `bellinge-8h-dtf05.inp`).
+- 48 h con el nuevo piso ≈ **5-6 min** (2.880 ventanas × ~0.12 s).
+
+### 2. Rebuild WASM con SIMD128 + LTO (`build-openswmm2d.ps1`)
+
+- `-DCMAKE_{C,CXX}_FLAGS=-msimd128` + `-DOPENSWMM_ENABLE_LTO=ON` (antes OFF).
+  Verificado: objetos LLVM bitcode (`BC` magic) → LTO activo; el wasm mide
+  4.518.354 B. Sin `-ffast-math` → f64 IEEE intacto.
+- Resultado medido: el 1D probe queda igual (4.000 → 4.023 ms, ruido) — el
+  stride 1D está dominado por el solve de nodos (poco vectorizable), no por
+  la geometría batch. **La corrección no es necesaria para el split** pero
+  queda activa: flags correctos para el futuro y para el co-advance WASM.
+- Efecto secundario honesto: LTO permite contracciones FMA cross-TU → el 1D
+  cambia en ~1 ulp → el acople caótico amplifica → estado final de la celda 0
+  deriva 1.1 mm vs el wasm anterior (mismo band, misma 0 % continuidad).
+- Fix colateral: el stamping de git en el script crasheaba al final (el
+  submodule no es un repo git) → ahora `try/catch` → stamp "unknown".
+
+### 3. Knobs del modelo 1D — **experimento medido y RECHAZADO**
+
+`MIN_SURFAREA 1.167 → 12.566` + `HEAD_TOLERANCE 0.0015 → 0.005` +
+`SKIP_STEADY_STATE YES` en los INP de Bellinge:
+- 1D-only (VARIABLE_STEP 0.75): 18.973 → 17.774 strides (−6 %), wall 18.3 →
+  11.7 s (−36 %).
+- Co-advance WASM completo (fallback, 8 h): 126.2 → 118.0 s (**−6.5 %**).
+- **Pero**: el total de lluvia 2D del co-advance cambia 1.086.623 → 1.100.444
+  m³ (**+1.3 %**) y los frames 472 → 468 — el grid de ventanas del co-advance
+  cambia con el paso interno del 1D (la lluvia se muestrea por ventana), y
+  `SKIP_STEADY_STATE YES` no disparó en absoluto (resultado bit-idéntico con
+  y sin él). Mover la referencia validada +1.3 % por −6.5 % de wall no
+  compensa → **los sample INPs quedan sin cambios**; los knobs quedan
+  documentados como opción por-modelo.
+
+### Herramientas
+
+- **`scripts/bench-1d.mjs`** (nuevo): probe 1D bare (strip 2D + pin
+  VARIABLE_STEP como el split; `--keep-vs` para medir con paso adaptativo):
+  strides, wall, ms/stride, sim·s/wall·s, código de fin tolerado (el stride
+  señala fin natural con el código de lifecycle 6 — los workers de
+  producción cierran sin llamar `end()`).
+- `scripts/run-engine-marcher.mjs`: tolera `end()`/`report()` (mismo motivo)
+  y escribe salida compacta cuando el JSON de Bellinge excede el límite de
+  string de Node (`Invalid string length`).
+
 ## Referencias
 
 - Motor (copia): `third_party/openswmm-engine/src/engine/2d/solver/ExplicitInertialSolver.cpp`

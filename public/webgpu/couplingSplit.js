@@ -55,7 +55,7 @@
             maxTimestep: get('MAX_TIMESTEP', 10.0),
             ltsTiers: get('LTS_TIERS', 1),
             rebuildCadence: Math.max(1, Math.round(get('REBUILD_CADENCE', 4))),
-            dtFloor: get('DT_FLOOR', 0.05),
+            dtFloor: get('DT_FLOOR', 0.1),
             exchangeBeta: 0.8
         };
     }
