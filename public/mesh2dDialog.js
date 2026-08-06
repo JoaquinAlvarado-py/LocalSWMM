@@ -23,6 +23,7 @@
             boundaryLayer: '',
             domainBuffer: 10,
             constraintLayers: [],
+            obstacleLayers: [],
             includeNodes: true,
             useRimZ: true,
             flattenRadius: 5.0,
@@ -151,15 +152,35 @@
                 boundarySel.appendChild(opt);
             }
             if (constraintDiv) {
+                var row = document.createElement('div');
                 var lbl = document.createElement('label');
                 lbl.className = 'm2d-check';
                 var cb = document.createElement('input');
                 cb.type = 'checkbox';
                 cb.value = layer.name;
+                cb.dataset.role = 'include';
                 cb.dataset.layerName = layer.name;
                 lbl.appendChild(cb);
                 lbl.appendChild(document.createTextNode(' ' + label));
-                constraintDiv.appendChild(lbl);
+                row.appendChild(lbl);
+                // Polygons either guide the triangulation (breakline) or are
+                // cut out of it (impermeable obstacle). Cutting removes cells,
+                // so it is opt-in per layer rather than implied by geometry.
+                if (counts.polygons > 0) {
+                    var obsLbl = document.createElement('label');
+                    obsLbl.className = 'm2d-check';
+                    obsLbl.style.marginLeft = '18px';
+                    obsLbl.title = 'Cut these polygons out of the mesh so no flow can cross them (building footprints). Leave unchecked to use them as breaklines only.';
+                    var obs = document.createElement('input');
+                    obs.type = 'checkbox';
+                    obs.value = layer.name;
+                    obs.dataset.role = 'obstacle';
+                    obs.dataset.layerName = layer.name;
+                    obsLbl.appendChild(obs);
+                    obsLbl.appendChild(document.createTextNode(' block flow (impermeable)'));
+                    row.appendChild(obsLbl);
+                }
+                constraintDiv.appendChild(row);
             }
         });
     }
@@ -227,8 +248,11 @@
 
         // constraint layers
         s.constraintLayers = [];
-        var cbs = modal.querySelectorAll('#m2d-constraint-layers input:checked');
-        cbs.forEach(function (cb) { s.constraintLayers.push(cb.value); });
+        modal.querySelectorAll('#m2d-constraint-layers input[data-role="include"]:checked')
+            .forEach(function (cb) { s.constraintLayers.push(cb.value); });
+        s.obstacleLayers = [];
+        modal.querySelectorAll('#m2d-constraint-layers input[data-role="obstacle"]:checked')
+            .forEach(function (cb) { s.obstacleLayers.push(cb.value); });
 
         return s;
     }
@@ -288,7 +312,11 @@
         if (outRadio) outRadio.checked = true;
 
         (s.constraintLayers || []).forEach(function (name) {
-            var cb = modal.querySelector('#m2d-constraint-layers input[value="' + name + '"]');
+            var cb = modal.querySelector('#m2d-constraint-layers input[data-role="include"][value="' + name + '"]');
+            if (cb) cb.checked = true;
+        });
+        (s.obstacleLayers || []).forEach(function (name) {
+            var cb = modal.querySelector('#m2d-constraint-layers input[data-role="obstacle"][value="' + name + '"]');
             if (cb) cb.checked = true;
         });
     }
@@ -378,12 +406,21 @@
             log('❌ No model geometry to mesh. Provide nodes, links, subcatchments, a boundary layer, or a GeoTIFF domain.'); return;
         }
         var constraintLayers = [];
+        var obstacleNames = s.obstacleLayers || [];
         (s.constraintLayers || []).forEach(function (name) {
             var found = ((window.App && window.App.importedLayers) || []).find(function (l) { return l.name === name; });
-            if (found) constraintLayers.push(found);
+            // Wrapper, so the obstacle flag never mutates the shared layer.
+            if (found) constraintLayers.push({
+                name: found.name,
+                geojson: found.geojson,
+                asObstacle: obstacleNames.indexOf(name) !== -1
+            });
         });
-        if (!constraintLayers.length) {
-            log('i No obstacle footprint layer selected. Basemap buildings remain visual-only and do not block 2D flow.');
+        var obstacleCount = constraintLayers.filter(function (l) { return l.asObstacle; }).length;
+        if (!obstacleCount) {
+            log('i No layer is marked "block flow". Polygon layers act as breaklines only; basemap buildings are visual and do not block 2D flow.');
+        } else {
+            log('i ' + obstacleCount + ' layer(s) marked impermeable — their polygons become holes in the mesh.');
         }
 
         var sources = {
