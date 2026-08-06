@@ -320,11 +320,18 @@ async function run(payload) {
             }
         } while (elapsedDays > 0);
 
-        const finalFrame = readFrame(Module, api, engine, count, elapsedDays * 86400000);
+        // A natural-completion stride can write elapsedDays=0 even though the
+        // last sampled frame already contains the end-of-run state. Do not
+        // append that completion marker: it breaks the timeline and makes the
+        // renderer choose a fake t=0 frame as its final field.
+        const finalElapsedMs = elapsedDays > 0
+            ? elapsedDays * 86400000
+            : (frames.length ? frames[frames.length - 1].elapsedMs : 0);
+        const finalFrame = readFrame(Module, api, engine, count, finalElapsedMs);
         if (payload.wantVertexFields) finalFrame.vertex = readVertexFields(Module, api, engine);
         const finalVelocity = readVelocity(Module, api, engine, finalFrame.depth, payload.triangleVertices, payload.dryDepth, velocityGeometry);
         if (finalVelocity) { finalFrame.velocity = finalVelocity.mag; finalFrame.velocityX = finalVelocity.vx; finalFrame.velocityY = finalVelocity.vy; }
-        if (!frames.length || frames[frames.length - 1].elapsedMs !== finalFrame.elapsedMs) frames.push(finalFrame);
+        if (!frames.length || finalFrame.elapsedMs > frames[frames.length - 1].elapsedMs) frames.push(finalFrame);
         const diagnostics = readDiagnostics(Module, api, engine, count);
         check(api.end(engine), 'Ending the 1D-2D model', Module, reportPath, payload);
         started = false;

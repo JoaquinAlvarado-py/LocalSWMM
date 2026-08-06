@@ -36,13 +36,20 @@
         // Robust per-frame max for depth/velocity: the global 48 h range is
         // dominated by outlier cells (channels, ponds), which squashes the
         // flooded extent to the bottom of the ramp. Cap the scale at 1.5× the
-        // 99th percentile so each frame stays readable.
+        // 99th percentile so each frame stays readable. Invalid GPU/WASM
+        // values are ignored rather than poisoning the color scale.
         function robustFrameMax(arr) {
+            const finite = [];
             let fMax = 0;
-            for (let i = 0; i < arr.length; i++) if (arr[i] > fMax) fMax = arr[i];
+            for (let i = 0; i < (arr || []).length; i++) {
+                const value = Number(arr[i]);
+                if (!Number.isFinite(value)) continue;
+                finite.push(value);
+                if (value > fMax) fMax = value;
+            }
             if (fMax <= 0) return 0.001;
-            const sorted = Array.from(arr).sort((a, b) => a - b);
-            const p99 = sorted[Math.floor(sorted.length * 0.99)];
+            finite.sort((a, b) => a - b);
+            const p99 = finite[Math.min(finite.length - 1, Math.floor(finite.length * 0.99))];
             return (p99 > 0 && fMax > 1.5 * p99) ? p99 * 1.5 : fMax;
         }
 
@@ -417,13 +424,23 @@
                             : this.mesh2DMinMax.max;
                         const mMin = varKey === 'head' ? this.mesh2DMinMax.min : 0;
                         for (let i = 0; i < ids.length; i++) {
-                            const val = arr[i] || 0;
+                            const raw = Number(arr[i]);
+                            const val = Number.isFinite(raw) ? raw : 0;
                             const t = mMax > mMin ? Math.min(1, (val - mMin) / (mMax - mMin)) : 0;
-                            const color = val > 0 ? rampColor(t) : 'rgba(0,0,0,0)';
+                            const color = Number.isFinite(raw) && val > 0 ? rampColor(t) : 'rgba(0,0,0,0)';
                             if (this._applied2D.get(ids[i]) === color) continue;
                             this._applied2D.set(ids[i], color);
                             try { map.setFeatureState({ source: 'swmm-2d-mesh', id: ids[i] }, { resultColor: color }); } catch (e) { }
                         }
+                    } else {
+                        // Do not leave a previous frame painted when a backend
+                        // omits the selected field.
+                        r2d.triangleIds.forEach(id => {
+                            const color = 'rgba(0,0,0,0)';
+                            if (this._applied2D.get(id) === color) return;
+                            this._applied2D.set(id, color);
+                            try { map.setFeatureState({ source: 'swmm-2d-mesh', id }, { resultColor: color }); } catch (e) { }
+                        });
                     }
                     if (window.Mesh2DLayers) window.Mesh2DLayers.onStep(step, frame);
                 }
@@ -755,6 +772,7 @@
 
     window.clearResults = function () {
         ResultStyling.clear();
+        if (window.set2DResultLayerMode) window.set2DResultLayerMode(false);
         if (sparkObserver) sparkObserver.disconnect();
         const select = parkCategorySelect();
         if (select) select.classList.add('hidden');
@@ -1287,23 +1305,29 @@
         // ---- compute global min/max across all frames for the active 2D variable ----
         function compute2DMinMax(varKey) {
             let min = Infinity, max = -Infinity;
+            let finiteCount = 0;
             for (let f = 0; f < frames.length; f++) {
                 const arr = frames[f][varKey];
                 if (!arr) continue;
                 for (let i = 0; i < arr.length; i++) {
-                    const v = arr[i];
+                    const v = Number(arr[i]);
+                    if (!Number.isFinite(v)) continue;
+                    finiteCount++;
                     if (v < min) min = v;
                     if (v > max) max = v;
                 }
             }
-            if (!isFinite(min)) min = 0;
-            if (!isFinite(max)) max = 0.1;
-            return { min: min, max: Math.max(max, min + 0.001) };
+            if (!Number.isFinite(min)) min = 0;
+            if (!Number.isFinite(max)) max = 0;
+            return { min: min, max: Math.max(max, min + 0.001), hasFinite: finiteCount > 0 };
         }
 
         const depthRange = compute2DMinMax('depth');
         const headRange = compute2DMinMax('head');
         const velRange = compute2DMinMax('velocity');
+        const invalidFields = [];
+        if (!depthRange.hasFinite) invalidFields.push('depth');
+        if (!velRange.hasFinite) invalidFields.push('velocity');
 
         // ---- set up ResultStyling for 2D ----
         ResultStyling.clear();
@@ -1312,14 +1336,19 @@
         if (window.LayerTree && window.LayerTree.enableResultsDefaults) window.LayerTree.enableResultsDefaults();
 
         // Color-code mesh with last-frame depth values initially
-        const lastFrame = frames[frames.length - 1];
+        // Some engine builds emit a completion marker with elapsedMs=0 after
+        // the real last frame. Never use that marker as the initial map field.
+        const renderFrames = frames.filter(frame => frame && Number.isFinite(Number(frame.elapsedMs)) &&
+            (Number(frame.elapsedMs) > 0 || frames.length === 1));
+        const lastFrame = (renderFrames.length ? renderFrames : frames)[(renderFrames.length ? renderFrames : frames).length - 1];
         if (lastFrame) {
             const dMin = depthRange.min;
             const dMax = robustFrameMax(lastFrame.depth || []);
             ids.forEach((id, i) => {
-                const val = lastFrame.depth[i] || 0;
+                const raw = Number(lastFrame.depth && lastFrame.depth[i]);
+                const val = Number.isFinite(raw) ? raw : 0;
                 const t = dMax > dMin ? Math.min(1, (val - dMin) / (dMax - dMin)) : 0;
-                const color = val > 0 ? rampColor(t) : 'rgba(0,0,0,0)';
+                const color = Number.isFinite(raw) && val > 0 ? rampColor(t) : 'rgba(0,0,0,0)';
                 ResultStyling.nodeColors[id] = color;
             });
         }
@@ -1353,6 +1382,9 @@
         const chips = contPct !== null
             ? `<div class="rv-chips"><span class="rv-chip ${Math.abs(parseFloat(contPct)) < 5 ? 'ok' : Math.abs(parseFloat(contPct)) < 10 ? 'warn' : 'bad'}" title="2D surface continuity error">2D Continuity <b>${contPct}%</b></span></div>`
             : '';
+        const dataWarning = invalidFields.length
+            ? `<div class="results-warning">2D ${invalidFields.join(' and ')} output has no finite values; dry/invalid cells are hidden.</div>`
+            : '';
 
         let html = `
             <div class="rv-hero">
@@ -1364,7 +1396,7 @@
                     </div>
                 </div>
                 ${chips}
-            </div>`;
+            </div>${dataWarning}`;
 
         // ---- KPI cards ----
         const kpis = [];
@@ -1372,8 +1404,10 @@
         let peakDepth = 0, peakVel = 0;
         for (const frame of frames) {
             for (let i = 0; i < ids.length; i++) {
-                if ((frame.depth[i] || 0) > peakDepth) peakDepth = frame.depth[i];
-                if ((frame.velocity[i] || 0) > peakVel) peakVel = frame.velocity[i];
+                const depth = Number(frame.depth && frame.depth[i]);
+                const velocity = Number(frame.velocity && frame.velocity[i]);
+                if (Number.isFinite(depth) && depth > peakDepth) peakDepth = depth;
+                if (Number.isFinite(velocity) && velocity > peakVel) peakVel = velocity;
             }
         }
         const isUS = (window.Net && Net.units === 'US');
