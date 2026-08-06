@@ -507,6 +507,39 @@ ambos sentidos: **FAIL** contra el módulo anterior (nodo 24 explota a
 t=21.360 s), **PASS** contra el arreglo (1020 puntos finitos en 470 ventanas,
 continuidad 7,325 %). Acepta `--split <path>` para comparar revisiones.
 
+### El marcher NO corre en GPUs Apple (medido en Chrome 151 / Metal-3)
+
+Al intentar revalidar la paridad se descubrió un límite duro. El marcher liga
+**16 storage buffers en un solo bind group** (`marcher.wgsl` bindings 0–15:
+params, geoA, geoF, topo, state, qbuf, wk, red, cplF, cplS, pin, tierBuf,
+cellList, cellCount, edgeList, edgeCount) y `gpu2dWorker.requestGpuDevice`
+pide `maxStorageBuffersPerShaderStage: 16`.
+
+Medido en un Mac Apple Silicon (adapter `apple` / `metal-3`):
+
+- `adapter.limits.maxStorageBuffersPerShaderStage` = **10**.
+- `requestDevice({ maxStorageBuffersPerShaderStage: 16 })` → *"Required limit
+  (16) is greater than the supported limit (10)"*.
+- Relajar el pedido no ayuda: con el device al máximo del adapter, crear el
+  bind group layout del marcher falla con *"The number of storage buffers (16)
+  in the Compute stage exceeds the maximum per-stage limit (10)"*. El máximo
+  que valida en un grupo es exactamente 10.
+- End-to-end: el worker lanza `WEBGPU_UNAVAILABLE` y la app cae al worker WASM
+  (verificado: el matcher de fallback de `app.js` acepta el error).
+
+O sea: **en Apple Silicon el backend WebGPU nunca se ejecuta**; la app corre
+siempre el co-advance WASM. El baseline garantizado por la spec de WebGPU es 8,
+así que esto vale también para cualquier dispositivo en el mínimo. El M1
+respetaba el límite de 8 empaquetando geometría y estado (§ Lecciones duras,
+punto 5); M2 y M3 agregaron 8 bindings más y el diseño se salió del rango
+portable sin que se notara, porque se desarrolló sobre una GPU que da ≥16.
+
+Para que corra en Apple hay que bajar a ≤10 empaquetando los bindings de LTS y
+acople igual que se hizo con la geometría (p. ej. `cellList`+`edgeList` y
+`cellCount`+`edgeCount` en un buffer cada par, y `cplF`+`cplS`+`pin` en uno),
+o repartir en varios bind groups **no** ayuda: el límite es por *stage*, no por
+grupo.
+
 ### Pendiente de revalidar
 
 Los fixtures `marcher-cpl` / `marcher-cplv` **no declaran** `VARIABLE_STEP`, y
@@ -514,10 +547,23 @@ el código anterior se lo inyectaba; el default del motor resulta ser adaptativo
 (mín 0,50 s, medio 57,14 s), así que su grilla cambió: 63 strides / 50 ventanas
 contra 60 / 54. La continuidad 1D apenas se mueve (1,553 % contra 1,517 %) y el
 gate pasa, pero **la paridad GPU contra `marcher-cpl.ref.json` no se volvió a
-correr** — `scripts/test-gpu-worker.mjs` necesita Chrome con sesión gráfica.
-El script ya es multiplataforma (macOS/Linux/Windows, `CHROME_PATH` y `PYTHON`
-por entorno); falta ejecutarlo en una máquina con GPU antes de dar la paridad
-por buena.
+correr**: en la máquina disponible el device WebGPU ni siquiera se crea (ver la
+sección del límite de 16 storage buffers). El script ya es multiplataforma
+(macOS/Linux/Windows, `CHROME_PATH` y `PYTHON` por entorno) pero hay que
+correrlo en una GPU que soporte ≥16 storage buffers por stage — la misma
+en que se desarrolló M2/M3 — antes de dar la paridad por buena.
+
+Lo que sí quedó verificado en navegador (Chrome 151, DevTools):
+
+- Agujeros de malla opt-in: capa sin marcar → 0 agujeros; marcada "block flow"
+  → 1 agujero con semilla en el centroide; polígono que envuelve el dominio →
+  0 agujeros + warning; objeto de capa sin el flag (legacy) → 0 agujeros.
+- Chip de continuidad: `null` → chip oculto; 0.02 → "2.000 %" verde; 0.073 →
+  "7.300 %" ámbar; −0.15 → "−15.000 %" rojo. La fila "Rainfall in" muestra el
+  volumen acumulado real en vez de 0.
+- Fallback: `gpu2dWorker` → `WEBGPU_UNAVAILABLE`, aceptado por el matcher de
+  `app.js`; el worker WASM corre el fixture y da `finalVolume` 1706.816 m³
+  contra 1706.8 de la referencia del motor.
 
 ## Referencias
 
