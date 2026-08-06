@@ -98,6 +98,18 @@
         ['!=', ['feature-state', 'resultColor'], null], ['feature-state', 'resultColor'],
         base];
 
+    // Once a 2D result is active, an unpainted cell must not fall back to the
+    // pre-result mesh blue. This keeps invalid/dry result cells transparent.
+    function set2DResultLayerMode(active) {
+        const layer = map.getLayer('swmm-2d-mesh-fill');
+        if (!layer) return;
+        try {
+            map.setPaintProperty('swmm-2d-mesh-fill', 'fill-color',
+                resultOr(active ? 'rgba(0,0,0,0)' : '#90caf9'));
+        } catch (e) { }
+    }
+    window.set2DResultLayerMode = set2DResultLayerMode;
+
     // ---------- Network layers ----------
     function ensureNetworkLayers() {
         // Draft (in-progress drawing) source
@@ -257,6 +269,7 @@
         }
         (window.App.importedLayers || []).forEach(addConstraintLayer);
 
+        set2DResultLayerMode(!!window.App.results2D);
         applyResultStylingIfAny();
     }
 
@@ -1181,6 +1194,15 @@
     }
 
     function apply2DResults(result) {
+        // Normalize completion markers from older WASM builds before any UI
+        // or animation code sees them.
+        if (result && Array.isArray(result.frames) && result.frames.length > 1) {
+            const last = result.frames[result.frames.length - 1];
+            const previous = result.frames[result.frames.length - 2];
+            if (Number(last && last.elapsedMs) <= 0 && Number(previous && previous.elapsedMs) > 0) {
+                result.frames = result.frames.slice(0, -1);
+            }
+        }
         const finalFrame = result.frames && result.frames[result.frames.length - 1];
         if (!finalFrame) throw new Error('The 2D engine returned no surface result frames.');
         const ids = result.triangleIds || [];
@@ -1200,6 +1222,7 @@
         });
         window.App.results2D = result;
         window.App.resultFrame2D = result.frames.length - 1;
+        set2DResultLayerMode(true);
         if (window.refreshNetworkData) window.refreshNetworkData();
     }
 

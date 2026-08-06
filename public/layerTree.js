@@ -26,11 +26,12 @@
     }
     function enableResultsDefaults() {
         var s = state();
-        if (s._resultsDefaultsV2) return refresh();
+        if (s._resultsDefaultsV3) return refresh();
         ['velocity-arrows', 'vertices', 'depth-isolines', 'edges', 'depth-bands', 'smooth-depth', 'cell-fill', 'terrain'].forEach(function (key) {
-            s[key] = { visible: true, opacity: s[key] ? s[key].opacity : 100 };
+            var visible = key !== 'cell-fill' && key !== 'terrain';
+            s[key] = { visible: visible, opacity: s[key] ? s[key].opacity : 100 };
         });
-        s._resultsDefaultsV2 = true;
+        s._resultsDefaultsV3 = true;
         save(s);
         refresh();
     }
