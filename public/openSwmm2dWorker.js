@@ -219,6 +219,8 @@ function readVelocity(Module, api, engine, depths, triangleVertices, dryDepth, g
             // least-squares system; the third contributes to its RHS.
             let rx = 0, ry = 0; for (let k = 0; k < 3; k++) { rx += x[i * 3 + k] * [q0, q1, q2][k]; ry += y[i * 3 + k] * [q0, q1, q2][k]; }
             const det = a * c - b * b; if (Math.abs(det) < 1e-12) return;
+            // Edge flux reconstructs specific discharge (q = h * v). Convert
+            // it to physical velocity for the animation and velocity KPI.
             const vx = (c * rx - b * ry) / det / h, vy = (a * ry - b * rx) / det / h;
             vxOut[i] = vx; vyOut[i] = vy; magnitudes[i] = Math.hypot(vx, vy);
         });

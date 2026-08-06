@@ -463,9 +463,12 @@
                 const velocity = new Float64Array(nt), vx = new Float64Array(nt), vy = new Float64Array(nt);
                 for (let i = 0; i < nt; i++) {
                     const qx = s.qx ? s.qx[i] || 0 : 0, qy = s.qy ? s.qy[i] || 0 : 0;
-                    const m = Math.hypot(qx, qy);
-                    velocity[i] = m;
-                    vx[i] = qx; vy[i] = qy;
+                    const depth = Number(s.depth[i]);
+                    const dryDepth = marcher.options && Number(marcher.options.dryDepth) || 0.001;
+                    const invDepth = depth > dryDepth ? 1 / depth : 0;
+                    const vxCell = qx * invDepth, vyCell = qy * invDepth;
+                    velocity[i] = Math.hypot(vxCell, vyCell);
+                    vx[i] = vxCell; vy[i] = vyCell;
                 }
                 frames.push({ elapsedMs: elapsed * 1000, depth: s.depth, head: s.head, velocity, velocityX: vx, velocityY: vy });
                 nextFrameSec = elapsed + (frameIntervalSec || 60);

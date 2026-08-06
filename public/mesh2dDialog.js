@@ -382,6 +382,9 @@
             var found = ((window.App && window.App.importedLayers) || []).find(function (l) { return l.name === name; });
             if (found) constraintLayers.push(found);
         });
+        if (!constraintLayers.length) {
+            log('i No obstacle footprint layer selected. Basemap buildings remain visual-only and do not block 2D flow.');
+        }
 
         var sources = {
             subcatchments: Net.subcatchments || [],
