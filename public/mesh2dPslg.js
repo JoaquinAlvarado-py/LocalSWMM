@@ -379,6 +379,15 @@
                             for (var i = 0; i < rIdx.length; i++) {
                                 segments.push({ p1: rIdx[i], p2: rIdx[(i + 1) % rIdx.length], marker: 3 });
                             }
+                            // Polygon constraints represent exclusion areas
+                            // (e.g. building footprints), not just breaklines.
+                            // Add a Triangle hole so the hydraulic mesh cannot
+                            // create cells or flux faces through the polygon.
+                            var seed = interiorPoint(local, holeRings);
+                            if (seed && (!bndRing.length || pointInPolygon(seed, bndRing))) {
+                                holes.push({ x: seed[0], y: seed[1] });
+                                holeRings.push(local);
+                            }
                         });
                     }
                 });
