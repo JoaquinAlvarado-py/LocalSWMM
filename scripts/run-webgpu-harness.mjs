@@ -21,6 +21,8 @@ const coupled = process.argv.includes('--coupled');
 const bench = process.argv.includes('--bench');
 const ltsIdx = process.argv.indexOf('--lts');
 const ltsOv = ltsIdx !== -1 ? parseInt(process.argv[ltsIdx + 1], 10) : 0;
+const hoursIdx = process.argv.indexOf('--hours');
+const hoursOv = hoursIdx !== -1 ? process.argv[hoursIdx + 1] : '';
 const fixtures = process.argv.filter((a, i) => !a.startsWith('--') && process.argv[i - 1] !== '--lts').slice(2).length
     ? process.argv.filter((a, i) => !a.startsWith('--') && process.argv[i - 1] !== '--lts').slice(2)
     : (coupled ? ['marcher-cpl'] : (bench ? ['bellinge'] : ['marcher-8cells', 'marcher-5k']));
@@ -157,7 +159,8 @@ async function main() {
             console.log(`\n==== fixture: ${fixture} ====`);
             const mode = coupled ? '&mode=coupled' : (bench ? '&mode=bench' : '');
             const ltsArg = ltsOv ? `&lts=${ltsOv}` : '';
-            await cdp.send('Page.navigate', { url: `${APP_URL}?fixture=${fixture}${mode}${ltsArg}` }, sessionId);
+            const hoursArg = hoursOv ? `&hours=${hoursOv}` : '';
+            await cdp.send('Page.navigate', { url: `${APP_URL}?fixture=${fixture}${mode}${ltsArg}${hoursArg}` }, sessionId);
             const deadline = Date.now() + (bench ? 90 : 15) * 60 * 1000;
             let done = false;
             let status = '';

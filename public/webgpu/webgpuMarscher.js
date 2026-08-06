@@ -184,6 +184,9 @@
             this.cellCounts = new Uint32Array(this.ltsK);
             this.edgeCounts = new Uint32Array(this.ltsK);
             this._dbgRebuilds = 0;
+            this.rebuildCadence = Math.max(1, options.rebuildCadence || 4);
+            this._pendingReduce = null;
+            this._lastReduce = null;
         }
 
         static async create(device, mesh, options) {
@@ -264,11 +267,6 @@
             this.buf.qbuf = mkState(new Float32Array(3 * ne), 'qbuf'); // q, faccL, faccR
             this.buf.wk = mkState(new Uint32Array(2 * nt), 'wk');    // cell_active, next
             this.buf.red = mkState(new Uint32Array([0, 0x7F800000, 0xFFFFFFFF]), 'red'); // count, dt0-bits, argmin-cell (1e30)
-            this.buf.redRB = this.device.createBuffer({
-                size: 12,
-                usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-                label: 'redRB'
-            });
             // M2 coupling buffers (pre-created so the bind group can reference them).
             // cplF = header [9Â·np] (cell, crown, cd, area, h1d, d1d, v1d,
             // stencilPtr, stencilCount) + the static vertex-stencil tail
@@ -495,6 +493,16 @@
 
         // rebuild(t, dtLazy): lazy sources â†’ seed â†’ halo â†’ CFL reduction â†’ tier
         // assignment + per-tier compaction (K â‰¥ 1). Mirrors syncAndRebuild().
+        // The readback is issued ASYNC (no await): the redâ†’redRB copy is
+        // enqueued right after the rebuild's dispatches, so the mapAsync
+        // resolves while the next macro segment still runs; advance() consumes
+        // it at the NEXT rebuild (long resolved â†’ ~zero stall). The dt0/tier
+        // counts used by a segment are therefore one rebuild old (the engine
+        // itself runs one macro cycle with sync-time dt0/tiers). Stale list
+        // entries past the fresh count are guarded in the kernels (walled
+        // faces carry q = 0, see faceFluxLts); the active-count gate is the
+        // one thing that MUST be fresh (a stale 0 stalls the march), so
+        // advance() awaits the in-flight readback when the stale count is 0.
         async _rebuild(t, dtLazy, rainRateMps) {
             const src = { dt_lazy: dtLazy, src: rainRateMps, np: this.couplingNp };
             const enc = this._beginEncoder('rebuild');
@@ -525,11 +533,23 @@
             }
             this.t_last_sync = t;
             this.device.queue.submit([enc.finish()]);
-            const r = await this._readReduce();
-            if (this.ltsK > 1 && this._dbgRebuilds++ % 64 === 0) {
-                console.log(`LTS[${this.t.toFixed(1)}s] dt0=${r.dt.toExponential(3)} active=${r.count} cells=[${Array.from(this.cellCounts).join(',')}] edges=[${Array.from(this.edgeCounts).join(',')}]`);
+            this._pendingReduce = this._readReduce();
+            return this._pendingReduce;
+        }
+
+        // Consume the readback issued by the previous rebuild (in flight since
+        // then â†’ resolves during the intervening macro segment, so this await
+        // is ~free). Returns { count, dt } or null on the very first rebuild.
+        async _consumeReduce() {
+            if (this._pendingReduce) {
+                try {
+                    this._lastReduce = await this._pendingReduce;
+                } catch (e) {
+                    this._lastReduce = null;
+                }
+                this._pendingReduce = null;
             }
-            return r;
+            return this._lastReduce;
         }
 
         _readReduce() {
@@ -573,6 +593,7 @@
             this.options.rainRateMps = rainRateMps;
             if (t1 <= t0) return t1;
             const K = this.ltsK;
+            const RC = this.rebuildCadence;
             let t = t0;
             if (this.t_last_sync > t0) this.t_last_sync = t0;
             let cycles = this.cycles;
@@ -580,10 +601,22 @@
             const base = { src: rainRateMps, np: this.couplingNp };
 
             while (t < t1) {
-                if (cycles >= 4) {
-                    const r = await this._rebuild(t, t - this.t_last_sync, rainRateMps);
-                    this.activeCount = r.count;
-                    this.dt0 = r.count > 0 ? r.dt : this.options.maxTimestep;
+                if (cycles >= RC) {
+                    // The segment after a rebuild must run with the FRESH dt0
+                    // (the CFL min changes fast during wet-ups; a 1-rebuild-old
+                    // dt0 can overshoot the true limit and blow up the explicit
+                    // scheme) and the FRESH active count (a stale 0 stalls the
+                    // march). Await the readback in-line: the red->redRB copy
+                    // is enqueued right after the rebuild's dispatches, so the
+                    // mapAsync drains only the queued macro backlog (a few
+                    // macros at cadence RC).
+                    this._rebuild(t, t - this.t_last_sync, rainRateMps);
+                    const r = await this._consumeReduce();
+                    if (this.ltsK > 1 && r && this._dbgRebuilds++ % 64 === 0) {
+                        console.log(`LTS[${t.toFixed(1)}s] dt0=${r.dt.toExponential(3)} active=${r.count} cells=[${Array.from(this.cellCounts).join(',')}] edges=[${Array.from(this.edgeCounts).join(',')}]`);
+                    }
+                    this.activeCount = r ? r.count : 0;
+                    this.dt0 = r && r.count > 0 ? r.dt : this.options.maxTimestep;
                     cycles = 0;
                 }
                 if (this.activeCount === 0) {
@@ -595,7 +628,7 @@
                 if (K <= 1) {
                     const step = Math.min(this.dt0, remaining);
                     if (!(step > 0) || !isFinite(step)) { t = t1; break; }   // dt floor guard
-                    if (this.dt0 > remaining) cycles = 4;   // tail: rebuild after
+                    if (this.dt0 > remaining) cycles = RC;   // tail: rebuild after
                     const enc = this._beginEncoder('substep');
                     this._dispatchLts(enc, 'faceFlux', this.edges.ne, { dt: step, ...base });
                     this._dispatchLts(enc, 'cellUpdate', this.edges.nt, { dt: step, ...base });
@@ -609,17 +642,20 @@
 
                 // ---- LTS path: one encoder per macro cycle ----
                 const nsubFull = 1 << (K - 1);
-                let dt0 = Math.min(this.dt0, remaining);
+                const dt0 = Math.min(this.dt0, remaining);
                 if (!(dt0 > 0) || !isFinite(dt0)) { t = t1; break; }   // dt floor guard
                 let nsub = nsubFull;
                 let tail = false;
                 if (nsubFull * this.dt0 > remaining) {
                     tail = true;                       // degenerate to global dt
                     nsub = 1;
-                    cycles = 4;                        // rebuild after the tail
+                    cycles = RC;                       // rebuild after the tail
                 }
                 const enc = this._beginEncoder('macro');
                 if (tail) {
+                    // settleAcc FIRST: the LTS accumulators may hold bookings
+                    // from the previous macro that the degen pass must drain
+                    // before the single global substep books fresh ones.
                     this._dispatchLts(enc, 'settleAcc', this.edges.nt, { ...base, dt_lazy: 0 });
                     this._dispatchLts(enc, 'degenTier', this.edges.nt, { ...base, dt_lazy: 0 });
                     this._dispatchLts(enc, 'degenFaceTier', this.edges.ne, { ...base, dt_lazy: 0 });
@@ -649,10 +685,11 @@
             }
             // final lazy-source landing
             if (t1 > this.t_last_sync) {
-                if (cycles >= 4) {
-                    const r = await this._rebuild(t1, t1 - this.t_last_sync, rainRateMps);
-                    this.activeCount = r.count;
-                    this.dt0 = r.count > 0 ? r.dt : this.options.maxTimestep;
+                if (cycles >= RC) {
+                    this._rebuild(t1, t1 - this.t_last_sync, rainRateMps);
+                    const r = await this._consumeReduce();
+                    this.activeCount = r ? r.count : 0;
+                    this.dt0 = r && r.count > 0 ? r.dt : this.options.maxTimestep;
                     cycles = 0;
                 } else {
                     this._setParams({ dt_lazy: t1 - this.t_last_sync, src: rainRateMps, np: this.couplingNp });
