@@ -1,7 +1,8 @@
 $ErrorActionPreference = 'Stop'
 
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$Source = Join-Path $Root 'third_party/openswmm-engine'
+$Source = Join-Path $Root 'cmake/wasm'
+$EngineSource = Join-Path $Root 'third_party/openswmm-engine'
 # Keep the WebAssembly configuration isolated from any stale/native CMake cache.
 $Build = Join-Path $Root 'build/openswmm2d-wasm-emscripten'
 $LocalEmsdk = Join-Path $Root '.tools/emsdk'
@@ -23,7 +24,7 @@ if (-not (Get-Command emcmake -ErrorAction SilentlyContinue)) {
 
 # CMake treats trailing Windows separators as escapes in generated scripts.
 $env:EMSDK = $env:EMSDK.TrimEnd('\', '/').Replace('\', '/')
-if (-not (Test-Path (Join-Path $Source 'CMakeLists.txt'))) {
+if (-not (Test-Path (Join-Path $EngineSource 'CMakeLists.txt'))) {
     throw 'OpenSWMM source is missing. Run: git submodule update --init --recursive'
 }
 if (-not (Test-Path $VcpkgToolchain)) {
@@ -58,18 +59,14 @@ $EmscriptenToolchain = Join-Path $LocalEmsdk 'upstream/emscripten/cmake/Modules/
     "-DOPENSWMM_FORCE_SCALAR=ON" `
     "-DOPENSWMM_ENABLE_LTO=ON" `
     "-DOPENSWMM_WITH_GEOPACKAGE=OFF" `
-    "-DOPENSWMM_WITH_HYPRE=OFF" `
     "-DOPENSWMM_BUILD_GPU_PLUGIN=OFF" `
-    "-DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON" `
     "-DOPENSWMM_BUILD_TESTS=OFF" `
-    "-DOPENSWMM_BUILD_CLI=OFF" `
-    "-DOPENSWMM_BUILD_SHARED=OFF" `
+    "-DOPENSWMM_INSTALL=OFF" `
+    "-DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON" `
     "-DOpenMP_C_FOUND=FALSE" `
-    "-DOpenMP_CXX_FOUND=FALSE" `
     "-DCMAKE_DISABLE_FIND_PACKAGE_OpenMP=TRUE" `
     "-DCMAKE_C_FLAGS=-msimd128" `
-    "-DCMAKE_CXX_FLAGS=-msimd128" `
-    "-DOPENSWMM_WASM_INJECT_FILE=$Root/cmake/OpenSwmm2DWasm.cmake"
+    "-DCMAKE_CXX_FLAGS=-msimd128"
 
 & cmake --build $Build --target openswmm2d_wasm --parallel
 
@@ -79,8 +76,8 @@ Copy-Item -Force (Join-Path $Root 'public/openswmm2d.js') (Join-Path $Root 'publ
 $EngineCommit = 'unknown'
 $EngineDescribe = 'unknown'
 try {
-    $EngineCommit = (& git -C $Source rev-parse HEAD 2>$null).Trim()
-    $EngineDescribe = (& git -C $Source describe --always --dirty --tags 2>$null).Trim()
+    $EngineCommit = (& git -C $EngineSource rev-parse HEAD 2>$null).Trim()
+    $EngineDescribe = (& git -C $EngineSource describe --always --dirty --tags 2>$null).Trim()
     if (-not $EngineDescribe) { $EngineDescribe = $EngineCommit }
 } catch {
     # The submodule checkout is not always a git repo (plain copy) — the
