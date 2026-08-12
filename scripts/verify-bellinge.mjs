@@ -20,12 +20,15 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const OUT = join(__dirname, 'verify-out');
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const CHROME = process.env.CHROME_PATH || (
+    process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+        : process.platform === 'win32' ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+            : 'google-chrome');
 const APP_PORT = 8080;
 const CDP_PORT = 9222;
 const CDP_HTTP = `http://127.0.0.1:${CDP_PORT}`;
 const APP_URL = `http://127.0.0.1:${APP_PORT}/`;
-const PROFILE = join(process.env.TEMP || 'C:\\Users\\joaqu\\AppData\\Local\\Temp', 'bellinge-cdp-' + Date.now());
+const PROFILE = join(process.env.TEMP || (process.platform === 'win32' ? 'C:\\Users\\joaqu\\AppData\\Local\\Temp' : '/tmp'), 'bellinge-cdp-' + Date.now());
 const WATCHDOG_MS = 35 * 60 * 1000;
 
 // ---------------------------------------------------------------- CDP client
