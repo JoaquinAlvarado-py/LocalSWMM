@@ -13,13 +13,14 @@
 
 'use strict';
 
-importScripts('swmm6wasm.js?v=' + Date.now());
+importScripts('build-version.js');
+importScripts('swmm6wasm.js?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now()));
 
 let compiledWasmPromise = null;
 function getCompiledWasm() {
     if (!compiledWasmPromise) {
         compiledWasmPromise = (async () => {
-            const resp = await fetch('swmm6wasm.wasm?v=' + Date.now());
+            const resp = await fetch('swmm6wasm.wasm?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now()));
             try {
                 return await WebAssembly.compileStreaming(resp.clone());
             } catch (e) {
@@ -53,6 +54,11 @@ async function createEngine() {
                     .then(instance => onSuccess(instance, wasmModule))
                     .catch(err => self.postMessage({ type: 'err', text: 'WASM instantiate failed: ' + err.message }));
                 return {}; // async instantiation
+            },
+            locateFile: file => {
+                if (file.endsWith('.worker.js')) return 'swmm6wasm.worker.js';
+                if (file.endsWith('.wasm')) return 'swmm6wasm.wasm';
+                return file;
             }
         });
     } catch (e) {
@@ -64,7 +70,11 @@ async function createEngine() {
 
 let busy = false;
 
-self.onmessage = async (e) => {
+// When this script is re-executed as an Emscripten pthread worker
+// (globalThis.name === 'em-pthread'), the glue's own message handler must not
+// be clobbered: it is how the runtime distributes SharedArrayBuffer work.
+if (globalThis.name !== 'em-pthread') {
+    self.onmessage = async (e) => {
     const msg = e.data || {};
     if (msg.type !== 'run') return;
     if (busy) {
@@ -175,3 +185,4 @@ self.onmessage = async (e) => {
         self.postMessage({ type: 'error', message: err.message || String(err) });
     }
 };
+}

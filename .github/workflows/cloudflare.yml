@@ -1,0 +1,38 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: ["main", "experimental"]
+  workflow_dispatch:
+
+concurrency:
+  group: "cf-pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Create config.js
+        run: |
+          cat > ./public/config.js <<'EOF'
+          const CONFIG = {
+              MAPBOX_ACCESS_TOKEN: '${{ secrets.MAPBOX_ACCESS_TOKEN }}',
+              GOOGLE_MAPS_API_KEY: '${{ secrets.GOOGLE_MAPS_API_KEY }}',
+              OPENTOPOGRAPHY_API_KEY: '${{ secrets.OPENTOPOGRAPHY_API_KEY }}'
+          };
+          EOF
+      - name: Create build-version.js
+        run: echo "var BUILD_STAMP = '${GITHUB_SHA:0:8}';" > ./public/build-version.js
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: ${{ secrets.CLOUDFLARE_PROJECT_NAME }}
+          directory: ./public
+          wranglerVersion: '3'

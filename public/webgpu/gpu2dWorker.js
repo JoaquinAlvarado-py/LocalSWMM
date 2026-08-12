@@ -7,11 +7,12 @@
 // (couplingSplit.js). Falls back with a WEBGPU_* / VERTEX_COUPLING error so
 // the app can retry with the WASM worker.
 
-importScripts('../view2d.js?v=' + Date.now());
-importScripts('../openswmm2d.js?v=' + Date.now());
-importScripts('webgpuMarscher.js?v=' + Date.now());
-importScripts('couplingSplit.js?v=' + Date.now());
-self.postMessage({ type: 'debug', text: 'worker booted' });
+importScripts('../build-version.js');
+importScripts('../view2d.js?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now()));
+importScripts('../openswmm2d.js?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now()));
+importScripts('webgpuMarscher.js?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now()));
+importScripts('couplingSplit.js?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now()));
+if (globalThis.name !== 'em-pthread') self.postMessage({ type: 'debug', text: 'worker booted' });
 
 let modulePromise = null;
 
@@ -25,7 +26,7 @@ function getModule() {
         }
         const loadBinary = self.pendingWasmBinary
             ? Promise.resolve(self.pendingWasmBinary)
-            : fetch('../openswmm2d.wasm?v=' + Date.now()).then(r => {
+            : fetch('../openswmm2d.wasm?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now())).then(r => {
                 if (!r.ok) throw new Error(`Could not load openswmm2d.wasm: HTTP ${r.status}`);
                 return r.arrayBuffer();
             });
@@ -38,7 +39,11 @@ function getModule() {
                     receiveInstance(instance, wasmModule);
                     return instance.exports;
                 },
-                locateFile: f => f.endsWith('.wasm') ? '../openswmm2d.wasm' : f,
+                locateFile: f => {
+                    if (f.endsWith('.worker.js')) return '../openswmm2d.worker.js';
+                    if (f.endsWith('.wasm')) return '../openswmm2d.wasm';
+                    return f;
+                },
                 print: text => self.postMessage({ type: 'stdout', text: String(text) }),
                 printErr: text => self.postMessage({ type: 'stderr', text: String(text) }),
                 onAbort: reason => self.postMessage({ type: 'stderr', text: '[OpenSWMM 2D WASM abort] ' + String(reason || 'unknown reason') })
@@ -156,7 +161,11 @@ async function run2d(payload) {
     }, transferable);
 }
 
-self.onmessage = async (ev) => {
+// When this script is re-executed as an Emscripten pthread worker
+// (globalThis.name === 'em-pthread'), the glue's own message handler must not
+// be clobbered: it is how the runtime distributes SharedArrayBuffer work.
+if (globalThis.name !== 'em-pthread') {
+    self.onmessage = async (ev) => {
     const payload = ev.data || {};
     if (payload.type !== 'run2d') return;
     try {
@@ -169,3 +178,4 @@ self.onmessage = async (ev) => {
         });
     }
 };
+}
