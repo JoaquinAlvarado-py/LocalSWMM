@@ -50,17 +50,17 @@
             couplingArea: 'AUTO',
             maxTimestep: 10.0,
             dryDepth: 0.001,
-            couplingSync: 1.0,
-            theta: 0.5,
-            cflNumber: 0.8,
+            couplingSync: 0.0,
+            theta: 0.8,
+            cflNumber: 0.7,
              hMove: 0.003,
-             froudeMax: 1.0,
+             froudeMax: 1.5,
              ltsTiers: 4,
              limiterEpsilon: 1e-6,
-             fluxDhEps: 1e-6,
+             fluxDhEps: 0.004,
              cellClosure: 'FLAT',
              faceReconstruction: 'MEAN',
-             vfrMinWetFrac: 0.1,
+             vfrMinWetFrac: 0.01,
              rainfallMode: 'NATURAL_NEIGHBOUR',
             report2d: 'NO',
             // Output
@@ -83,7 +83,20 @@
                 merged.maxTimestep = 10;
                 merged.hMove = 0.003;
             }
-            merged._meshDtmVersion = 4;
+            if (s && settingsVersion < 5) {
+                // v5: align the remaining solver defaults with the engine's
+                // own SolverOptions2D defaults (ref. Hydraulics Manual Ch9
+                // §9.11 / Table 9-1). The v4 set matched, these did not:
+                // THETA 0.8, CFL_NUMBER 0.7, FROUDE_MAX 1.5, COUPLING_SYNC 0,
+                // FLUX_DH_EPS 0.004, VFR_MIN_WET_FRAC 0.01.
+                merged.theta = 0.8;
+                merged.cflNumber = 0.7;
+                merged.froudeMax = 1.5;
+                merged.couplingSync = 0.0;
+                merged.fluxDhEps = 0.004;
+                merged.vfrMinWetFrac = 0.01;
+            }
+            merged._meshDtmVersion = 5;
             return merged;
         } catch (e) {
             return defaultSettings();
@@ -227,19 +240,19 @@
         s.defaultN = n('m2d-default-n', 0.045);
         s.couplingCd = n('m2d-coupling-cd', 0.65);
         s.couplingArea = v('m2d-coupling-area', 'AUTO');
-        s.maxTimestep = n('m2d-max-timestep', 2.0);
+        s.maxTimestep = n('m2d-max-timestep', 10.0);
         s.dryDepth = n('m2d-dry-depth', 0.001);
-        s.couplingSync = n('m2d-coupling-sync', 1.0);
-        s.theta = n('m2d-theta', 0.5);
-        s.cflNumber = n('m2d-cfl-number', 0.8);
-        s.hMove = n('m2d-hmove', 0.001);
-        s.froudeMax = n('m2d-froude-max', 1.0);
-        s.ltsTiers = n('m2d-lts-tiers', 1);
+        s.couplingSync = n('m2d-coupling-sync', 0.0);
+        s.theta = n('m2d-theta', 0.8);
+        s.cflNumber = n('m2d-cfl-number', 0.7);
+        s.hMove = n('m2d-hmove', 0.003);
+        s.froudeMax = n('m2d-froude-max', 1.5);
+        s.ltsTiers = n('m2d-lts-tiers', 4);
         s.limiterEpsilon = n('m2d-limiter-epsilon', 1e-6);
-        s.fluxDhEps = n('m2d-flux-dh-eps', 1e-6);
+        s.fluxDhEps = n('m2d-flux-dh-eps', 0.004);
         s.cellClosure = v('m2d-cell-closure', 'FLAT');
         s.faceReconstruction = v('m2d-face-reconstruction', 'MEAN');
-        s.vfrMinWetFrac = n('m2d-vfr-min-wet-frac', 0.1);
+        s.vfrMinWetFrac = n('m2d-vfr-min-wet-frac', 0.01);
         s.rainfallMode = v('m2d-rainfall-mode', 'NATURAL_NEIGHBOUR');
         s.report2d = v('m2d-report-2d', 'NO');
 
