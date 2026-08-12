@@ -208,6 +208,8 @@
             this.rebuildCadence = Math.max(1, options.rebuildCadence || 4);
             this._pendingReduce = null;
             this._lastReduce = null;
+            this._pendingRefresh = null;
+            this._paramsSlot = 0;
         }
 
         static async create(device, mesh, options) {
@@ -342,6 +344,20 @@
                 usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
                 label: 'redRB'
             });
+            if (this.ltsK > 1) {
+                // refreshDt0 readback: 4 bytes for red[1] (the running CFL min).
+                // Issued at the tail of each macro, consumed at the next macro's
+                // top — a per-macro dt0 refresh mirroring the engine's
+                // ExplicitInertialSolver::refreshDt0 (which re-mins dt0_ every
+                // macro cycle between rebuilds; the marcher previously only
+                // recomputed it at rebuild, letting a tier-k cell fire at
+                // 2^k·dt0 after its depth had grown past the frozen step).
+                this.buf.refreshRB = this.device.createBuffer({
+                    size: 4,
+                    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+                    label: 'refreshRB'
+                });
+            }
             this._ensureParamsBuffer();
         }
 
@@ -400,6 +416,7 @@
                 seedActive: pipe('seedActive', 'seedActive'),
                 halo: pipe('halo', 'halo'),
                 cflReduce: pipe('cflReduce', 'cflReduce'),
+                cflRefresh: pipe('cflRefresh', 'cflRefresh'),
                 cflArgmin: pipe('cflArgmin', 'cflArgmin'),
                 couplingExchange: pipe('couplingExchange', 'couplingExchange'),
                 settleAcc: pipe('settleAcc', 'settleAcc'),
@@ -442,7 +459,8 @@
                 h_on: o.hMove + Math.min(0.001, 0.5 * o.hMove),
                 h_off: Math.max(0, o.hMove - Math.min(0.001, 0.5 * o.hMove)),
                 dt: 0, dt_lazy: 0, src: 0, exch_beta: o.exchangeBeta ?? 0.8,
-                np: 0, ltsK: this.ltsK, k: 0, tail: 0, nlist: 0, pad: 0, pad2: 0, pad3: 0
+                np: 0, ltsK: this.ltsK, k: 0, tail: 0, nlist: 0,
+                dtFloor: this.options.dtFloor || 0.1, pad2: 0, pad3: 0
             };
             Object.assign(fill, patch);
             p.set([fill.nt, fill.ne, fill.dry_depth, fill.theta,
@@ -450,17 +468,23 @@
                    fill.g, fill.eta_deadband, fill.h_on, fill.h_off,
                    fill.dt, fill.dt_lazy, fill.src, fill.exch_beta,
                    fill.np, fill.ltsK, fill.k, fill.tail, fill.nlist,
-                   fill.pad, fill.pad2, fill.pad3]);
+                   fill.dtFloor, fill.pad2, fill.pad3]);
             // writeBuffer â†’ immediate dispatch reads stale data on some drivers;
-            // write to a staging buffer and copy in-encoder instead.
+            // write to a staging buffer and copy in-encoder instead. Each dispatch
+            // gets its OWN ring slot so one encoder can fire tiers with different
+            // dt (see _dispatch). 64 slots is plenty for the largest macro
+            // (LTS 8 = 16 tier dispatches + coupling + refresh); the counter
+            // wraps and stale slots are overwritten before reuse because the
+            // encoder is submitted before the next _setParams cycle.
             if (!this.buf.paramsStage) {
                 this.buf.paramsStage = this.device.createBuffer({
-                    size: 96,
+                    size: 96 * 64,
                     usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
                     label: 'paramsStage'
                 });
             }
-            this.device.queue.writeBuffer(this.buf.paramsStage, 0, p);
+            this._paramsSlot = ((this._paramsSlot || 0) + 1) % 64;
+            this.device.queue.writeBuffer(this.buf.paramsStage, this._paramsSlot * 96, p);
             this._paramsDirty = true;
         }
 
@@ -503,7 +527,13 @@
             // params travel via an in-encoder copy at every dispatch (LTS fires
             // different tiers with different dt within one encoder).
             if (this._paramsDirty) {
-                enc.copyBufferToBuffer(this.buf.paramsStage, 0, this.buf.params, 0, 96);
+                // The copy MUST read this dispatch's OWN staging slot: all the
+                // queue.writeBuffer(paramsStage) calls (one per _setParams) are
+                // enqueued before the encoder, so a single shared slot would let
+                // the LAST _setParams leak into every dispatch. Each dispatch
+                // writes its own 96 B ring slot and copies it right before the
+                // pass — in-encoder ordering then guarantees the right params.
+                enc.copyBufferToBuffer(this.buf.paramsStage, this._paramsSlot * 96, this.buf.params, 0, 96);
                 this._paramsDirty = false;
             }
             const pass = enc.beginComputePass({ label: name });
@@ -579,6 +609,38 @@
             return this._lastReduce;
         }
 
+        // refreshDt0 port (ExplicitInertialSolver::refreshDt0, called every
+        // macro cycle between rebuilds): dispatch cflRefresh (pure atomicMin
+        // into red[1]) at the tail of the just-submitted macro's encoder and
+        // read back red[1] — the running CFL min since the last rebuild.
+        // The readback overlaps the next macro's GPU work; advance() consumes
+        // it at the next macro's top and only shrinks dt0 (never grows, so a
+        // fresh tier assignment is never invalidated — mirrors the engine's
+        // "tightening mid-flight is unconditionally safe").
+        _issueRefreshDt() {
+            if (this.ltsK <= 1) return null;
+            return (async () => {
+                const enc = this.device.createCommandEncoder({ label: 'refresh-readback' });
+                enc.copyBufferToBuffer(this.buf.red, 4, this.buf.refreshRB, 0, 4);
+                this.device.queue.submit([enc.finish()]);
+                await this.buf.refreshRB.mapAsync(GPUMapMode.READ);
+                const bits = new Uint32Array(this.buf.refreshRB.getMappedRange())[0];
+                this.buf.refreshRB.unmap();
+                const dt = bits === 0x7F800000 ? Infinity : new Float32Array(new Uint32Array([bits]).buffer)[0];
+                return dt;
+            })();
+        }
+
+        _consumeRefreshDt() {
+            if (!this._pendingRefresh) return;
+            const p = this._pendingRefresh;
+            this._pendingRefresh = null;
+            return p.then(dt => {
+                if (Number.isFinite(dt) && dt > 0 && dt < this.dt0) this.dt0 = dt;
+                return this.dt0;
+            }).catch(() => this.dt0);
+        }
+
         _readReduce() {
             return (async () => {
                 const enc = this.device.createCommandEncoder({ label: 'red-readback' });
@@ -608,11 +670,13 @@
                 // with a local-stability risk confined to those cells.
                 // NOTE: DT_FLOOR is a project-only WebGPU guard — it is not an
                 // engine option (absent from SolverOptions2D.hpp and the
-                // manuals). Unify the default at 0.1 s (matching
-                // couplingSplit.js parse2DOptions); the engine itself has no
-                // dt0 floor.
+                // manuals). It is applied ONLY on the K=1 global-dt path:
+                // with LTS (K>1) a floor above the true CFL min lets tier-k
+                // cells fire at 2^k·floor far past their CFL (the engine has
+                // no floor and stays stable). The shader's cflReduce/cflRefresh
+                // mirror this (clamp only when P_LTSK <= 1).
                 const dtFloor = this.options.dtFloor || 0.1;
-                if (isFinite(dt) && dt < dtFloor) dt = dtFloor;
+                if (this.ltsK <= 1 && isFinite(dt) && dt < dtFloor) dt = dtFloor;
                 this._lastArgmin = argmin === 0xFFFFFFFF ? -1 : argmin;
                 return { count, dt };
             })();
@@ -649,6 +713,10 @@
                     }
                     this.activeCount = r ? r.count : 0;
                     this.dt0 = r && r.count > 0 ? r.dt : this.options.maxTimestep;
+                    // The rebuild reset red[1] to Infinity and recomputed it
+                    // fresh; any refresh readback issued before the rebuild is
+                    // stale (it read red[1] from before the reset). Drop it.
+                    this._pendingRefresh = null;
                     cycles = 0;
                 }
                 if (this.activeCount === 0) {
@@ -676,6 +744,17 @@
                 const nsubFull = 1 << (K - 1);
                 const dt0 = Math.min(this.dt0, remaining);
                 if (!(dt0 > 0) || !isFinite(dt0)) { t = t1; break; }   // dt floor guard
+                // refreshDt0 (engine parity): shrink dt0 from the CFL min of the
+                // state the PREVIOUS macro produced, before sizing this macro's
+                // tier steps. The engine does this every macro cycle; the marcher
+                // otherwise runs a tier-k cell at 2^k·(rebuild-old dt0) after its
+                // depth has grown past the frozen step (closed-lake seiche blowup
+                // at LTS_TIERS > 1). Only shrinks — never grows.
+                // NOTE: consumption is async and MUST complete before the macro
+                // is dispatched. Await it here (not fire-and-forget).
+                if (this._pendingRefresh) {
+                    await this._consumeRefreshDt();
+                }
                 let nsub = nsubFull;
                 let tail = false;
                 if (nsubFull * this.dt0 > remaining) {
@@ -710,7 +789,15 @@
                         this._dispatchLts(enc, 'couplingExchange', this.couplingNp, { dt: dt0, ...base, k: 0, tail: 0, nlist: this.couplingNp });
                     }
                 }
+                // refreshDt0 (engine parity): re-min the CFL over the state this
+                // macro just produced, so the NEXT macro's tier steps shrink
+                // with it. atomicMin into red[1] (only ever shrinks; reset at the
+                // next rebuild). Mirrors ExplicitInertialSolver::refreshDt0
+                // (per-macro) — without it a tier-k cell fires at 2^k·(stale
+                // rebuild dt0) after its depth has grown past the frozen step.
+                this._dispatchLts(enc, 'cflRefresh', this.edges.nt, { ...base, dt: 0, k: 0, tail: 0, nlist: 0 });
                 this.device.queue.submit([enc.finish()]);
+                this._pendingRefresh = this._issueRefreshDt();
                 t += nsub * dt0;
                 substeps += nsub;
                 cycles++;
