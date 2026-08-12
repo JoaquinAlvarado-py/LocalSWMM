@@ -38,6 +38,7 @@ const P_LTSK: u32 = 17u;
 const P_K: u32 = 18u;
 const P_TAIL: u32 = 19u;
 const P_NLIST: u32 = 20u;
+const P_DTFLOOR: u32 = 21u;
 
 @group(0) @binding(0) var<storage, read> params: array<f32>;
 
@@ -327,6 +328,49 @@ fn cflReduce(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     dt = min(dt, params[P_MAXDT]);
     atomicMin(&red[1], bitcast<u32>(dt));
+    // Effective dt0 = max(raw CFL min, DT_FLOOR): tierAssign (which reads
+    // red[1]) must agree with the floored dt0 the JS fires macros at, or a
+    // tier-k cell would be sized for 2^k·raw while running at 2^k·floored.
+    // DT_FLOOR is a project-only guard intended for the K=1 global-dt path
+    // (where it bounds an f32 dt0 collapse); with LTS (K>1) it is UNSAFE:
+    // once the true CFL min drops below the floor, a tier-k cell fires at
+    // 2^k·floor far above its CFL (the engine has no floor and stays stable).
+    if (params[P_LTSK] <= 1.0) {
+        atomicMax(&red[1], bitcast<u32>(params[P_DTFLOOR]));
+    }
+}
+
+// ---- cflRefresh: per-macro refreshDt0() (ExplicitInertialSolver.cpp:334).
+// Same per-cell CFL as cflReduce but WITHOUT the count atomicAdd — a pure
+// atomicMin into red[1]. Dispatched at the tail of each macro cycle between
+// rebuilds so dt0 tracks the current state's CFL min (the engine refreshes
+// dt0_ every macro; the marcher previously only recomputed it at rebuild,
+// which let a tier-k cell fire at 2^k·dt0 after its depth had grown past the
+// frozen step — the closed-lake seiche blowup at LTS_TIERS > 1).
+// Only SHRINKS (running atomicMin, reset at rebuild) — mirroring the engine's
+// "tightening mid-flight is unconditionally safe; growing waits for rebuild".
+@compute @workgroup_size(64)
+fn cflRefresh(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= u32(params[P_NT])) { return; }
+    if (wk[i] == 0u) { return; }
+    let h = state[2u * u32(params[P_NT]) + i];
+    var speed: f32 = 0.0;
+    if (h > F32_1E_6) {
+        let qm = sqrt(state[3u * u32(params[P_NT]) + i] * state[3u * u32(params[P_NT]) + i] + state[4u * u32(params[P_NT]) + i] * state[4u * u32(params[P_NT]) + i]);
+        speed = qm / h;
+    }
+    var dt: f32 = F32_1E30;
+    if (h > params[P_DRY]) {
+        let c = sqrt(params[P_G] * h) + speed;
+        dt = select(F32_1E30, params[P_CFL] * geoA[4u * u32(params[P_NT]) + i] / c, c > F32_1E_12);
+    }
+    dt = min(dt, params[P_MAXDT]);
+    atomicMin(&red[1], bitcast<u32>(dt));
+    // Same effective-dt0 clamp as cflReduce — only on K=1 (see above).
+    if (params[P_LTSK] <= 1.0) {
+        atomicMax(&red[1], bitcast<u32>(params[P_DTFLOOR]));
+    }
 }
 
 // ---- cflArgmin: the cell whose CFL dt equals the reduced min (for the
