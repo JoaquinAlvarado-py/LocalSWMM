@@ -22,15 +22,15 @@
     function optionLines(o) {
         o = o || {};
         var out = [
-            'MAX_TIMESTEP ' + n(o.maxTimestep, 2), 'DRY_DEPTH ' + n(o.dryDepth, 0.001),
-            'COUPLING_CD ' + n(o.couplingCd, 0.65), 'COUPLING_SYNC ' + Math.max(0, n(o.couplingSync, 1)),
-            'THETA ' + bounded(o.theta, 0.5, 1e-9, 1), 'CFL_NUMBER ' + bounded(o.cflNumber, 0.8, 1e-9, 1),
-            'H_MOVE ' + n(o.hMove, 0.001), 'LTS_TIERS ' + Math.max(1, Math.min(8, Math.round(n(o.ltsTiers, 1)))),
-            'FROUDE_MAX ' + n(o.froudeMax, 1), 'LIMITER_EPSILON ' + n(o.limiterEpsilon, 1e-6),
-            'FLUX_DH_EPS ' + n(o.fluxDhEps, 1e-6),
+            'MAX_TIMESTEP ' + n(o.maxTimestep, 10), 'DRY_DEPTH ' + n(o.dryDepth, 0.001),
+            'COUPLING_CD ' + n(o.couplingCd, 0.65), 'COUPLING_SYNC ' + Math.max(0, n(o.couplingSync, 0)),
+            'THETA ' + bounded(o.theta, 0.8, 1e-9, 1), 'CFL_NUMBER ' + bounded(o.cflNumber, 0.7, 1e-9, 1),
+            'H_MOVE ' + n(o.hMove, 0.003), 'LTS_TIERS ' + Math.max(1, Math.min(8, Math.round(n(o.ltsTiers, 4)))),
+            'FROUDE_MAX ' + n(o.froudeMax, 1.5), 'LIMITER_EPSILON ' + n(o.limiterEpsilon, 1e-6),
+            'FLUX_DH_EPS ' + n(o.fluxDhEps, 0.004),
             'CELL_CLOSURE ' + (/^(VFR)$/i.test(String(o.cellClosure || '')) ? 'VFR' : 'FLAT'),
             'FACE_RECONSTRUCTION ' + (/^(VFR_FACE)$/i.test(String(o.faceReconstruction || '')) ? 'VFR_FACE' : 'MEAN'),
-            'VFR_MIN_WET_FRAC ' + bounded(o.vfrMinWetFrac, 0.1, 1e-9, 0.5), 'INTEGRATOR EXPLICIT'
+            'VFR_MIN_WET_FRAC ' + bounded(o.vfrMinWetFrac, 0.01, 1e-9, 0.5), 'INTEGRATOR EXPLICIT'
         ];
         out.push('COUPLING_AREA ' + (o.couplingArea === 'DEFAULT' ? 'DEFAULT' : 'AUTO'));
         if (/^(NATURAL_NEIGHBOUR|SYSTEM|NONE)$/i.test(String(o.rainfallMode || ''))) out.push('RAINFALL_MODE ' + String(o.rainfallMode).toUpperCase());

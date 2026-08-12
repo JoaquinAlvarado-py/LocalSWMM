@@ -658,21 +658,21 @@
                     <div style="display:flex;gap:8px;flex-wrap:wrap;">
                         <div><label style="font-size:10px;color:var(--text-light);">MAX_TIMESTEP (s)</label><input type="number" id="m2d-max-timestep" value="10" step="0.5" class="tb-input" style="width:70px;font-size:11px;"></div>
                         <div><label style="font-size:10px;color:var(--text-light);">DRY_DEPTH (m)</label><input type="number" id="m2d-dry-depth" value="0.001" step="0.001" class="tb-input" style="width:70px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">COUPLING_SYNC (s)</label><input type="number" id="m2d-coupling-sync" value="1" step="0.5" class="tb-input" style="width:70px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">THETA</label><input type="number" id="m2d-theta" value="0.5" step="0.05" class="tb-input" style="width:60px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">CFL_NUMBER</label><input type="number" id="m2d-cfl-number" value="0.8" step="0.05" class="tb-input" style="width:60px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">COUPLING_SYNC (s)</label><input type="number" id="m2d-coupling-sync" value="0" step="0.5" class="tb-input" style="width:70px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">THETA</label><input type="number" id="m2d-theta" value="0.8" step="0.05" class="tb-input" style="width:60px;font-size:11px;"></div>
+                        <div><label style="font-size:10px;color:var(--text-light);">CFL_NUMBER</label><input type="number" id="m2d-cfl-number" value="0.7" step="0.05" class="tb-input" style="width:60px;font-size:11px;"></div>
                          <div><label style="font-size:10px;color:var(--text-light);">H_MOVE (m)</label><input type="number" id="m2d-hmove" value="0.003" step="0.001" class="tb-input" style="width:70px;font-size:11px;"></div>
-                         <div><label style="font-size:10px;color:var(--text-light);">FROUDE_MAX</label><input type="number" id="m2d-froude-max" value="1.0" step="0.1" class="tb-input" style="width:60px;font-size:11px;"></div>
+                         <div><label style="font-size:10px;color:var(--text-light);">FROUDE_MAX</label><input type="number" id="m2d-froude-max" value="1.5" step="0.1" class="tb-input" style="width:60px;font-size:11px;"></div>
                          <div><label style="font-size:10px;color:var(--text-light);">LTS_TIERS</label><input type="number" id="m2d-lts-tiers" value="4" step="1" class="tb-input" style="width:50px;font-size:11px;"></div>
                          <div><label style="font-size:10px;color:var(--text-light);">LIMITER_EPSILON</label><input type="number" id="m2d-limiter-epsilon" value="0.000001" step="0.000001" class="tb-input" style="width:90px;font-size:11px;"></div>
-                         <div><label style="font-size:10px;color:var(--text-light);">FLUX_DH_EPS</label><input type="number" id="m2d-flux-dh-eps" value="0.000001" step="0.000001" class="tb-input" style="width:90px;font-size:11px;"></div>
+                         <div><label style="font-size:10px;color:var(--text-light);">FLUX_DH_EPS</label><input type="number" id="m2d-flux-dh-eps" value="0.004" step="0.001" class="tb-input" style="width:90px;font-size:11px;"></div>
                      </div>
                      <div style="display:flex;gap:8px;margin-top:4px;">
                          <div><label style="font-size:10px;color:var(--text-light);">CELL_CLOSURE</label>
                              <select id="m2d-cell-closure" class="tb-select" style="font-size:11px;"><option value="FLAT">FLAT</option><option value="VFR">VFR</option></select></div>
                          <div><label style="font-size:10px;color:var(--text-light);">FACE_RECONSTRUCTION</label>
                              <select id="m2d-face-reconstruction" class="tb-select" style="font-size:11px;"><option value="MEAN">MEAN</option><option value="VFR_FACE">VFR_FACE</option></select></div>
-                         <div><label style="font-size:10px;color:var(--text-light);">VFR_MIN_WET_FRAC</label><input type="number" id="m2d-vfr-min-wet-frac" value="0.1" min="0.000001" max="0.5" step="0.01" class="tb-input" style="width:75px;font-size:11px;"></div>
+                         <div><label style="font-size:10px;color:var(--text-light);">VFR_MIN_WET_FRAC</label><input type="number" id="m2d-vfr-min-wet-frac" value="0.01" min="0.000001" max="0.5" step="0.01" class="tb-input" style="width:75px;font-size:11px;"></div>
                          <div><label style="font-size:10px;color:var(--text-light);">RAINFALL_MODE</label>
                             <select id="m2d-rainfall-mode" class="tb-select" style="font-size:11px;"><option value="NATURAL_NEIGHBOUR">NATURAL_NEIGHBOUR</option><option value="SYSTEM">SYSTEM</option><option value="NONE">NONE</option></select></div>
                         <div><label style="font-size:10px;color:var(--text-light);">REPORT_2D</label>

@@ -47,13 +47,13 @@
             return m ? +m[1] : dflt;
         };
         return {
-            theta: get('THETA', 0.5),
-            cflNumber: get('CFL_NUMBER', 0.8),
+            theta: get('THETA', 0.8),
+            cflNumber: get('CFL_NUMBER', 0.7),
             hMove: get('H_MOVE', 0.003),
-            froudeMax: get('FROUDE_MAX', 1.0),
+            froudeMax: get('FROUDE_MAX', 1.5),
             dryDepth: get('DRY_DEPTH', 0.001),
             maxTimestep: get('MAX_TIMESTEP', 10.0),
-            ltsTiers: get('LTS_TIERS', 1),
+            ltsTiers: get('LTS_TIERS', 4),
             rebuildCadence: Math.max(1, Math.round(get('REBUILD_CADENCE', 4))),
             dtFloor: get('DT_FLOOR', 0.1),
             exchangeBeta: 0.8

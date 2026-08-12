@@ -4,6 +4,9 @@
 // boundaries. The marching loop mirrors ExplicitInertialSolver::advance()
 // exactly (rebuild cadence 4, lazy-source clock, tail handling); kernels in
 // shaders/marcher.wgsl port InertialKernels.hpp 1:1 (f64 â†’ f32).
+// Default solver options now track the engine's own defaults
+// (SolverOptions2D.hpp / Ref Manual Vol II Ch9 §9.11): THETA 0.8, CFL 0.7,
+// FROUDE_MAX 1.5, H_MOVE 0.003, LTS_TIERS 4, DRY_DEPTH 0.001, MAX_TIMESTEP 10.
 //
 // Mesh input contract (from the app's mesh2DIndexed or INP parse):
 //   { vertices: [{x, y, z}], triangles: [{v: [i0,i1,i2], n}] }
@@ -124,15 +127,33 @@
         }
         const ne = cL.length;
 
-        // cell_lchar (InertialEdges.cpp:87-93)
+        // cell_lchar (InertialEdges.cpp:113-131; Ref Manual Vol II Eq 9-4):
+        // operator-derived L_char = sqrt(2A / Σ_f ξ_f·inv_dx_normal_f), a TRUE
+        // Courant length (1.0 = linear stability limit). The old 2A/ξ_max
+        // geometric proxy overstated the allowable dt by √3, which is why
+        // frictionless basins seiched at nominal CFL ≥ 0.6. Cells with no
+        // interior faces keep the altitude proxy (they carry no flux until a
+        // neighbour opens).
         const cellLchar = new Float64Array(nt);
-        for (let t = 0; t < nt; t++) {
-            let xiMax = 0;
-            for (let e = 0; e < 3; e++) {
-                const sidx = slotEdge[t * 3 + e];
-                if (sidx >= 0) xiMax = Math.max(xiMax, edgeLen[t * 3 + e]);
+        {
+            const S = new Float64Array(nt);
+            for (let e = 0; e < ne; e++) {
+                const s = xi[e] * invDxNormal[e];
+                S[cL[e]] += s;
+                S[cR[e]] += s;
             }
-            cellLchar[t] = xiMax > 0 ? 2 * tri_area[t] / xiMax : 0;
+            for (let t = 0; t < nt; t++) {
+                if (S[t] > 1e-30) {
+                    cellLchar[t] = Math.sqrt(2 * tri_area[t] / S[t]);
+                } else {
+                    let xiMax = 0;
+                    for (let e = 0; e < 3; e++) {
+                        const sidx = slotEdge[t * 3 + e];
+                        if (sidx >= 0) xiMax = Math.max(xiMax, edgeLen[t * 3 + e]);
+                    }
+                    cellLchar[t] = xiMax > 0 ? 2 * tri_area[t] / xiMax : 0;
+                }
+            }
         }
 
         // Phase 2: per-cell CSR (InertialEdges.cpp:96-115), local-edge order
@@ -180,7 +201,7 @@
             this.cycles = 1000;               // force rebuild on first advance
             this.dt0 = options.maxTimestep;
             this.activeCount = 0;
-            this.ltsK = Math.max(1, Math.min(8, Math.floor(options.ltsTiers || 1)));
+            this.ltsK = Math.max(1, Math.min(8, Math.floor(options.ltsTiers || 4)));
             this.cellCounts = new Uint32Array(this.ltsK);
             this.edgeCounts = new Uint32Array(this.ltsK);
             this._dbgRebuilds = 0;
@@ -413,7 +434,13 @@
                 beta_share: (o.exchangeBeta ?? 0.8) / 3.0,
                 cfl_alpha: o.cflNumber, max_timestep: o.maxTimestep,
                 g: G, eta_deadband: 1e-12,
-                h_on: o.hMove + 0.001, h_off: Math.max(0, o.hMove - 0.001),
+                // Hysteresis band scales with H_MOVE, capped at the historical
+                // ±1 mm (ExplicitInertialSolver.cpp:251-253; Ref Manual Vol II
+                // Eq 9-25): band = min(1 mm, h_move/2). A fixed ±1 mm band
+                // made H_MOVE 1e-4 require 1.1 mm to activate. Bit-identical
+                // at the default h_move = 0.003 (band = 1 mm either way).
+                h_on: o.hMove + Math.min(0.001, 0.5 * o.hMove),
+                h_off: Math.max(0, o.hMove - Math.min(0.001, 0.5 * o.hMove)),
                 dt: 0, dt_lazy: 0, src: 0, exch_beta: o.exchangeBeta ?? 0.8,
                 np: 0, ltsK: this.ltsK, k: 0, tail: 0, nlist: 0, pad: 0, pad2: 0, pad3: 0
             };
@@ -579,7 +606,12 @@
                 // floor the f32 marcher runs 5-7M substeps. A floor at the
                 // mesh's tiny-cell scale (2× their CFL) bounds the substeps
                 // with a local-stability risk confined to those cells.
-                const dtFloor = this.options.dtFloor || 0.05;
+                // NOTE: DT_FLOOR is a project-only WebGPU guard — it is not an
+                // engine option (absent from SolverOptions2D.hpp and the
+                // manuals). Unify the default at 0.1 s (matching
+                // couplingSplit.js parse2DOptions); the engine itself has no
+                // dt0 floor.
+                const dtFloor = this.options.dtFloor || 0.1;
                 if (isFinite(dt) && dt < dtFloor) dt = dtFloor;
                 this._lastArgmin = argmin === 0xFFFFFFFF ? -1 : argmin;
                 return { count, dt };

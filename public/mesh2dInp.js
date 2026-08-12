@@ -88,21 +88,21 @@
     function buildOptionsLines(opts) {
         opts = opts || {};
         const lines = [
-            `MAX_TIMESTEP         ${finite(opts.maxTimestep, 2.0)}`,
+            `MAX_TIMESTEP         ${finite(opts.maxTimestep, 10.0)}`,
             `DRY_DEPTH            ${finite(opts.dryDepth, 0.001)}`,
-            `COUPLING_SYNC        ${Math.max(0, finite(opts.couplingSync !== undefined ? opts.couplingSync : opts.couplingInterval, 1.0))}`,
-            `THETA                ${bounded(opts.theta, 0.5, 1e-9, 1)}`,
-            `CFL_NUMBER           ${bounded(opts.cflNumber, 0.8, 1e-9, 1)}`,
-            `H_MOVE               ${finite(opts.hMove, 0.001)}`,
-            `FROUDE_MAX           ${finite(opts.froudeMax, 1.0)}`,
-            `LTS_TIERS            ${Math.max(1, Math.min(8, Math.round(finite(opts.ltsTiers, 1))))}`
+            `COUPLING_SYNC        ${Math.max(0, finite(opts.couplingSync !== undefined ? opts.couplingSync : opts.couplingInterval, 0.0))}`,
+            `THETA                ${bounded(opts.theta, 0.8, 1e-9, 1)}`,
+            `CFL_NUMBER           ${bounded(opts.cflNumber, 0.7, 1e-9, 1)}`,
+            `H_MOVE               ${finite(opts.hMove, 0.003)}`,
+            `FROUDE_MAX           ${finite(opts.froudeMax, 1.5)}`,
+            `LTS_TIERS            ${Math.max(1, Math.min(8, Math.round(finite(opts.ltsTiers, 4))))}`
         ];
         lines.push(
             `LIMITER_EPSILON      ${finite(opts.limiterEpsilon, 1e-6)}`,
-            `FLUX_DH_EPS          ${finite(opts.fluxDhEps, 1e-6)}`,
+            `FLUX_DH_EPS          ${finite(opts.fluxDhEps, 0.004)}`,
             `CELL_CLOSURE         ${/^(VFR)$/i.test(String(opts.cellClosure || '')) ? 'VFR' : 'FLAT'}`,
             `FACE_RECONSTRUCTION  ${/^(VFR_FACE)$/i.test(String(opts.faceReconstruction || '')) ? 'VFR_FACE' : 'MEAN'}`,
-            `VFR_MIN_WET_FRAC     ${bounded(opts.vfrMinWetFrac, 0.1, 1e-9, 0.5)}`,
+            `VFR_MIN_WET_FRAC     ${bounded(opts.vfrMinWetFrac, 0.01, 1e-9, 0.5)}`,
             'INTEGRATOR           EXPLICIT'
         );
         lines.push(`COUPLING_CD          ${finite(opts.couplingCd, 0.65)}`);
