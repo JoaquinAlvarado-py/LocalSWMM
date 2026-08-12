@@ -2,6 +2,7 @@
 
 // Load the generated runtime before accepting a transferred WASM payload.
 // Importing it after a large ArrayBuffer message can stall Chromium workers.
+importScripts('view2d.js?v=' + Date.now());
 importScripts('openswmm2d.js?v=' + Date.now());
 
 let modulePromise = null;
@@ -211,6 +212,7 @@ function readVelocity(Module, api, engine, depths, triangleVertices, dryDepth, g
         }
         const f = readDoubleArray(Module, flux, n * 3), l = geometryCache.length, x = geometryCache.nx, y = geometryCache.ny;
         const magnitudes = new Float64Array(n), vxOut = new Float64Array(n), vyOut = new Float64Array(n);
+        const view2d = typeof View2D !== 'undefined' ? View2D : null;
         depths.forEach(function (h, i) {
             if (!(h > (dryDepth || 0.001))) return;
             let a = 0, b = 0, c = 0, d = 0, e = 0, q0, q1, q2;
@@ -222,7 +224,10 @@ function readVelocity(Module, api, engine, depths, triangleVertices, dryDepth, g
             // Edge flux reconstructs specific discharge (q = h * v). Convert
             // it to physical velocity for the animation and velocity KPI.
             const vx = (c * rx - b * ry) / det / h, vy = (a * ry - b * rx) / det / h;
-            vxOut[i] = vx; vyOut[i] = vy; magnitudes[i] = Math.hypot(vx, vy);
+            // Depth-gated + magnitude-clamped (CONTEXT.md: q/h inflation) so a
+            // thin film does not render as tens of m/s.
+            const v = view2d ? view2d.clampVelocity(vx, vy, h) : { vx: vx, vy: vy, mag: Math.hypot(vx, vy) };
+            vxOut[i] = v.vx; vyOut[i] = v.vy; magnitudes[i] = v.mag;
         });
         return { mag: magnitudes, vx: vxOut, vy: vyOut };
     } finally { Module._free(flux); }

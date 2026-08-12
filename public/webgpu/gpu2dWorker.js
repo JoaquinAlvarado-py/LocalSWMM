@@ -7,6 +7,7 @@
 // (couplingSplit.js). Falls back with a WEBGPU_* / VERTEX_COUPLING error so
 // the app can retry with the WASM worker.
 
+importScripts('../view2d.js?v=' + Date.now());
 importScripts('../openswmm2d.js?v=' + Date.now());
 importScripts('webgpuMarscher.js?v=' + Date.now());
 importScripts('couplingSplit.js?v=' + Date.now());
