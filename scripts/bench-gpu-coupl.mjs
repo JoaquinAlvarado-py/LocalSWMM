@@ -10,13 +10,17 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const CHROME = process.env.CHROME_PATH || (
+    process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+        : process.platform === 'win32' ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+            : 'google-chrome');
 const APP_PORT = 8080;
 const CDP_PORT = 9225;
 const CDP_HTTP = `http://127.0.0.1:${CDP_PORT}`;
 const APP_URL = `http://127.0.0.1:${APP_PORT}/`;
-const PROFILE = join(process.env.TEMP || 'C:\\Users\\joaqu\\AppData\\Local\\Temp', 'gpu-coupl-' + Date.now());
-const LOG = join(process.env.TEMP || 'C:\\Users\\joaqu\\AppData\\Local\\Temp', 'gpu-coupl-live.log');
+const _TMP = process.env.TEMP || (process.platform === 'win32' ? 'C:\\Users\\joaqu\\AppData\\Local\\Temp' : '/tmp');
+const PROFILE = join(_TMP, 'gpu-coupl-' + Date.now());
+const LOG = join(_TMP, 'gpu-coupl-live.log');
 try { appendFileSync(LOG, ''); } catch { }
 const live = (text) => { try { appendFileSync(LOG, text + '\n'); } catch { } };
 const winIdx = process.argv.indexOf('--windows');
