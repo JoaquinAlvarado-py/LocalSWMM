@@ -48,7 +48,10 @@ try {
         for (let i = 0; i < 30; i++) { if (await probe(`http://127.0.0.1:${APP_PORT}/api/status`)) break; await sleep(500); }
     }
     if (!(await probe(`${CDP_HTTP}/json/version`))) {
-        chrome = spawn(CHROME, [`--remote-debugging-port=${CDP_PORT}`, '--remote-allow-origins=*', `--user-data-dir=${PROFILE}`, '--no-first-run', '--disable-default-apps', '--disable-background-networking', '--window-size=1100,820', 'about:blank'], { stdio: 'ignore' });
+        chrome = spawn(CHROME, [`--remote-debugging-port=${CDP_PORT}`, '--remote-allow-origins=*', `--user-data-dir=${PROFILE}`, '--no-first-run', '--disable-default-apps', '--disable-background-networking', '--window-size=1100,820',
+            // Linux NVIDIA WebGPU: blocklist bypass + Vulkan backend (see run-webgpu-harness.mjs)
+            '--ignore-gpu-blocklist', '--enable-unsafe-webgpu', '--enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan', '--use-angle=vulkan', '--use-vulkan=native',
+            'about:blank'], { stdio: 'ignore' });
         for (let i = 0; i < 60; i++) { if (await probe(`${CDP_HTTP}/json/version`)) break; if (chrome.exitCode !== null) throw new Error('Chrome exited early: ' + chrome.exitCode); await sleep(500); }
     }
     const version = await (await httpGet(`${CDP_HTTP}/json/version`)).json();

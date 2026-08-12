@@ -125,6 +125,15 @@ async function main() {
                 '--disable-default-apps',
                 '--disable-background-networking',
                 '--window-size=1100,820',
+                // Linux NVIDIA: WebGPU is exposed only in secure contexts, and
+                // Dawn needs the GPU blocklist ignored + the Vulkan backend to
+                // hand back an adapter (verified 151/linux: without these,
+                // requestAdapter() returns null).
+                '--ignore-gpu-blocklist',
+                '--enable-unsafe-webgpu',
+                '--enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan',
+                '--use-angle=vulkan',
+                '--use-vulkan=native',
                 'about:blank'
             ];
             console.log('Launching headed Chrome (WebGPU; window will appear briefly)…');
