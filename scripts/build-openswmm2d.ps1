@@ -46,6 +46,9 @@ if (-not $Ninja) {
 }
 $EmscriptenToolchain = Join-Path $LocalEmsdk 'upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake'
 
+# Threaded build: pthreads + OpenMP solver loops (Emscripten maps OpenMP
+# pragmas onto pthreads/SharedArrayBuffer). The node emulator lets
+# FindOpenMP run its probe under emcc so SWMM_USE_OPENMP gets defined.
 & cmake -S $Source -B $Build -G Ninja `
     "-DCMAKE_BUILD_TYPE=Release" `
     "-DCMAKE_CXX_SCAN_FOR_MODULES=OFF" `
@@ -63,15 +66,18 @@ $EmscriptenToolchain = Join-Path $LocalEmsdk 'upstream/emscripten/cmake/Modules/
     "-DOPENSWMM_BUILD_TESTS=OFF" `
     "-DOPENSWMM_INSTALL=OFF" `
     "-DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON" `
-    "-DOpenMP_C_FOUND=FALSE" `
-    "-DCMAKE_DISABLE_FIND_PACKAGE_OpenMP=TRUE" `
-    "-DCMAKE_C_FLAGS=-msimd128" `
-    "-DCMAKE_CXX_FLAGS=-msimd128"
+    "-UCMAKE_DISABLE_FIND_PACKAGE_OpenMP" `
+    "-DCMAKE_C_FLAGS=-fopenmp -msimd128" `
+    "-DCMAKE_CXX_FLAGS=-fopenmp -msimd128"
 
 & cmake --build $Build --target openswmm2d_wasm --parallel
 
 Copy-Item -Force (Join-Path $Root 'public/openswmm2d.wasm') (Join-Path $Root 'public/swmm6wasm.wasm')
 Copy-Item -Force (Join-Path $Root 'public/openswmm2d.js') (Join-Path $Root 'public/swmm6wasm.js')
+# Emscripten's current pthread model reuses the host script (no separate
+# .worker.js); copy it anyway if a future toolchain emits one.
+$WorkerJs = Join-Path $Root 'public/openswmm2d.worker.js'
+if (Test-Path $WorkerJs) { Copy-Item -Force $WorkerJs (Join-Path $Root 'public/swmm6wasm.worker.js') }
 
 $EngineCommit = 'unknown'
 $EngineDescribe = 'unknown'

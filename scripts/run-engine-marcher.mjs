@@ -19,6 +19,15 @@ for (let i = 4; i < process.argv.length; i++) {
 }
 
 const glue = readFileSync(new URL('../public/openswmm2d.js', import.meta.url), 'utf8');
+if (/em-pthread|SharedArrayBuffer/.test(glue)) {
+    console.error(
+        'The public wasm is built with threads (pthreads/OpenMP), which needs a browser with\n' +
+        'cross-origin isolation (COOP/COEP) — plain Node cannot run it. Use a non-threaded build\n' +
+        'for Node reference runs (rebuild with the -pthread flag stripped from cmake/wasm/CMakeLists.txt),\n' +
+        'or verify in a browser via scripts/test-gpu-worker.mjs / scripts/bench-wasm-threads.mjs.'
+    );
+    process.exit(1);
+}
 globalThis.self = globalThis;
 globalThis.window = globalThis;
 const factory = new Function(glue + '\n;return typeof createOpenSwmm2D === "function" ? createOpenSwmm2D : null;')();

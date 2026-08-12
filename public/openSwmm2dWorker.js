@@ -2,8 +2,9 @@
 
 // Load the generated runtime before accepting a transferred WASM payload.
 // Importing it after a large ArrayBuffer message can stall Chromium workers.
-importScripts('view2d.js?v=' + Date.now());
-importScripts('openswmm2d.js?v=' + Date.now());
+importScripts('build-version.js');
+importScripts('view2d.js?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now()));
+importScripts('openswmm2d.js?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now()));
 
 let modulePromise = null;
 
@@ -18,7 +19,7 @@ function getModule() {
         self.postMessage({ type: 'status2d', stage: self.pendingWasmBinary ? 'using-transferred-wasm' : 'fetching-wasm' });
         const loadBinary = self.pendingWasmBinary
             ? Promise.resolve(self.pendingWasmBinary)
-            : fetch('openswmm2d.wasm?v=' + Date.now()).then(response => {
+            : fetch('openswmm2d.wasm?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now())).then(response => {
                 if (!response.ok) throw new Error(`Could not load openswmm2d.wasm: HTTP ${response.status}`);
                 return response.arrayBuffer();
             });
@@ -67,7 +68,11 @@ function getModule() {
                     receiveInstance(instance, wasmModule);
                     return instance.exports;
                 },
-                locateFile: file => file.endsWith('.wasm') ? 'openswmm2d.wasm' : file,
+                locateFile: file => {
+                    if (file.endsWith('.worker.js')) return 'openswmm2d.worker.js';
+                    if (file.endsWith('.wasm')) return 'openswmm2d.wasm';
+                    return file;
+                },
                 print: text => self.postMessage({ type: 'stdout', text: String(text) }),
                 printErr: createThrottledPrintErr(),
                 onAbort: reason => self.postMessage({ type: 'stderr', text: '[OpenSWMM 2D WASM abort] ' + String(reason || 'unknown reason') })
@@ -372,17 +377,23 @@ async function run(payload) {
     }
 }
 
-self.onmessage = event => {
-    if (!event.data || event.data.type !== 'run2d') return;
-    self.pendingWasmBinary = event.data.wasmBinary || null;
-    run(event.data).catch(error => {
-        // The failed instance may be an aborted runtime with stale MEMFS state
-        // (EXH recovery is MSVC-only); never reuse it for a later run.
-        modulePromise = null;
-        self.postMessage({
-            type: 'error',
-            message: error && error.message ? error.message : String(error),
-            detail: error && error.stack ? error.stack : ''
+// When this script is re-executed as an Emscripten pthread worker
+// (globalThis.name === 'em-pthread'), the glue's own message handler must not
+// be clobbered: it is how the runtime distributes SharedArrayBuffer work.
+if (globalThis.name !== 'em-pthread') {
+    self.onmessage = event => {
+        if (!event.data || event.data.type !== 'run2d') return;
+        self.pendingWasmBinary = event.data.wasmBinary || null;
+        run(event.data).catch(error => {
+            // The failed instance may be an aborted runtime with stale MEMFS state
+            // (EXH recovery is MSVC-only); never reuse it for a later run.
+            modulePromise = null;
+            self.postMessage({
+                type: 'error',
+                message: error && error.message ? error.message : String(error),
+                detail: error && error.stack ? error.stack : ''
+            });
         });
-    });
-};
+    };
+}
+

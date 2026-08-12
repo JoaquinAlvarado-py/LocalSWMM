@@ -32,7 +32,11 @@ export EMCC_SKIP_SANITY_CHECK="1"
 mkdir -p "$BUILD"
 
 EMSCALE_TOOLCHAIN="$LOCAL_EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
+EMSDK_NODE="$(find "$LOCAL_EMSDK/node" -name node -type f | head -1)"
 
+# Threaded build: pthreads + OpenMP solver loops. The node emulator lets
+# CMake's FindOpenMP compile-and-run its probe with emcc; without it the
+# engine falls back to SWMM_USE_OPENMP off and the pragmas compile out.
 emcmake cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_CXX_SCAN_FOR_MODULES=OFF \
@@ -47,14 +51,21 @@ emcmake cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
     -DOPENSWMM_BUILD_GPU_PLUGIN=OFF \
     -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON \
     -DOPENSWMM_BUILD_TESTS=OFF \
-    -DOpenMP_C_FOUND=FALSE \
-    -DCMAKE_DISABLE_FIND_PACKAGE_OpenMP=TRUE \
-    -DOPENSWMM_INSTALL=OFF
+    -DOPENSWMM_INSTALL=OFF \
+    -UCMAKE_DISABLE_FIND_PACKAGE_OpenMP \
+    -DCMAKE_CROSSCOMPILING_EMULATOR="$EMSDK_NODE" \
+    -DCMAKE_C_FLAGS="-fopenmp" \
+    -DCMAKE_CXX_FLAGS="-fopenmp"
 
 cmake --build "$BUILD" --target openswmm2d_wasm --parallel
 
 cp -f "$ROOT/public/openswmm2d.wasm" "$ROOT/public/swmm6wasm.wasm"
 cp -f "$ROOT/public/openswmm2d.js" "$ROOT/public/swmm6wasm.js"
+# Emscripten's current pthread model reuses the host script (no separate
+# .worker.js); copy it anyway if a future toolchain emits one.
+if [ -f "$ROOT/public/openswmm2d.worker.js" ]; then
+    cp -f "$ROOT/public/openswmm2d.worker.js" "$ROOT/public/swmm6wasm.worker.js"
+fi
 
 ENGINE_COMMIT=$(git -C "$ROOT/third_party/openswmm-engine" rev-parse HEAD || echo "unknown")
 ENGINE_DESCRIBE=$(git -C "$ROOT/third_party/openswmm-engine" describe --always --dirty --tags 2>/dev/null || echo "$ENGINE_COMMIT")
@@ -76,6 +87,6 @@ cat <<EOF > "$ROOT/public/swmm6wasm.version.json"
 }
 EOF
 
-echo "Built public/openswmm2d.js, public/openswmm2d.wasm, public/swmm6wasm.js, public/swmm6wasm.wasm"
+echo "Built public/openswmm2d.js/.wasm/.worker.js and public/swmm6wasm.js/.wasm/.worker.js"
 echo "Engine source: $ENGINE_DESCRIBE ($ENGINE_COMMIT)"
 

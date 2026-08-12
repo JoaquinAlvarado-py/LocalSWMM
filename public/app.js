@@ -930,7 +930,7 @@
         return new Promise((resolve, reject) => {
             let worker = null;
             try {
-                worker = new Worker('parseWorker.js?v=' + Date.now());
+                worker = new Worker('parseWorker.js?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now()));
             } catch (e) {
                 try { resolve(window.inpParser.parse(text)); }
                 catch (err) { reject(err); }
@@ -968,7 +968,7 @@
     let sim2DWorker = null;
     function getSimWorker() {
         if (!simWorker) {
-            simWorker = new Worker('simWorker.js?v=' + Date.now());
+            simWorker = new Worker('simWorker.js?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now()));
             simWorker.onerror = () => {
                 try { simWorker.terminate(); } catch (e) { }
                 simWorker = null;
@@ -1140,7 +1140,7 @@
                 if (sim2DWorker) {
                     try { sim2DWorker.terminate(); } catch (e) { }
                 }
-                sim2DWorker = new Worker(workerUrl + '?v=' + Date.now());
+                sim2DWorker = new Worker(workerUrl + '?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now()));
                 let stderrCount = 0;
                 sim2DWorker.onmessage = event => {
                     const message = event.data || {};

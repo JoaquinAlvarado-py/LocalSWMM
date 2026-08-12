@@ -215,7 +215,7 @@
         static async create(device, mesh, options) {
             const m = new WebGPUMarcher(device, mesh, options);
             await m._uploadStatic();
-            const code = await fetch('shaders/marcher.wgsl?v=' + Date.now()).then(r => {
+            const code = await fetch('shaders/marcher.wgsl?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now())).then(r => {
                 if (!r.ok) throw new Error('shaders/marcher.wgsl HTTP ' + r.status);
                 return r.text();
             });
