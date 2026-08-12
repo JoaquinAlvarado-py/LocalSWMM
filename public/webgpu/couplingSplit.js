@@ -502,14 +502,18 @@
                 const s = await marcher.sample();
                 const nt = s.depth.length;
                 const velocity = new Float64Array(nt), vx = new Float64Array(nt), vy = new Float64Array(nt);
+                if (!global.View2D) throw new Error('COUPLING_VIEW2D_MISSING: view2d.js was not loaded in the GPU worker');
+                const velocityOf = global.View2D.velocityFromDischarge;
                 for (let i = 0; i < nt; i++) {
                     const qx = s.qx ? s.qx[i] || 0 : 0, qy = s.qy ? s.qy[i] || 0 : 0;
                     const depth = Number(s.depth[i]);
-                    const dryDepth = marcher.options && Number(marcher.options.dryDepth) || 0.001;
-                    const invDepth = depth > dryDepth ? 1 / depth : 0;
-                    const vxCell = qx * invDepth, vyCell = qy * invDepth;
-                    velocity[i] = Math.hypot(vxCell, vyCell);
-                    vx[i] = vxCell; vy[i] = vyCell;
+                    // Depth-gated + magnitude-clamped velocity (CONTEXT.md:
+                    // q/h inflation). The engine Froude-caps its face fluxes;
+                    // the gate here keeps the rendered field from amplifying
+                    // q over the mm-scale film into tens of m/s.
+                    const v = velocityOf(qx, qy, depth);
+                    velocity[i] = v.mag;
+                    vx[i] = v.vx; vy[i] = v.vy;
                 }
                 frames.push({ elapsedMs: elapsed * 1000, depth: s.depth, head: s.head, velocity, velocityX: vx, velocityY: vy });
                 nextFrameSec = elapsed + (frameIntervalSec || 60);

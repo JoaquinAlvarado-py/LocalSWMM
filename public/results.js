@@ -33,26 +33,6 @@
             return { min, max };
         }
 
-        // Robust per-frame max for depth/velocity: the global 48 h range is
-        // dominated by outlier cells (channels, ponds), which squashes the
-        // flooded extent to the bottom of the ramp. Cap the scale at 1.5× the
-        // 99th percentile so each frame stays readable. Invalid GPU/WASM
-        // values are ignored rather than poisoning the color scale.
-        function robustFrameMax(arr) {
-            const finite = [];
-            let fMax = 0;
-            for (let i = 0; i < (arr || []).length; i++) {
-                const value = Number(arr[i]);
-                if (!Number.isFinite(value)) continue;
-                finite.push(value);
-                if (value > fMax) fMax = value;
-            }
-            if (fMax <= 0) return 0.001;
-            finite.sort((a, b) => a - b);
-            const p99 = finite[Math.min(finite.length - 1, Math.floor(finite.length * 0.99))];
-            return (p99 > 0 && fMax > 1.5 * p99) ? p99 * 1.5 : fMax;
-        }
-
     // ---------- rpt parsing ----------
     // All parsers take the pre-split lines array — the report is split ONCE
     // in displayResults instead of 8+ times.
@@ -417,17 +397,22 @@
                     const arr = frame[varKey];
                     if (arr) {
                         const ids = r2d.triangleIds;
-                        // Depth/velocity: per-frame robust max (readable floods);
-                        // head keeps the global range (its gradient is the signal).
-                        const mMax = (varKey === 'depth' || varKey === 'velocity')
-                            ? robustFrameMax(arr)
-                            : this.mesh2DMinMax.max;
+                        // Absolute scale, stable across frames: depth/velocity
+                        // use the global-across-frames robust max, head keeps
+                        // the global range. No per-frame re-normalization.
+                        const mMax = this.mesh2DMinMax.max;
                         const mMin = varKey === 'head' ? this.mesh2DMinMax.min : 0;
+                        const depthArr = frame.depth;
+                        const shouldShow = window.View2D ? window.View2D.shouldShow : null;
                         for (let i = 0; i < ids.length; i++) {
                             const raw = Number(arr[i]);
                             const val = Number.isFinite(raw) ? raw : 0;
+                            // Per-variable masking (View2D.shouldShow / CONTEXT.md):
+                            // depth hides the film below the mask; head shows only
+                            // cells with water present; velocity is source-gated.
+                            const show = shouldShow ? shouldShow(varKey, val, depthArr ? Number(depthArr[i]) : NaN) : (Number.isFinite(raw) && val > 0);
                             const t = mMax > mMin ? Math.min(1, (val - mMin) / (mMax - mMin)) : 0;
-                            const color = Number.isFinite(raw) && val > 0 ? rampColor(t) : 'rgba(0,0,0,0)';
+                            const color = show ? rampColor(t) : 'rgba(0,0,0,0)';
                             if (this._applied2D.get(ids[i]) === color) continue;
                             this._applied2D.set(ids[i], color);
                             try { map.setFeatureState({ source: 'swmm-2d-mesh', id: ids[i] }, { resultColor: color }); } catch (e) { }
@@ -541,6 +526,8 @@
             this.linkColors = {};
             this.timeSeries = null;
             this.outData = null;
+            this.mesh2DMinMax = null;
+            this.mesh2DDepthScale = null;
             if (window.AnimationUI) window.AnimationUI.hide();
         }
     };
@@ -1303,6 +1290,9 @@
         const report = result.report || '';
 
         // ---- compute global min/max across all frames for the active 2D variable ----
+        // Depth/velocity use a global-across-frames robust max (stable scale
+        // across the animation); head keeps the true global range (its
+        // gradient is the signal). See View2D.fieldScale / CONTEXT.md.
         function compute2DMinMax(varKey) {
             let min = Infinity, max = -Infinity;
             let finiteCount = 0;
@@ -1321,19 +1311,22 @@
             if (!Number.isFinite(max)) max = 0;
             return { min: min, max: Math.max(max, min + 0.001), hasFinite: finiteCount > 0 };
         }
+        const scaleOf = (varKey) => (window.View2D ? window.View2D.fieldScale(frames, varKey) : compute2DMinMax(varKey));
 
-        const depthRange = compute2DMinMax('depth');
-        const headRange = compute2DMinMax('head');
-        const velRange = compute2DMinMax('velocity');
+        const depthScale = scaleOf('depth');
+        const headScale = scaleOf('head');
+        const velScale = scaleOf('velocity');
+        const rangeMap = { depth: depthScale, head: headScale, velocity: velScale };
         const invalidFields = [];
-        if (!depthRange.hasFinite) invalidFields.push('depth');
-        if (!velRange.hasFinite) invalidFields.push('velocity');
+        if (!depthScale.hasFinite) invalidFields.push('depth');
+        if (!velScale.hasFinite) invalidFields.push('velocity');
 
         // ---- set up ResultStyling for 2D ----
         ResultStyling.clear();
         ResultStyling.active2DVar = 'depth';
-        ResultStyling.mesh2DMinMax = depthRange;
-        if (window.LayerTree && window.LayerTree.enableResultsDefaults) window.LayerTree.enableResultsDefaults();
+        ResultStyling.mesh2DMinMax = depthScale;
+        ResultStyling.mesh2DDepthScale = depthScale;
+        if (window.LayerTree && window.LayerTree.applyResultsPreset) window.LayerTree.applyResultsPreset('depth');
 
         // Color-code mesh with last-frame depth values initially
         // Some engine builds emit a completion marker with elapsedMs=0 after
@@ -1342,13 +1335,16 @@
             (Number(frame.elapsedMs) > 0 || frames.length === 1));
         const lastFrame = (renderFrames.length ? renderFrames : frames)[(renderFrames.length ? renderFrames : frames).length - 1];
         if (lastFrame) {
-            const dMin = depthRange.min;
-            const dMax = robustFrameMax(lastFrame.depth || []);
+            const dMin = depthScale.min;
+            const dMax = depthScale.max;
             ids.forEach((id, i) => {
                 const raw = Number(lastFrame.depth && lastFrame.depth[i]);
                 const val = Number.isFinite(raw) ? raw : 0;
                 const t = dMax > dMin ? Math.min(1, (val - dMin) / (dMax - dMin)) : 0;
-                const color = Number.isFinite(raw) && val > 0 ? rampColor(t) : 'rgba(0,0,0,0)';
+                // Absolute depth scale: cells below the mask render nothing
+                // (uniform-rain film stays hidden — CONTEXT.md).
+                const show = window.View2D ? window.View2D.shouldShow('depth', val, val) : (Number.isFinite(raw) && val >= 0.005);
+                const color = show ? rampColor(t) : 'rgba(0,0,0,0)';
                 ResultStyling.nodeColors[id] = color;
             });
         }
@@ -1420,13 +1416,18 @@
         kpis.push(`<div class="rv-kpi"><div class="rv-kpi-label">Time frames</div><div class="rv-kpi-value">${frames.length}</div></div>`);
         html += `<div class="rv-kpis">${kpis.join('')}</div>`;
 
-        // ---- color ramp legend ----
+        // ---- color ramp legend (updates with the selected variable) ----
         const grad = `linear-gradient(90deg, ${RAMP.join(', ')})`;
+        const legendMeta = {
+            depth: { title: '2D Water Depth', unit: depthUnit },
+            head: { title: '2D Hydraulic Head', unit: depthUnit },
+            velocity: { title: '2D Flow Velocity', unit: velUnit }
+        };
         html += `
-            <div class="rv-legend">
-                <div class="rv-legend-title"><span>2D Water depth</span><span class="rv-legend-unit">${esc(depthUnit)}</span></div>
+            <div class="rv-legend" id="results-2d-legend">
+                <div class="rv-legend-title"><span id="results-2d-legend-title">${esc(legendMeta.depth.title)}</span><span class="rv-legend-unit" id="results-2d-legend-unit">${esc(depthUnit)}</span></div>
                 <div class="rv-legend-bar" style="background:${grad}"></div>
-                <div class="rv-legend-scale"><span>${fmtVal(depthRange.min, 3)}</span><span>${fmtVal((depthRange.min + depthRange.max) / 2, 3)}</span><span>${fmtVal(depthRange.max, 3)}</span></div>
+                <div class="rv-legend-scale" id="results-2d-legend-scale"><span>${fmtVal(depthScale.min, 3)}</span><span>${fmtVal((depthScale.min + depthScale.max) / 2, 3)}</span><span>${fmtVal(depthScale.max, 3)}</span></div>
             </div>`;
 
         // ---- 2D variable selector ----
@@ -1472,13 +1473,25 @@
         // ---- wire up 2D variable selector ----
         const varSelect = document.getElementById('results-2d-var-select');
         if (varSelect) {
-            const rangeMap = { depth: depthRange, head: headRange, velocity: velRange };
+            const legendTitle = document.getElementById('results-2d-legend-title');
+            const legendUnit = document.getElementById('results-2d-legend-unit');
+            const legendScale = document.getElementById('results-2d-legend-scale');
+            const refreshLegend = (varKey, scale) => {
+                const meta = legendMeta[varKey] || legendMeta.depth;
+                if (legendTitle) legendTitle.textContent = meta.title;
+                if (legendUnit) legendUnit.textContent = meta.unit;
+                if (legendScale) {
+                    legendScale.innerHTML = `<span>${fmtVal(scale.min, 3)}</span><span>${fmtVal((scale.min + scale.max) / 2, 3)}</span><span>${fmtVal(scale.max, 3)}</span>`;
+                }
+            };
             varSelect.addEventListener('change', () => {
                 const varKey = varSelect.value;
                 ResultStyling.active2DVar = varKey;
-                ResultStyling.mesh2DMinMax = rangeMap[varKey] || depthRange;
+                ResultStyling.mesh2DMinMax = rangeMap[varKey] || depthScale;
                 ResultStyling._applied2D.clear(); // force full repaint
                 ResultStyling.applyToMapForStep(ResultStyling.currentStep);
+                refreshLegend(varKey, ResultStyling.mesh2DMinMax);
+                if (window.LayerTree && window.LayerTree.applyResultsPreset) window.LayerTree.applyResultsPreset(varKey);
             });
         }
 
