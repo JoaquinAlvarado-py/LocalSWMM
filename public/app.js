@@ -1129,8 +1129,14 @@
     }
 
     function run2DSimulationInWorker(inpText, triangleIds, meshFile) {
-        // WebGPU 2D first (the production path), WASM worker as the fallback.
-        const wantGpu = window.Net && Net.useGpu2d !== false && typeof navigator !== 'undefined' && !!navigator.gpu;
+        // The f64 WASM engine is the faithful reference: the whole INP runs
+        // through the engine's own co-advance (real 1D-2D coupling, f64
+        // precision, no project-only DT_FLOOR guard, NATURAL_NEIGHBOUR rain).
+        // The WebGPU f32 marcher is the performance path — it deviates from
+        // the engine (f32 vs f64, uniform-mean rain, DT_FLOOR) and produced
+        // the clumped/erratic depth fields, so it is now OPT-IN: re-enable
+        // with `Net.useGpu2d = true` before a run.
+        const wantGpu = window.Net && Net.useGpu2d === true && typeof navigator !== 'undefined' && !!navigator.gpu;
         // The worker posts progress2d { elapsedMs } per sampled frame; the Run
         // Status UI is driven from simulated time (not wall clock) so the bar
         // reflects true model progress even when the explicit solver's dt
