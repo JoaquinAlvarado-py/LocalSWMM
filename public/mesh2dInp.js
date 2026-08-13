@@ -128,6 +128,7 @@
             inp = ';; UNITS: SI (m)\n' + inp;
         }
         inp = stripMesh2DSections(inp);
+        inp = inp.replace(/^;;\s*2D_ORIGIN.*(?:\r?\n|$)/gim, '');
         inp = appendSection(inp, '2D_OPTIONS', buildOptionsLines(opts));
 
         inp = appendSection(inp, '2D_VERTICES', [
@@ -149,6 +150,10 @@
                     `${String(m.vertexIndex !== undefined ? m.vertexIndex : m.vertex).padEnd(17)} ${String(m.nodeId || m.node).padEnd(18)} ${finite(m.cd, 0.65).toFixed(3)}`)
             ]);
         }
+
+        // The parser turns the mesh's local X/Y meters back into lng/lat via
+        // this comment; without it every vertex lands on Null Island (lat 0).
+        inp = `;; 2D_ORIGIN ${finite(indexed.origin && indexed.origin.lng, 0)} ${finite(indexed.origin && indexed.origin.lat, 0)}\n${inp}`;
 
         return {
             inp,
