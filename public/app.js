@@ -1131,6 +1131,11 @@
     function run2DSimulationInWorker(inpText, triangleIds, meshFile) {
         // WebGPU 2D first (the production path), WASM worker as the fallback.
         const wantGpu = window.Net && Net.useGpu2d !== false && typeof navigator !== 'undefined' && !!navigator.gpu;
+        // The worker posts progress2d { elapsedMs } per sampled frame; the Run
+        // Status UI is driven from simulated time (not wall clock) so the bar
+        // reflects true model progress even when the explicit solver's dt
+        // collapses near the end of a storm.
+        const totalMs = parseSimDurationInDays(inpText) * 86400000;
         const attempt = (workerUrl) => {
             fetch('openswmm2d.version.json')
                 .then(r => r.ok ? r.json() : null)
@@ -1153,7 +1158,21 @@
                             console.warn('OpenSWMM 2D: Throttling excessive console warnings (>50 messages received).');
                         }
                     }
-                    else if (message.type === 'progress2d') console.debug('OpenSWMM 2D elapsed milliseconds:', message.elapsedMs);
+                    else if (message.type === 'progress2d') {
+                        const elapsedMs = Number(message.elapsedMs);
+                        if (Number.isFinite(elapsedMs) && elapsedMs >= 0) {
+                            const frac = Math.max(0, Math.min(1, elapsedMs / (totalMs > 0 ? totalMs : 1)));
+                            const percent = Math.min(99, Math.floor(frac * 100));
+                            const elapsedDays = elapsedMs / 86400000;
+                            const days = Math.floor(elapsedDays);
+                            const remHoursFrac = (elapsedDays - days) * 24;
+                            const hours = Math.floor(remHoursFrac);
+                            const minutes = Math.floor((remHoursFrac - hours) * 60);
+                            updateRunStatusUI(percent, days,
+                                String(hours).padStart(2, '0') + ':' + String(minutes).padStart(2, '0'));
+                        }
+                        console.debug('OpenSWMM 2D elapsed milliseconds:', message.elapsedMs);
+                    }
                     else if (message.type === 'results2d') {
                         if (sim2DWorker) { sim2DWorker.terminate(); sim2DWorker = null; }
                         resolve(message);
