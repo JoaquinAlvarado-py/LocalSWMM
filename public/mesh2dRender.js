@@ -3,16 +3,22 @@
     'use strict';
     function feature(type, coordinates, properties, id) { return { type: 'Feature', id: id, properties: properties || {}, geometry: { type: type, coordinates: coordinates } }; }
     function finite(value, fallback) { var n = Number(value); return Number.isFinite(n) ? n : (fallback || 0); }
-    function vertexField(mesh, values, mode) {
+    function vertexField(mesh, values, mode, minValue) {
         var out = new Array((mesh && mesh.vertices || []).length).fill(0), weight = new Array(out.length).fill(0);
         if (values && values.length === out.length) return Array.from(values, function (v) { return finite(v); });
-        (mesh && mesh.triangles || []).forEach(function (t) {
+        // Depth is masked per cell (View2D.DEPTH_MASK_M). Skipping dry cells
+        // keeps their zero contribution from diluting wet-cell depths and stops
+        // a wet cell from bleeding into neighbouring dry vertices via shared
+        // ones — the field stays cell-faithful instead of expanding into clumps.
+        var wet = (mode !== 'elevation' && Number.isFinite(minValue)) ? minValue : -Infinity;
+        (mesh.triangles || []).forEach(function (t) {
             var a = mesh.vertices[t.v[0]], b = mesh.vertices[t.v[1]], c = mesh.vertices[t.v[2]];
             if (!a || !b || !c) return;
             var area = Math.abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) / 2;
             var val = mode === 'elevation'
                 ? (finite(a.z) + finite(b.z) + finite(c.z)) / 3
                 : finite(t.value);
+            if (val < wet) return;
             t.v.forEach(function (i) { out[i] += val * area; weight[i] += area; });
         });
         return out.map(function (v, i) { return weight[i] ? finite(v / weight[i]) : (mode === 'elevation' ? finite(mesh.vertices[i].z) : 0); });
@@ -127,12 +133,14 @@
         onStep: function (step, frame) {
             var mesh = window.Net && window.Net.mesh2DIndexed, m = this.map || window.map; if (!mesh || !m || !frame) return;
             var triValues = frame.depth || [], field = frame.vertex && frame.vertex.depth && frame.vertex.depth.length === mesh.vertices.length ? Array.from(frame.vertex.depth, function (v) { return finite(v); }) : null;
-            if (!field) { mesh.triangles.forEach(function (t, i) { t.value = triValues[i] || 0; }); field = Mesh2DRender.vertexField(mesh, null); }
+            // Canonical depth mask (View2D.DEPTH_MASK_M, 5 mm): the uniform-rain
+            // film sits below it and must render as dry, not as blue spots.
+            var mask = (typeof View2D !== 'undefined' && View2D.DEPTH_MASK_M) ? View2D.DEPTH_MASK_M : 0.005;
+            if (!field) { mesh.triangles.forEach(function (t, i) { t.value = triValues[i] || 0; }); field = Mesh2DRender.vertexField(mesh, null, null, mask); }
             var levels = Mesh2DRender.levelsAuto(field, 8);
             function set(id, data) { var s = m.getSource(id); if (s) s.setData(data); }
             var vel = frame.velocity || [], vMax = 0; for (var vi = 0; vi < vel.length; vi++) { if (Number.isFinite(Number(vel[vi])) && vel[vi] > vMax) vMax = vel[vi]; }
-            var dryDepth = mesh.options && Number.isFinite(Number(mesh.options.dryDepth)) ? Math.max(0, Number(mesh.options.dryDepth)) : 0.001;
-            set('m2d-vertices', Mesh2DRender.meshVertices(mesh, field)); set('m2d-depth-isolines', Mesh2DRender.isolines(mesh, field, levels)); set('m2d-depth-bands', Mesh2DRender.contourBands(mesh, field, levels, dryDepth)); set('m2d-velocity-arrows', Mesh2DRender.velocityArrows(mesh, vel, vMax || 1, frame.velocityX, frame.velocityY));
+            set('m2d-vertices', Mesh2DRender.meshVertices(mesh, field)); set('m2d-depth-isolines', Mesh2DRender.isolines(mesh, field, levels)); set('m2d-depth-bands', Mesh2DRender.contourBands(mesh, field, levels, mask)); set('m2d-velocity-arrows', Mesh2DRender.velocityArrows(mesh, vel, vMax || 1, frame.velocityX, frame.velocityY));
             if (window.Mesh2DGL) window.Mesh2DGL.onStep(field);
         },
         clear: function () {
