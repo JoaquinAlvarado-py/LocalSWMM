@@ -205,12 +205,12 @@
         var n = function (id, fallback) { var el = $(id); var val = el ? parseFloat(el.value) : fallback; return isNaN(val) ? fallback : val; };
         var b = function (id, fallback) { var el = $(id); return el ? el.checked : fallback; };
 
-        s.dtmSource = v('m2d-dtm-source', 'CURRENT');
-        if (s.dtmSource === 'CURRENT' && window.App && window.App.mesh2DBellingeTif) s.dtmSource = 'GEOTIFF';
         var tif = $('m2d-geotiff-file');
         s.geotiffFile = (tif && tif.files && tif.files.length)
             ? tif.files[0]
             : (window.App && window.App.mesh2DGeoTiffFile) || null;
+        s.dtmSource = v('m2d-dtm-source', 'CURRENT');
+        if (s.dtmSource === 'CURRENT' && s.geotiffFile) s.dtmSource = 'GEOTIFF';
         s.verticalUnit = v('m2d-vertical-unit', 'm');
         s.zFactor = n('m2d-z-factor', 1.0);
         s.epsgOverride = v('m2d-epsg-override', '');
@@ -501,6 +501,25 @@
                 log('⚠ Raster bounds unavailable for this DEM source — using the model bounding domain instead of the full raster.');
             } else {
                 log('Domain: auto bounding domain (nodes + subcatchments).');
+            }
+        }
+
+        // A GeoTIFF is always a full-extent domain, even when the elevation
+        // source active for Z-sampling is something else (e.g. the default
+        // "CURRENT"→Mapbox, or a stale saved DTM choice). Without this the
+        // mesh silently falls back to the model's convex hull — a small
+        // triangle — instead of covering the whole .tif.
+        if (!boundaryPolygon && s.geotiffFile && window.Mesh2DTerrain) {
+            var extSampler = window.Mesh2DTerrain.createSampler({ dtmSource: 'GEOTIFF', file: s.geotiffFile }, window.map);
+            try {
+                await extSampler.ready;
+                if (extSampler.boundsLngLat) {
+                    boundaryPolygon = { type: 'Polygon', coordinates: [extSampler.boundsLngLat] };
+                    sources.boundaryPolygon = boundaryPolygon;
+                    log('Domain: full GeoTIFF extent (' + (extSampler.detectedCrs || 'unknown CRS') + ').');
+                }
+            } catch (e) {
+                log('⚠ Could not read GeoTIFF extent for the domain: ' + (e.message || e));
             }
         }
 
