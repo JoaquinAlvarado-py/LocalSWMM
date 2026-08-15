@@ -2,6 +2,11 @@
 public/config.js
 node_modules/
 
+# VitePress docs build output (built in CI, deployed via cloudflare.yml)
+public/docs/
+docs/.vitepress/cache
+docs/.vitepress/dist
+
 .claude/
 __pycache__/
 *.pyc
