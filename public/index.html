@@ -458,6 +458,43 @@
         <div class="modal-box" style="max-width: 500px;">
             <h2>Simulation Options</h2>
             <div class="settings-group">
+                <span class="settings-label">Flow Routing</span>
+                <select id="opt-flow-routing" class="tb-select">
+                    <option value="">Kinematic Wave (Default)</option>
+                    <option value="KINWAVE">Kinematic Wave</option>
+                    <option value="DYNWAVE">Dynamic Wave</option>
+                    <option value="STEADY">Steady</option>
+                    <option value="FV">Finite Volume (FV)</option>
+                </select>
+                <small id="fv-perf-note" style="display:none;margin-top:4px;color:#b45309;">FV is 1.5–6× slower than dynamic wave (engine's own benchmark range). Use it when mass conservation through filling/emptying transitions matters.</small>
+            </div>
+            <details id="opt-fv-advanced" style="margin-top:12px;">
+              <summary style="cursor:pointer;font-weight:600;color:#334155;">Advanced FV Options</summary>
+              <div style="padding:8px 0;">
+                <div class="settings-label">Mesh</div>
+                <div class="settings-group"><span class="settings-label">FV_CELL_LENGTH (m/ft)</span><input type="number" id="opt-fv-cell-length" class="tb-input" step="any" placeholder="0 (auto)"></div>
+                <div class="settings-group"><span class="settings-label">FV_MIN_CELLS</span><input type="number" id="opt-fv-min-cells" class="tb-input" step="1" placeholder="4"></div>
+                <div class="settings-label" style="margin-top:8px;">Scheme</div>
+                <div class="settings-group"><span class="settings-label">FV_CFL</span><input type="number" id="opt-fv-cfl" class="tb-input" step="any" placeholder="0.5"></div>
+                <div class="settings-group"><span class="settings-label">FV_RIEMANN</span><select id="opt-fv-riemann" class="tb-select"><option value="">HLLC (Default)</option><option value="HLL">HLL</option></select></div>
+                <div class="settings-group"><span class="settings-label">FV_ORDER</span><select id="opt-fv-order" class="tb-select"><option value="">1 (Default)</option><option value="2">2 (MUSCL-Hancock)</option></select></div>
+                <div class="settings-group"><span class="settings-label">FV_LIMITER</span><select id="opt-fv-limiter" class="tb-select"><option value="">MINMOD (Default)</option><option value="VANLEER">VANLEER</option><option value="SUPERBEE">SUPERBEE</option></select></div>
+                <div class="settings-group"><span class="settings-label">FV_SCALAR_SCHEME</span><select id="opt-fv-scalar-scheme" class="tb-select"><option value="">MUSCL (Default)</option><option value="UPWIND">UPWIND</option><option value="QUICKEST_ULTIMATE">QUICKEST_ULTIMATE</option></select></div>
+                <div class="settings-group"><span class="settings-label">FV_TIME_INTEGRATION</span><select id="opt-fv-time-integration" class="tb-select"><option value="">EULER (Default)</option><option value="RK2">RK2</option></select></div>
+                <div class="settings-group"><span class="settings-label">FV_SLOT_CELERITY (m/s or ft/s)</span><input type="number" id="opt-fv-slot-celerity" class="tb-input" step="any" placeholder="100"></div>
+                <div class="settings-label" style="margin-top:8px;">Coupling</div>
+                <div class="settings-group"><span class="settings-label">FV_NODE_COUPLING</span><select id="opt-fv-node-coupling" class="tb-select"><option value="">SEMI_IMPLICIT (Default)</option><option value="EXPLICIT">EXPLICIT</option></select></div>
+                <div class="settings-group"><span class="settings-label">FV_NODE_DT</span><select id="opt-fv-node-dt" class="tb-select"><option value="">STABILITY (Default)</option><option value="NONE">NONE</option></select></div>
+                <div class="settings-group"><span class="settings-label">FV_NODE_PICARD (sweeps)</span><input type="number" id="opt-fv-node-picard" class="tb-input" step="1" placeholder="1"></div>
+                <div class="settings-group"><span class="settings-label">FV_STRUCTURE_COUPLING</span><select id="opt-fv-structure-coupling" class="tb-select"><option value="">SUBSTEP (Default)</option><option value="ROUTING_STEP">ROUTING_STEP</option></select></div>
+                <div class="settings-label" style="margin-top:8px;">Execution</div>
+                <div class="settings-group"><span class="settings-label">FV_BACKEND</span><select id="opt-fv-backend" class="tb-select"><option value="">AUTO (Default)</option><option value="CPU">CPU</option></select></div>
+                <div class="settings-group"><span class="settings-label">FV_COMPACTION</span><select id="opt-fv-compaction" class="tb-select"><option value="">YES (Default)</option><option value="NO">NO</option></select></div>
+                <div class="settings-label" style="margin-top:8px;">Transport</div>
+                <div class="settings-group"><span class="settings-label">FV_DISPERSION (m²/s or ft²/s)</span><input type="number" id="opt-fv-dispersion" class="tb-input" step="any" placeholder="0 (disabled)"></div>
+              </div>
+            </details>
+            <div class="settings-group">
                 <span class="settings-label">Node Continuity</span>
                 <select id="opt-node-continuity" class="tb-select">
                     <option value="">Legacy (Default)</option>
