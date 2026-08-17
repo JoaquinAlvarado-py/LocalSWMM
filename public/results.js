@@ -1319,7 +1319,7 @@
         ResultStyling.timeSeries = ts;
         ResultStyling.active = true;
         ResultStyling.applyToMap();
-        if (window.Mesh2DLayers && lastFrame) window.Mesh2DLayers.onStep(0, lastFrame);
+        if (window.Mesh2DLayers && lastFrame) window.Mesh2DLayers.onStep(frames.length - 1, lastFrame);
 
         if (window.AnimationUI && ts.times.length > 1) {
             window.AnimationUI.setRange(ts.times.length);
