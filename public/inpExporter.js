@@ -82,7 +82,16 @@ class InpExporter {
         };
         emitOpt('FLOW_UNITS', units);
         emitOpt('INFILTRATION', opt.infiltration || rawOr('INFILTRATION', 'HORTON'));
-        emitOpt('FLOW_ROUTING', opt.flowRouting || rawOr('FLOW_ROUTING', 'KINWAVE'));
+        const fr = opt.flowRouting || rawOr('FLOW_ROUTING', 'KINWAVE');
+        emitOpt('FLOW_ROUTING', fr);
+        // FV_* keys are emitted ONLY under FV routing; they are also excluded
+        // from the raw passthrough below so switching to KINWAVE/DYNWAVE never
+        // leaks them into the file.
+        const FV_ORDER = ['FV_CELL_LENGTH','FV_MIN_CELLS','FV_CFL','FV_RIEMANN','FV_ORDER','FV_LIMITER','FV_SCALAR_SCHEME','FV_TIME_INTEGRATION','FV_SLOT_CELERITY','FV_DISPERSION','FV_STRUCTURE_COUPLING','FV_NODE_COUPLING','FV_NODE_DT','FV_NODE_PICARD','FV_COMPACTION','FV_BACKEND'];
+        const FV_KEYS = new Set(FV_ORDER);
+        if (fr === 'FV' && opt.fv) {
+            FV_ORDER.forEach(k => { if (opt.fv[k] !== undefined && opt.fv[k] !== '') emitOpt(k, opt.fv[k]); });
+        }
         emitOpt('LINK_OFFSETS', rawOr('LINK_OFFSETS', 'DEPTH'));
         emitOpt('MIN_SLOPE', rawOr('MIN_SLOPE', '0'));
         emitOpt('ALLOW_PONDING', rawOr('ALLOW_PONDING', 'NO'));
@@ -115,7 +124,7 @@ class InpExporter {
         // engine options the app has no field for (MINIMUM_STEP, THREADS,
         // RULE_STEP, SURCHARGE_METHOD, â€¦) pass through unchanged
         for (const [key, value] of Object.entries(raw)) {
-            if (!emitted.has(key)) emitOpt(key, value);
+            if (!emitted.has(key) && !FV_KEYS.has(key)) emitOpt(key, value);
         }
         L.push('');
 
@@ -196,6 +205,16 @@ class InpExporter {
                 L.push(`${this.pad(n.id, 16)} ${this.pad(p.invertEl, 10)} ${this.pad(p.maxDepth, 10)} ${this.pad(p.initDepth, 10)} ${this.pad(p.surDepth, 10)} ${this.pad(p.aponded, 10)}`);
             });
             L.push('');
+        }
+
+        // --- Virtual junctions (valid only under DYNWAVE / FV routing) ---
+        if (fr === 'FV' || fr === 'DYNWAVE') {
+            const virtuals = (net.nodes ? net.nodes.filter(n => n.isVirtual) : []).map(n => n.id);
+            if (virtuals.length) {
+                L.push('[VIRTUAL_JUNCTIONS]');
+                virtuals.forEach(id => L.push(id));
+                L.push('');
+            }
         }
 
         if (outfalls.length) {
@@ -697,7 +716,7 @@ class InpExporter {
         if (net.rawSections) {
             const handledSections = new Set([
                 'TITLE', 'OPTIONS', 'RAINGAGES', 'RDII_DECAY', 'SUBCATCHMENTS', 'SUBAREAS', 'INFILTRATION',
-                'JUNCTIONS', 'OUTFALLS', 'STORAGE',
+                'JUNCTIONS', 'VIRTUAL_JUNCTIONS', 'OUTFALLS', 'STORAGE',
                 'DIVIDERS', 'CONDUITS', 'PUMPS', 'WEIRS', 'ORIFICES', 'OUTLETS', 'XSECTIONS', 'LOSSES', 'TAGS',
                 'COORDINATES', 'VERTICES', 'POLYGONS', 'SYMBOLS', 'REPORT', 'TIMESERIES',
                 '2D_VERTICES', '2D_CELLS', '2D_OPTIONS', '2D_TRIANGLES', '2D_VERTEX_NODE_MAP', '2D_TRIANGLE_NODE_MAP', '2D_MESH_FILE','CURVES', 'LID_CONTROLS', 'LID_USAGE','POLLUTANTS', 'LANDUSES', 'BUILDUP', 'WASHOFF', 'TREATMENT','AQUIFERS', 'GROUNDWATER', 'SNOWPACKS', 'SNOWPACK_ASSIGNMENT'
