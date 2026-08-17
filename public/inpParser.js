@@ -77,11 +77,17 @@ class InpParser {
         // --- OPTIONS ---
         // Every option is kept verbatim in options.raw so the exporter can
         // reproduce settings it has no UI for (ALLOW_PONDING, MAX_TRIALS, â€¦).
+        const FV_KEYS = ['FV_CELL_LENGTH','FV_MIN_CELLS','FV_CFL','FV_RIEMANN','FV_ORDER','FV_LIMITER','FV_SCALAR_SCHEME','FV_TIME_INTEGRATION','FV_SLOT_CELERITY','FV_NODE_COUPLING','FV_NODE_DT','FV_NODE_PICARD','FV_STRUCTURE_COUPLING','FV_BACKEND','FV_COMPACTION','FV_DISPERSION'];
         model.options.raw = {};
         (S['OPTIONS'] || []).forEach(row => {
             const key = (row[0] || '').toUpperCase();
             const val = row.slice(1).join(' ');
             model.options.raw[key] = val;
+            if (FV_KEYS.includes(key)) {
+                model.options.fv = model.options.fv || {};
+                model.options.fv[key] = val;
+                return;
+            }
             switch (key) {
                 case 'FLOW_UNITS':
                     model.units = ['CFS', 'GPM', 'MGD'].includes(val.toUpperCase()) ? 'US' : 'SI';
@@ -367,6 +373,13 @@ class InpParser {
                 const el = nodeMap[key] || linkById[key] || subMap[key];
                 if (el && el.props) el.props.tag = tag;
             }
+        });
+
+        // --- Virtual junctions (FV-routing virtual nodes) ---
+        (S['VIRTUAL_JUNCTIONS'] || []).forEach(row => {
+            const n = row[0] || '';
+            const node = nodeMap[n.toUpperCase()];
+            if (node) node.isVirtual = true;
         });
 
         // --- Curves ---
