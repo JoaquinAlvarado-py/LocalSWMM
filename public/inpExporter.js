@@ -85,10 +85,10 @@ class InpExporter {
         const fr = opt.flowRouting || rawOr('FLOW_ROUTING', 'KINWAVE');
         emitOpt('FLOW_ROUTING', fr);
         // FV_* keys are emitted ONLY under FV routing; they are also excluded
-        // from the raw passthrough below so switching to KINWAVE/DYNWAVE never
-        // leaks them into the file.
+        // from the raw passthrough below (prefix match, so engine-only keys like
+        // FV_MIN_PARALLEL_CELLS / FV_LTS / FV_LTS_MAX_TIERS / FV_CFL_CENSUS_INTERVAL
+        // never leak when routing switches to KINWAVE/DYNWAVE).
         const FV_ORDER = ['FV_CELL_LENGTH','FV_MIN_CELLS','FV_CFL','FV_RIEMANN','FV_ORDER','FV_LIMITER','FV_SCALAR_SCHEME','FV_TIME_INTEGRATION','FV_SLOT_CELERITY','FV_DISPERSION','FV_STRUCTURE_COUPLING','FV_NODE_COUPLING','FV_NODE_DT','FV_NODE_PICARD','FV_COMPACTION','FV_BACKEND'];
-        const FV_KEYS = new Set(FV_ORDER);
         if (fr === 'FV' && opt.fv) {
             FV_ORDER.forEach(k => { if (opt.fv[k] !== undefined && opt.fv[k] !== '') emitOpt(k, opt.fv[k]); });
         }
@@ -124,7 +124,7 @@ class InpExporter {
         // engine options the app has no field for (MINIMUM_STEP, THREADS,
         // RULE_STEP, SURCHARGE_METHOD, â€¦) pass through unchanged
         for (const [key, value] of Object.entries(raw)) {
-            if (!emitted.has(key) && !FV_KEYS.has(key)) emitOpt(key, value);
+            if (!emitted.has(key) && !key.startsWith('FV_')) emitOpt(key, value);
         }
         L.push('');
 
@@ -192,7 +192,9 @@ class InpExporter {
         }
 
         // --- Nodes ---
-        const junctions = net.nodes.filter(n => n.type === 'JUNCTION');
+        // Virtual junctions are JUNCTION-typed but emit into [VIRTUAL_JUNCTIONS],
+        // not [JUNCTIONS] (mirrors the engine InpWriter).
+        const junctions = net.nodes.filter(n => n.type === 'JUNCTION' && !n.isVirtual);
         const outfalls = net.nodes.filter(n => n.type === 'OUTFALL');
         const storages = net.nodes.filter(n => n.type === 'STORAGE');
         const dividers = net.nodes.filter(n => n.type === 'DIVIDER');
@@ -208,11 +210,14 @@ class InpExporter {
         }
 
         // --- Virtual junctions (valid only under DYNWAVE / FV routing) ---
+        // Rows are "Name Elev" (matching [JUNCTIONS] elevation formatting): the
+        // engine's handler skips 1-token rows, so the elevation is required for
+        // the virtual flag to survive.
         if (fr === 'FV' || fr === 'DYNWAVE') {
-            const virtuals = (net.nodes ? net.nodes.filter(n => n.isVirtual) : []).map(n => n.id);
+            const virtuals = (net.nodes ? net.nodes.filter(n => n.isVirtual) : []).map(n => ({ id: n.id, el: n.props && n.props.invertEl }));
             if (virtuals.length) {
                 L.push('[VIRTUAL_JUNCTIONS]');
-                virtuals.forEach(id => L.push(id));
+                virtuals.forEach(v => L.push(`${this.pad(v.id, 16)} ${this.pad(v.el, 10)}`));
                 L.push('');
             }
         }
