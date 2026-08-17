@@ -157,6 +157,17 @@
         document.getElementById('opt-rdii-k0').value = opt.rdiiDecay ? opt.rdiiDecay.k0 : '';
         document.getElementById('opt-rdii-kt').value = opt.rdiiDecay ? opt.rdiiDecay.kT : '';
         document.getElementById('opt-rdii-tref').value = opt.rdiiDecay ? opt.rdiiDecay.tRef : '';
+        const fr = document.getElementById('opt-flow-routing');
+        if (fr) fr.value = Net.options.flowRouting || '';
+        const fv = Net.options.fv || {};
+        const revMap = { 'FV_CELL_LENGTH': 'cell-length', 'FV_MIN_CELLS': 'min-cells', 'FV_CFL': 'cfl', 'FV_RIEMANN': 'riemann', 'FV_ORDER': 'order', 'FV_LIMITER': 'limiter', 'FV_SCALAR_SCHEME': 'scalar-scheme', 'FV_TIME_INTEGRATION': 'time-integration', 'FV_SLOT_CELERITY': 'slot-celerity', 'FV_NODE_COUPLING': 'node-coupling', 'FV_NODE_DT': 'node-dt', 'FV_NODE_PICARD': 'node-picard', 'FV_STRUCTURE_COUPLING': 'structure-coupling', 'FV_BACKEND': 'backend', 'FV_COMPACTION': 'compaction', 'FV_DISPERSION': 'dispersion' };
+        Object.entries(revMap).forEach(([key, suffix]) => {
+            const el = document.getElementById('opt-fv-' + suffix);
+            if (el && fv[key] !== undefined) el.value = String(fv[key]);
+        });
+        const perfNote = document.getElementById('fv-perf-note');
+        if (perfNote) perfNote.style.display = (fr && fr.value === 'FV') ? 'block' : 'none';
+        if (fr) fr.addEventListener('change', () => { if (perfNote) perfNote.style.display = fr.value === 'FV' ? 'block' : 'none'; });
         optionsModal.classList.remove('hidden');
     });
 
@@ -193,6 +204,29 @@
         } else {
             delete Net.options.rdiiDecay;
         }
+        
+        const flowRouting = document.getElementById('opt-flow-routing').value;
+        const fv = {};
+        const fvMap = {
+            'cell-length': 'FV_CELL_LENGTH', 'min-cells': 'FV_MIN_CELLS', 'cfl': 'FV_CFL',
+            'riemann': 'FV_RIEMANN', 'order': 'FV_ORDER', 'limiter': 'FV_LIMITER',
+            'scalar-scheme': 'FV_SCALAR_SCHEME', 'time-integration': 'FV_TIME_INTEGRATION',
+            'slot-celerity': 'FV_SLOT_CELERITY', 'node-coupling': 'FV_NODE_COUPLING',
+            'node-dt': 'FV_NODE_DT', 'node-picard': 'FV_NODE_PICARD',
+            'structure-coupling': 'FV_STRUCTURE_COUPLING', 'backend': 'FV_BACKEND',
+            'compaction': 'FV_COMPACTION', 'dispersion': 'FV_DISPERSION'
+        };
+        Object.entries(fvMap).forEach(([suffix, key]) => {
+            const el = document.getElementById('opt-fv-' + suffix);
+            if (el) {
+                const v = el.value.trim();
+                if (v !== '') fv[key] = v;
+            }
+        });
+        if (flowRouting) Net.options.flowRouting = flowRouting;
+        else delete Net.options.flowRouting;
+        if (Object.keys(fv).length) Net.options.fv = fv;
+        else delete Net.options.fv;
         
         optionsModal.classList.add('hidden');
     });
