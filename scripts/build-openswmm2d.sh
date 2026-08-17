@@ -59,6 +59,11 @@ cmake --build "$BUILD" --target openswmm2d_wasm --parallel
 
 cp -f "$ROOT/public/openswmm2d.wasm" "$ROOT/public/swmm6wasm.wasm"
 cp -f "$ROOT/public/openswmm2d.js" "$ROOT/public/swmm6wasm.js"
+# Keep the copied artifacts' permissions consistent: the WASM/JS build
+# outputs carry the source's exec bit (100755), which would otherwise leak
+# onto swmm6wasm.wasm/openswmm2d.wasm as a 100755/100644 mismatch.
+chmod 644 "$ROOT/public/openswmm2d.wasm" "$ROOT/public/openswmm2d.js" \
+          "$ROOT/public/swmm6wasm.wasm" "$ROOT/public/swmm6wasm.js"
 
 ENGINE_COMMIT=$(git -C "$SOURCE" rev-parse HEAD || echo "unknown")
 ENGINE_DESCRIBE=$(git -C "$SOURCE" describe --always --dirty --tags 2>/dev/null || echo "$ENGINE_COMMIT")
