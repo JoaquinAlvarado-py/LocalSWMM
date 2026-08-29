@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const {
     toMeters, octagon, stripPolygon, linkPathSegments,
-    nodeFeatures, linkFeatures, subcatchmentFeatures, buildGeoJSON
+    nodeFeatures, linkFeatures, buildGeoJSON
 } = require('../public/network3D.js');
 
 const COLORS = {
@@ -108,18 +108,6 @@ test('linkFeatures skips dangling and zero-geometry conduits', () => {
     assert.equal(zero.length, 0);
 });
 
-test('subcatchmentFeatures slabs hug injected elevation', () => {
-    const feats = subcatchmentFeatures(net.subcatchments, 'SI', () => 50, COLORS);
-    assert.equal(feats.length, 1);
-    assert.equal(feats[0].properties.base, 49.5);
-    assert.equal(feats[0].properties.height, 1);
-});
-
-test('subcatchmentFeatures falls back to base 0 when elevation unknown', () => {
-    const feats = subcatchmentFeatures(net.subcatchments, 'SI', () => null, COLORS);
-    assert.equal(feats[0].properties.base, 0);
-});
-
 test('buildGeoJSON composes all element kinds', () => {
     const gj = buildGeoJSON(net, { colors: COLORS });
     assert.equal(gj.type, 'FeatureCollection');
@@ -130,7 +118,7 @@ test('buildGeoJSON composes all element kinds', () => {
     assert.ok(kinds.includes('weir'));
     assert.ok(kinds.includes('orifice'));
     assert.ok(kinds.includes('pump'));
-    assert.ok(kinds.includes('subcatchment'));
+    assert.ok(!kinds.includes('subcatchment'));
     for (const f of gj.features) {
         assert.ok(Number.isFinite(f.properties.base));
         assert.ok(Number.isFinite(f.properties.height));

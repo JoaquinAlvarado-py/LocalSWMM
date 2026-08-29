@@ -144,25 +144,6 @@
         return out;
     }
 
-    function subcatchmentFeatures(subcatchments, units, elevFn, colors) {
-        const out = [];
-        for (const s of subcatchments || []) {
-            const ring = (s.ring || []).map(c => [Number(c[0]), Number(c[1])]);
-            if (ring.length < 4) continue;
-            const cx = ring.reduce((a, c) => a + c[0], 0) / ring.length;
-            const cy = ring.reduce((a, c) => a + c[1], 0) / ring.length;
-            let elev = null;
-            try { elev = elevFn ? elevFn(cx, cy) : null; } catch (e) { elev = null; }
-            if (!Number.isFinite(elev)) elev = 0;
-            out.push({
-                type: 'Feature', id: s.id,
-                properties: { id: s.id, kind: 'subcatchment', base: Math.max(0, elev - 0.5), height: 1, width: 0, color: colors.LINK_COLORS.OUTLET },
-                geometry: { type: 'Polygon', coordinates: [ring.concat([ring[0]])] }
-            });
-        }
-        return out;
-    }
-
     function buildGeoJSON(net, opts) {
         opts = opts || {};
         const colors = opts.colors || ((typeof window !== 'undefined' && window.SWMM_COLORS) || DEFAULT_COLORS);
@@ -171,8 +152,7 @@
             type: 'FeatureCollection',
             features: [].concat(
                 nodeFeatures(net.nodes, units, colors),
-                linkFeatures(net.links, net.nodes, units, { colors, maxSegs: opts.maxSegs }),
-                subcatchmentFeatures(net.subcatchments, units, opts.elevFn, colors)
+                linkFeatures(net.links, net.nodes, units, { colors, maxSegs: opts.maxSegs })
             )
         };
     }
@@ -180,7 +160,6 @@
     const ACTIVE = { on: false };
 
     const LAYER_SPECS = [
-        { id: 'swmm-3d-subcatchments', filter: ['==', ['get', 'kind'], 'subcatchment'], opacity: 0.35 },
         { id: 'swmm-3d-conduits', filter: ['==', ['get', 'kind'], 'conduit'], opacity: 0.9 },
         { id: 'swmm-3d-links-other', filter: ['match', ['get', 'kind'], 'weir', true, 'orifice', true, 'pump', true, false], opacity: 0.9 },
         { id: 'swmm-3d-nodes', filter: ['==', ['get', 'kind'], 'node'], opacity: 0.9 },
@@ -224,32 +203,14 @@
         }
     }
 
-    function makeElevFn(map) {
-        return function (lng, lat) {
-            try {
-                if (map.getTerrain()) {
-                    const e = map.queryTerrainElevation([lng, lat]);
-                    if (Number.isFinite(e)) return e;
-                }
-            } catch (e) { /* no terrain */ }
-            if (typeof window.sampleDEMElevation === 'function') {
-                try {
-                    const e = window.sampleDEMElevation([lng, lat]);
-                    if (Number.isFinite(e)) return e;
-                } catch (e2) { /* elevation unavailable */ }
-            }
-            return null;
-        };
-    }
-
     function refresh() {
         const map = window.map;
         if (!ACTIVE.on || !map || !map.getSource('swmm-3d')) return;
         const net = window.Net;
         if (!net) return;
         const data = buildGeoJSON({
-            nodes: net.nodes, links: net.links, subcatchments: net.subcatchments, units: net.units
-        }, { elevFn: makeElevFn(map) });
+            nodes: net.nodes, links: net.links, units: net.units
+        });
         map.getSource('swmm-3d').setData(data);
     }
 
@@ -302,6 +263,6 @@
         }
     }
     if (typeof module !== 'undefined' && module.exports) {
-        module.exports = { toMeters, octagon, stripPolygon, linkPathSegments, nodeFeatures, linkFeatures, subcatchmentFeatures, buildGeoJSON };
+        module.exports = { toMeters, octagon, stripPolygon, linkPathSegments, nodeFeatures, linkFeatures, buildGeoJSON };
     }
 })();
