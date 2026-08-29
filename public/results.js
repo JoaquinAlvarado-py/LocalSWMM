@@ -373,6 +373,13 @@
             } catch (e) { /* source not ready */ }
         },
 
+        // Replay current result colors onto the 3D source unconditionally —
+        // used when the swmm-3d source is (re)created after colors were already pushed.
+        push3DAll() {
+            Object.entries(this.nodeColors).forEach(([id, color]) => this._push3D(id, color));
+            Object.entries(this.linkColors).forEach(([id, color]) => this._push3D(id, color));
+        },
+
         applyToMap() {
             Object.entries(this.nodeColors).forEach(([id, color]) => {
                 if (this._appliedNode.get(id) === color) return;

@@ -232,6 +232,12 @@
                     if (Number.isFinite(e)) return e;
                 }
             } catch (e) { /* no terrain */ }
+            if (typeof window.sampleDEMElevation === 'function') {
+                try {
+                    const e = window.sampleDEMElevation([lng, lat]);
+                    if (Number.isFinite(e)) return e;
+                } catch (e2) { /* elevation unavailable */ }
+            }
             return null;
         };
     }
@@ -251,6 +257,7 @@
         ACTIVE.on = true;
         ensureSourceAndLayers();
         refresh();
+        if (window.ResultStyling && window.ResultStyling.push3DAll) window.ResultStyling.push3DAll();
         const map = window.map;
         if (map && map.getPitch() < 30) map.easeTo({ pitch: 55, duration: 800 });
     }
