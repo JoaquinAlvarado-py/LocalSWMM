@@ -279,6 +279,20 @@
         window.map.on('style.load', function () {
             if (ACTIVE.on) { ensureSourceAndLayers(); refresh(); }
         });
+
+        const toggleBtn = document.getElementById('btn-toggle-3d-network');
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', function () {
+                if (ACTIVE.on) { clear(); toggleBtn.classList.remove('toggled'); }
+                else { apply(); toggleBtn.classList.add('toggled'); }
+            });
+        }
+
+        if (window.Net && window.Net.onChange) {
+            window.Net.onChange(function (net, evt) {
+                if (ACTIVE.on && !(evt && evt.type === 'move')) refresh();
+            });
+        }
     }
     if (typeof module !== 'undefined' && module.exports) {
         module.exports = { toMeters, octagon, stripPolygon, linkPathSegments, nodeFeatures, linkFeatures, subcatchmentFeatures, buildGeoJSON };
