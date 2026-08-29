@@ -70,7 +70,7 @@ test('nodeFeatures produces node and outfall columns', () => {
     assert.equal(feats.length, 3);
     const j = feats.find(f => f.id === 'J1');
     assert.equal(j.properties.kind, 'node');
-    assert.equal(j.properties.base, 10);
+    assert.equal(j.properties.base, 0);
     assert.equal(j.properties.height, 2);
     assert.equal(j.properties.color, COLORS.NODE_COLORS.JUNCTION);
     assert.equal(j.geometry.coordinates[0].length, 9);
@@ -89,16 +89,16 @@ test('linkFeatures renders conduit strips, weirs, orifices, pumps', () => {
     assert.ok(feats.filter(f => f.properties.kind === 'conduit').length >= 1);
     const w = feats.find(f => f.id === 'W1');
     assert.equal(w.properties.kind, 'weir');
-    assert.equal(w.properties.base, 8);
+    assert.equal(w.properties.base, 0);
     assert.equal(w.properties.height, 0.8);
     assert.equal(w.properties.width, 1.2);
     const or = feats.find(f => f.id === 'OR1');
     assert.equal(or.properties.kind, 'orifice');
-    assert.equal(or.properties.base, 8);
+    assert.equal(or.properties.base, 0);
     assert.equal(or.properties.height, 0.4);
     const p = feats.find(f => f.id === 'P1');
     assert.equal(p.properties.kind, 'pump');
-    assert.equal(p.properties.base, 9);
+    assert.equal(p.properties.base, 0);
     assert.equal(p.properties.height, 1);
 });
 
@@ -131,6 +131,6 @@ test('buildGeoJSON composes all element kinds', () => {
 test('US units convert heights and bases to meters', () => {
     const gj = buildGeoJSON({ units: 'US', nodes: net.nodes, links: net.links, subcatchments: net.subcatchments }, { colors: COLORS });
     const j = gj.features.find(f => f.id === 'J1');
-    assert.ok(Math.abs(j.properties.base - 10 * 0.3048) < 1e-9);
+    assert.equal(j.properties.base, 0);
     assert.ok(Math.abs(j.properties.height - 2 * 0.3048) < 1e-9);
 });

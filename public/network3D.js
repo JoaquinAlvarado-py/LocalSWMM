@@ -79,7 +79,6 @@
         for (const n of nodes || []) {
             const p = n.props || {};
             if (n.type === 'RAINGAGE') continue;
-            const invertEl = toMeters(Number(p.invertEl) || 0, units);
             const isOutfall = n.type === 'OUTFALL';
             const maxDepth = toMeters(Number(p.maxDepth) || 2, units);
             const height = isOutfall ? 0.5 : maxDepth;
@@ -88,8 +87,11 @@
             out.push({
                 type: 'Feature', id: n.id,
                 properties: {
+                    // fill-extrusion-base is meters above the ground surface;
+                    // anchor the model to the ground plane (base 0) so nodes
+                    // never float up past surrounding buildings.
                     id: n.id, kind: isOutfall ? 'outfall' : 'node',
-                    base: invertEl, height, width, color: colors.NODE_COLORS[n.type] || colors.NODE_COLORS.JUNCTION
+                    base: 0, height, width, color: colors.NODE_COLORS[n.type] || colors.NODE_COLORS.JUNCTION
                 },
                 geometry: { type: 'Polygon', coordinates: [octagon(cx, cy, width / 2)] }
             });
@@ -116,8 +118,6 @@
             const from = nodeById.get(l.from), to = nodeById.get(l.to);
             if (!from || !to) { console.warn('network3D: skip dangling link ' + l.id); continue; }
             const p = l.props || {};
-            const baseA = toMeters(Number(from.props && from.props.invertEl) || 0, units) + toMeters(Number(p.inOffset) || 0, units);
-            const baseB = toMeters(Number(to.props && to.props.invertEl) || 0, units) + toMeters(Number(p.outOffset) || 0, units);
             const pts = [(from.lngLat || [0, 0])].concat(l.vertices || [], [(to.lngLat || [0, 0])]);
             const a = pts[0], b = pts[pts.length - 1];
             if (l.type === 'CONDUIT') {
@@ -126,23 +126,23 @@
                 const geom2 = toMeters(Number(p.geom2) || 0, units);
                 const circ = /CIRCULAR/.test(p.xShape || '');
                 const width = circ || !geom2 ? geom1 : geom2;
-                for (const seg of linkPathSegments(pts, baseA, baseB, maxSegs)) {
+                for (const seg of linkPathSegments(pts, 0, 0, maxSegs)) {
                     out.push({
                         type: 'Feature', id: l.id,
-                        properties: { id: l.id, kind: 'conduit', base: seg.base, height: geom1, width, color: colors.LINK_COLORS.CONDUIT },
+                        properties: { id: l.id, kind: 'conduit', base: 0, height: geom1, width, color: colors.LINK_COLORS.CONDUIT },
                         geometry: { type: 'Polygon', coordinates: [stripPolygon(seg.a, seg.b, width, (seg.a[1] + seg.b[1]) / 2)] }
                     });
                 }
             } else if (l.type === 'WEIR') {
                 const h = toMeters(Number(p.crestHt) || 0, units) + toMeters(Number(p.geom1) || 0, units);
                 const w = toMeters(Number(p.geom2) || Number(p.roadWidth) || 0, units) || toMeters(1, units);
-                out.push(boxFeature(l, 'weir', baseB, h, w, a, b, colors.LINK_COLORS.WEIR));
+                out.push(boxFeature(l, 'weir', 0, h, w, a, b, colors.LINK_COLORS.WEIR));
             } else if (l.type === 'ORIFICE') {
                 const h = toMeters(Number(p.geom1) || 0, units) || toMeters(0.5, units);
                 const w = toMeters(Number(p.geom2) || Number(p.geom1) || 0, units) || h;
-                out.push(boxFeature(l, 'orifice', Math.min(baseA, baseB), h, w, a, b, colors.LINK_COLORS.ORIFICE));
+                out.push(boxFeature(l, 'orifice', 0, h, w, a, b, colors.LINK_COLORS.ORIFICE));
             } else if (l.type === 'PUMP') {
-                out.push(boxFeature(l, 'pump', Math.min(baseA, baseB), toMeters(1, units), toMeters(0.6, units), a, b, colors.LINK_COLORS.PUMP));
+                out.push(boxFeature(l, 'pump', 0, toMeters(1, units), toMeters(0.6, units), a, b, colors.LINK_COLORS.PUMP));
             }
         }
         return out;
