@@ -220,13 +220,19 @@
         refresh();
         if (window.ResultStyling && window.ResultStyling.push3DAll) window.ResultStyling.push3DAll();
         const map = window.map;
-        if (map && map.getPitch() < 30) map.easeTo({ pitch: 55, duration: 800 });
+        if (map) {
+            if (map.setTerrain) map.setTerrain(null);
+            if (map.setFog) map.setFog(null);
+            if (map.getPitch() < 30) map.easeTo({ pitch: 55, duration: 800 });
+        }
     }
 
     function clear() {
         ACTIVE.on = false;
         const map = window.map;
         if (!map) return;
+        if (map.setTerrain) map.setTerrain(null);
+        if (map.setFog) map.setFog(null);
         for (const spec of LAYER_SPECS) if (map.getLayer(spec.id)) map.removeLayer(spec.id);
         if (map.getSource('swmm-3d')) map.removeSource('swmm-3d');
         if ((typeof window.App === 'undefined' || !window.App.is3D) && map.getPitch() > 5) {

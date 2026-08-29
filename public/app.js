@@ -366,13 +366,14 @@
 
     // ---------- 3D extras (terrain + buildings) ----------
     function apply3D() {
+        if (map.setTerrain) map.setTerrain(null);
+        if (map.setFog) map.setFog(null);
         if (window.App.is3D) {
             if (window.App.currentStyle !== 'blank') {
                 add3DBuildings();
             }
             if (map.getPitch() < 30) map.easeTo({ pitch: 55, duration: 800 });
         } else {
-            map.setTerrain(null);
             if (map.getLayer('3d-buildings-base')) map.setLayoutProperty('3d-buildings-base', 'visibility', 'none');
             map.easeTo({ pitch: 0, bearing: 0, duration: 800 });
         }
