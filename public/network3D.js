@@ -14,11 +14,15 @@
         return v;
     }
 
-    function octagon(cx, cy, r) {
+    function octagon(cx, cy, rMeters) {
+        const cosLat = Math.cos(cy * Math.PI / 180) || 1e-9;
+        const mPerLon = 111320 * cosLat, mPerLat = 111320;
+        const rLon = rMeters / mPerLon;
+        const rLat = rMeters / mPerLat;
         const ring = [];
         for (let i = 0; i < 8; i++) {
             const a = (Math.PI / 4) * i + Math.PI / 8;
-            ring.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+            ring.push([cx + rLon * Math.cos(a), cy + rLat * Math.sin(a)]);
         }
         ring.push(ring[0]);
         return ring;

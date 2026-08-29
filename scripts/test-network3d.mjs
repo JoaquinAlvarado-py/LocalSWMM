@@ -42,7 +42,8 @@ test('octagon is a closed 8-gon of the right radius', () => {
     assert.equal(ring.length, 9);
     assert.deepEqual(ring[0], ring[8]);
     for (const [x, y] of ring.slice(0, 8)) {
-        assert.ok(Math.abs(Math.hypot(x, y) - 1) < 1e-6);
+        const distMeters = Math.hypot(x * 111320, y * 111320);
+        assert.ok(Math.abs(distMeters - 1) < 1e-4);
     }
 });
 
