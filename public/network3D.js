@@ -178,15 +178,108 @@
     }
 
     const ACTIVE = { on: false };
+
+    const LAYER_SPECS = [
+        { id: 'swmm-3d-subcatchments', filter: ['==', ['get', 'kind'], 'subcatchment'], opacity: 0.35 },
+        { id: 'swmm-3d-conduits', filter: ['==', ['get', 'kind'], 'conduit'], opacity: 0.9 },
+        { id: 'swmm-3d-links-other', filter: ['match', ['get', 'kind'], 'weir', true, 'orifice', true, 'pump', true, false], opacity: 0.9 },
+        { id: 'swmm-3d-nodes', filter: ['==', ['get', 'kind'], 'node'], opacity: 0.9 },
+        { id: 'swmm-3d-outfalls', filter: ['==', ['get', 'kind'], 'outfall'], opacity: 0.9 }
+    ];
+
+    function resultColorExpr() {
+        return ['case',
+            ['!=', ['feature-state', 'resultColor'], null], ['feature-state', 'resultColor'],
+            ['get', 'color']];
+    }
+
+    function findBeforeId(map) {
+        const layers = map.getStyle().layers || [];
+        for (const l of layers) {
+            if (l.id.startsWith('swmm-')) return l.id;
+        }
+        return undefined;
+    }
+
+    function ensureSourceAndLayers() {
+        const map = window.map;
+        if (!map) return;
+        if (!map.getSource('swmm-3d')) {
+            map.addSource('swmm-3d', { type: 'geojson', promoteId: 'id', data: { type: 'FeatureCollection', features: [] } });
+        }
+        const beforeId = findBeforeId(map);
+        for (const spec of LAYER_SPECS) {
+            if (map.getLayer(spec.id)) continue;
+            map.addLayer({
+                id: spec.id, type: 'fill-extrusion', source: 'swmm-3d',
+                filter: spec.filter,
+                paint: {
+                    'fill-extrusion-color': resultColorExpr(),
+                    'fill-extrusion-height': ['get', 'height'],
+                    'fill-extrusion-base': ['get', 'base'],
+                    'fill-extrusion-opacity': spec.opacity,
+                    'fill-extrusion-vertical-gradient': false
+                }
+            }, beforeId);
+        }
+    }
+
+    function makeElevFn(map) {
+        return function (lng, lat) {
+            try {
+                if (map.getTerrain()) {
+                    const e = map.queryTerrainElevation([lng, lat]);
+                    if (Number.isFinite(e)) return e;
+                }
+            } catch (e) { /* no terrain */ }
+            return null;
+        };
+    }
+
+    function refresh() {
+        const map = window.map;
+        if (!ACTIVE.on || !map || !map.getSource('swmm-3d')) return;
+        const net = window.Net;
+        if (!net) return;
+        const data = buildGeoJSON({
+            nodes: net.nodes, links: net.links, subcatchments: net.subcatchments, units: net.units
+        }, { elevFn: makeElevFn(map) });
+        map.getSource('swmm-3d').setData(data);
+    }
+
+    function apply() {
+        ACTIVE.on = true;
+        ensureSourceAndLayers();
+        refresh();
+        const map = window.map;
+        if (map && map.getPitch() < 30) map.easeTo({ pitch: 55, duration: 800 });
+    }
+
+    function clear() {
+        ACTIVE.on = false;
+        const map = window.map;
+        if (!map) return;
+        for (const spec of LAYER_SPECS) if (map.getLayer(spec.id)) map.removeLayer(spec.id);
+        if (map.getSource('swmm-3d')) map.removeSource('swmm-3d');
+        if ((typeof window.App === 'undefined' || !window.App.is3D) && map.getPitch() > 5) {
+            map.easeTo({ pitch: 0, duration: 800 });
+        }
+    }
+
     const API = {
         buildGeoJSON,
-        apply: function () { console.warn('network3D.apply not implemented yet'); },
-        refresh: function () { console.warn('network3D.refresh not implemented yet'); },
-        clear: function () { console.warn('network3D.clear not implemented yet'); },
+        apply: apply,
+        refresh: refresh,
+        clear: clear,
         isActive: function () { return ACTIVE.on; }
     };
 
-    if (typeof window !== 'undefined') window.Network3D = API;
+    if (typeof window !== 'undefined') {
+        window.Network3D = API;
+        window.map.on('style.load', function () {
+            if (ACTIVE.on) { ensureSourceAndLayers(); refresh(); }
+        });
+    }
     if (typeof module !== 'undefined' && module.exports) {
         module.exports = { toMeters, octagon, stripPolygon, linkPathSegments, nodeFeatures, linkFeatures, subcatchmentFeatures, buildGeoJSON };
     }
