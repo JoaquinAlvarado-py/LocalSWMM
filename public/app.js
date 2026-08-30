@@ -319,8 +319,12 @@
 
     function setElementState(id, state) {
         const src = sourceForId(id);
-        if (!src || !map.getSource(src)) return;
-        try { map.setFeatureState({ source: src, id: id }, state); } catch (e) { /* source not ready */ }
+        if (src && map.getSource(src)) {
+            try { map.setFeatureState({ source: src, id: id }, state); } catch (e) { /* source not ready */ }
+        }
+        if (map.getSource('swmm-3d')) {
+            try { map.setFeatureState({ source: 'swmm-3d', id: id }, state); } catch (e) { /* source not ready */ }
+        }
     }
     window.setElementState = setElementState;
 

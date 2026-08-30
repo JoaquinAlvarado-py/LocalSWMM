@@ -157,65 +157,172 @@
                 <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
             </button>
 
-            <!-- Floating Map Settings Card -->
+            <!-- Floating Map Settings Card — Glassmorphism -->
             <div id="map-settings-card" class="hidden">
-                <div class="settings-group">
-                    <span class="settings-label">Basemap</span>
-                    <div class="tb-pills" id="map-style-pills">
-                        <button class="tb-pill active" data-style="streets">Streets</button>
-                        <button class="tb-pill" data-style="satellite">Satellite</button>
-                        <button class="tb-pill" data-style="blank">Blank</button>
+                <!-- Header -->
+                <div class="ms-header">
+                    <div class="ms-header-left">
+                        <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+                        <span>Map Settings</span>
                     </div>
-                </div>
-                <div class="settings-group">
-                    <span class="settings-label">Network Layers</span>
-                    <div class="settings-group-row">
-                        <button id="btn-toggle-nodes" class="tb-pill toggled" title="Toggle Nodes">Nodes</button>
-                        <button id="btn-toggle-links" class="tb-pill toggled" title="Toggle Links">Links</button>
-                        <button id="btn-toggle-subcatchments" class="tb-pill toggled" title="Toggle Subcatchments">Subcatch</button>
-                        <button id="btn-toggle-mesh2d" class="tb-pill toggled" title="Toggle 2D Mesh">2D Mesh</button>
-                    </div>
-                </div>
-                <div class="settings-group-grid" style="margin-top:4px;">
-                    <button id="btn-toggle-labels" class="tb-pill toggled" title="Toggle map labels">Labels</button>
-                    <button id="btn-toggle-3d" class="tb-pill" title="Toggle 3D terrain &amp; buildings">3D View</button>
-                    <button id="btn-toggle-3d-network" class="tb-pill" title="Toggle 3D network geometry">3D Net</button>
-                    <button id="btn-toggle-warnings" class="tb-pill toggled" title="Toggle map warnings">Warnings</button>
-                    <button id="btn-toggle-landcover" class="tb-pill" title="Toggle Mapbox land-use and land-cover overlay">Land Cover</button>
-                </div>
-                <div class="settings-group">
-                    <span class="settings-label">Units</span>
-                    <select id="units-select" class="tb-select">
-                        <option value="SI" selected>SI (m, mm, LPS)</option>
-                        <option value="US">US (ft, in, CFS)</option>
-                    </select>
-                </div>
-                <div class="settings-group" style="margin-top:8px;">
-                    <span class="settings-label">Terrain DEM Source</span>
-                    <select id="dem-source-select" class="tb-select" style="width:100%;margin-bottom:4px;">
-                        <option value="MAPBOX" selected>Mapbox Terrain DEM (Default)</option>
-                        <option value="COP30">OpenTopography: Copernicus 30m</option>
-                        <option value="USGS10m">OpenTopography: USGS 3DEP 10m DTM</option>
-                        <option value="SRTMGL1">OpenTopography: NASA SRTM 30m</option>
-                        <option value="NASADEM">OpenTopography: NASADEM 30m</option>
-                    <option value="ANADEM">OpenTopography: ANADEM ML DTM 30m (S. America)</option>
-                    <option value="GEDTM30">OpenTopography: Global Ensemble DTM 30m</option>
-                    </select>
-                    <input type="password" id="opentopo-api-key" class="tb-input" placeholder="OpenTopography API Key (Optional)" style="width:100%;font-size:11px;padding:3px 6px;margin-bottom:4px;">
-                    <span style="font-size:9px;color:var(--text-light);line-height:1.2;">Used for terrain profiles and 3D visualization</span>
-                </div>
-                <div class="settings-group" style="margin-top:6px;">
-                    <button id="btn-sample-all-dem" class="tb-btn" style="width:100%;font-size:11px;" title="Extract terrain elevation from selected DEM source for all network nodes">Sample DEM for All Nodes</button>
+                    <button id="btn-close-map-settings" class="ms-close-btn" title="Close">&times;</button>
                 </div>
 
-            <!-- Layer Tree Card -->
-            <div id="layer-tree-card" class="hidden">
-                <div class="settings-group" style="padding:4px 0;">
-                 <span class="settings-label">2D Layer Tree</span>
-                    <div id="layer-tree-body" style="font-size:11px;"></div>
+                <!-- Basemap (collapsed by default) -->
+                <div class="ms-section" data-ms-expanded="false">
+                    <button class="ms-section-header" type="button">
+                        <svg class="ms-chevron" viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>
+                        <span>Basemap</span>
+                    </button>
+                    <div class="ms-section-body ms-collapsed">
+                        <div class="tb-pills" id="map-style-pills">
+                            <button class="tb-pill active" data-style="streets">
+                                <svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg>
+                                Streets
+                            </button>
+                            <button class="tb-pill" data-style="satellite">
+                                <svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>
+                                Satellite
+                            </button>
+                            <button class="tb-pill" data-style="blank">
+                                <svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/></svg>
+                                Blank
+                            </button>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
+                <!-- Network Layers (collapsed by default) -->
+                <div class="ms-section" data-ms-expanded="false">
+                    <button class="ms-section-header" type="button">
+                        <svg class="ms-chevron" viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>
+                        <span>Network Layers</span>
+                    </button>
+                    <div class="ms-section-body ms-collapsed">
+                        <div class="ms-toggle-list">
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">Nodes</span>
+                                <button id="btn-toggle-nodes" class="ms-switch toggled" title="Toggle Nodes"></button>
+                            </div>
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">Links</span>
+                                <button id="btn-toggle-links" class="ms-switch toggled" title="Toggle Links"></button>
+                            </div>
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">Subcatchments</span>
+                                <button id="btn-toggle-subcatchments" class="ms-switch toggled" title="Toggle Subcatchments"></button>
+                            </div>
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">2D Mesh</span>
+                                <button id="btn-toggle-mesh2d" class="ms-switch toggled" title="Toggle 2D Mesh"></button>
+                            </div>
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">Labels</span>
+                                <button id="btn-toggle-labels" class="ms-switch toggled" title="Toggle Labels"></button>
+                            </div>
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">3D View</span>
+                                <button id="btn-toggle-3d" class="ms-switch" title="Toggle 3D terrain &amp; buildings"></button>
+                            </div>
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">3D Network</span>
+                                <button id="btn-toggle-3d-network" class="ms-switch" title="Toggle 3D network geometry"></button>
+                            </div>
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">Warnings</span>
+                                <button id="btn-toggle-warnings" class="ms-switch toggled" title="Toggle Warnings"></button>
+                            </div>
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">Land Cover</span>
+                                <button id="btn-toggle-landcover" class="ms-switch" title="Toggle Land Cover"></button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Display Sizes (collapsed by default) -->
+                <div class="ms-section" data-ms-expanded="false">
+                    <button class="ms-section-header" type="button">
+                        <svg class="ms-chevron" viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>
+                        <span>Display Sizes</span>
+                    </button>
+                    <div class="ms-section-body ms-collapsed">
+                        <div class="ms-size-row">
+                            <label for="size-node-radius">Node Radius</label>
+                            <input type="range" id="size-node-radius" min="2" max="14" value="6">
+                            <span class="ms-size-value" id="val-node-radius">6</span>
+                        </div>
+                        <div class="ms-size-row">
+                            <label for="size-link-width">Link Width</label>
+                            <input type="range" id="size-link-width" min="1" max="8" value="3">
+                            <span class="ms-size-value" id="val-link-width">3</span>
+                        </div>
+                        <div class="ms-size-row">
+                            <label for="size-label-size">Label Size</label>
+                            <input type="range" id="size-label-size" min="6" max="18" value="10">
+                            <span class="ms-size-value" id="val-label-size">10</span>
+                        </div>
+                        <div class="ms-size-row">
+                            <label for="size-arrow-spacing">Arrow Spacing</label>
+                            <input type="range" id="size-arrow-spacing" min="30" max="200" value="80">
+                            <span class="ms-size-value" id="val-arrow-spacing">80</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Units (collapsed by default) -->
+                <div class="ms-section" data-ms-expanded="false">
+                    <button class="ms-section-header" type="button">
+                        <svg class="ms-chevron" viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>
+                        <span>Units</span>
+                    </button>
+                    <div class="ms-section-body ms-collapsed">
+                        <select id="units-select" class="tb-select">
+                            <option value="SI" selected>SI (m, mm, LPS)</option>
+                            <option value="US">US (ft, in, CFS)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Terrain DEM Source (collapsed by default) -->
+                <div class="ms-section" data-ms-expanded="false">
+                    <button class="ms-section-header" type="button">
+                        <svg class="ms-chevron" viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>
+                        <span>Terrain DEM Source</span>
+                    </button>
+                    <div class="ms-section-body ms-collapsed">
+                        <select id="dem-source-select" class="tb-select" style="width:100%;margin-bottom:6px;">
+                            <option value="MAPBOX" selected>Mapbox Terrain DEM (Default)</option>
+                            <option value="COP30">OpenTopography: Copernicus 30m</option>
+                            <option value="USGS10m">OpenTopography: USGS 3DEP 10m DTM</option>
+                            <option value="SRTMGL1">OpenTopography: NASA SRTM 30m</option>
+                            <option value="NASADEM">OpenTopography: NASADEM 30m</option>
+                            <option value="ANADEM">OpenTopography: ANADEM ML DTM 30m (S. America)</option>
+                            <option value="GEDTM30">OpenTopography: Global Ensemble DTM 30m</option>
+                        </select>
+                        <input type="password" id="opentopo-api-key" class="ms-input" placeholder="OpenTopography API Key (Optional)">
+                        <span class="ms-hint">Used for terrain profiles and 3D visualization</span>
+                        <button id="btn-sample-all-dem" class="ms-action-btn" title="Extract terrain elevation from selected DEM source for all network nodes">
+                            <svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                            Sample DEM for All Nodes
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 2D Layer Tree (collapsed by default) -->
+                <div class="ms-section" data-ms-expanded="false" id="ms-section-layertree">
+                    <button class="ms-section-header" type="button">
+                        <svg class="ms-chevron" viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>
+                        <span>2D Layer Tree</span>
+                    </button>
+                    <div class="ms-section-body ms-collapsed">
+                        <div class="ms-search-wrap">
+                            <svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
+                            <input type="text" id="layer-search" class="ms-search-input" placeholder="Search layers...">
+                        </div>
+                        <div id="layer-tree-body" style="font-size:11px;"></div>
+                    </div>
+                </div>
             </div>
 
             <!-- Street View pegman -->

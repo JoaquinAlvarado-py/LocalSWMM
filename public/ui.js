@@ -344,6 +344,15 @@
         }
     });
 
+    // Close button inside settings card
+    const btnCloseSettings = document.getElementById('btn-close-map-settings');
+    if (btnCloseSettings) {
+        btnCloseSettings.addEventListener('click', () => {
+            mapSettingsCard.classList.add('hidden');
+            btnToggleSettings.classList.remove('active');
+        });
+    }
+
     // Map style pills / labels / 3D
     document.querySelectorAll('#map-style-pills .tb-pill').forEach(pill => {
         pill.addEventListener('click', () => {
@@ -425,6 +434,84 @@
     if (btnSampleAllDem) {
         btnSampleAllDem.addEventListener('click', () => {
             if (window.sampleAllNodesDEM) window.sampleAllNodesDEM();
+        });
+    }
+
+    // ---- Collapsible sections ----
+    document.querySelectorAll('#map-settings-card .ms-section-header').forEach(header => {
+        header.addEventListener('click', () => {
+            const section = header.closest('.ms-section');
+            const body = section.querySelector('.ms-section-body');
+            const expanded = section.getAttribute('data-ms-expanded') === 'true';
+            section.setAttribute('data-ms-expanded', String(!expanded));
+            body.classList.toggle('ms-collapsed', expanded);
+        });
+    });
+
+    // ---- Display Sizes sliders ----
+    const sizeConfigs = [
+        { sliderId: 'size-node-radius', valueId: 'val-node-radius',
+          apply: (v) => {
+            const b = Number(v);
+            if (map && map.getLayer('swmm-nodes-layer')) {
+                map.setPaintProperty('swmm-nodes-layer', 'circle-radius',
+                    ['case', ['boolean',['feature-state','selected'],false], Math.round(b*1.5),
+                             ['boolean',['feature-state','hovered'],false], Math.round(b*1.33), b]);
+                map.setPaintProperty('swmm-nodes-layer', 'circle-stroke-width',
+                    ['case', ['boolean',['feature-state','selected'],false], 3,
+                             ['boolean',['feature-state','hovered'],false], 2.5, Math.max(1, b*0.25)]);
+            }
+            if (window.Network3D && window.Network3D.setNodeScale) {
+                window.Network3D.setNodeScale(b / 6.0);
+            }
+          }
+        },
+        { sliderId: 'size-link-width', valueId: 'val-link-width',
+          apply: (v) => {
+            const b = Number(v);
+            if (map && map.getLayer('swmm-links-layer')) {
+                map.setPaintProperty('swmm-links-layer', 'line-width',
+                    ['case', ['boolean',['feature-state','selected'],false], Math.round(b*1.67),
+                             ['boolean',['feature-state','hovered'],false], Math.round(b*1.5), b]);
+            }
+            if (window.Network3D && window.Network3D.setLinkWidthScale) {
+                window.Network3D.setLinkWidthScale(b / 3.0);
+            }
+          }
+        },
+        { sliderId: 'size-label-size', valueId: 'val-label-size',
+          apply: (v) => {
+            if (!map || !map.getLayer('swmm-nodes-labels')) return;
+            map.setLayoutProperty('swmm-nodes-labels', 'text-size', Number(v));
+          }
+        },
+        { sliderId: 'size-arrow-spacing', valueId: 'val-arrow-spacing',
+          apply: (v) => {
+            if (!map || !map.getLayer('swmm-links-arrows')) return;
+            map.setLayoutProperty('swmm-links-arrows', 'symbol-spacing', Number(v));
+          }
+        }
+    ];
+    sizeConfigs.forEach(cfg => {
+        const slider = document.getElementById(cfg.sliderId);
+        const valEl  = document.getElementById(cfg.valueId);
+        if (!slider) return;
+        slider.addEventListener('input', () => {
+            if (valEl) valEl.textContent = slider.value;
+            cfg.apply(slider.value);
+        });
+    });
+
+    // ---- Layer Search ----
+    const layerSearchInput = document.getElementById('layer-search');
+    if (layerSearchInput) {
+        layerSearchInput.addEventListener('input', () => {
+            const q = layerSearchInput.value.toLowerCase().trim();
+            document.querySelectorAll('#layer-tree-body .layer-tree-row').forEach(row => {
+                const label = row.querySelector('label');
+                const text = label ? label.textContent.toLowerCase() : '';
+                row.style.display = (!q || text.includes(q)) ? '' : 'none';
+            });
         });
     }
 
