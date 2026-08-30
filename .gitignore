@@ -10,3 +10,6 @@ build/
 .tools/
 .tmp-openswmm/
 .workbuddy-ai/
+
+# WebGPU harness fixtures (copied from scripts/verify-out at runtime)
+public/webgpu/fixtures/

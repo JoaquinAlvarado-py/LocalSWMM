@@ -1,8 +1,13 @@
 name: Deploy static content to Pages
 
+# NOTE: GitHub Pages cannot set COOP/COEP headers, so the threaded 2D wasm
+# (pthreads/SharedArrayBuffer) will NOT run on this deployment. Deploy via
+# Cloudflare Pages instead — see .github/workflows/cloudflare.yml and
+# public/_headers. Remove this workflow once Cloudflare is live.
+
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "experimental"]
   workflow_dispatch:
 
 permissions:

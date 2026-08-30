@@ -1,0 +1,19 @@
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: credentialless
+  X-Content-Type-Options: nosniff
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+/openswmm2d.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/swmm6wasm.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/openswmm2d.wasm
+  Cache-Control: public, max-age=31536000, immutable
+
+/swmm6wasm.wasm
+  Cache-Control: public, max-age=31536000, immutable

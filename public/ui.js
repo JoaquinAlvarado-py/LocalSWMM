@@ -39,9 +39,6 @@
     }
 
     // Data menu items
-    document.getElementById('btn-mesh2d-menu')?.addEventListener('click', () => {
-        if (window.Mesh2DDialog) window.Mesh2DDialog.open();
-    });
     document.getElementById('btn-curves')?.addEventListener('click', () => {
         if (window.CurveEditor) window.CurveEditor.openEditor();
     });
@@ -378,6 +375,15 @@
         }
     });
 
+    // Close button inside settings card
+    const btnCloseSettings = document.getElementById('btn-close-map-settings');
+    if (btnCloseSettings) {
+        btnCloseSettings.addEventListener('click', () => {
+            mapSettingsCard.classList.add('hidden');
+            btnToggleSettings.classList.remove('active');
+        });
+    }
+
     // Map style pills / labels / 3D
     document.querySelectorAll('#map-style-pills .tb-pill').forEach(pill => {
         pill.addEventListener('click', () => {
@@ -407,15 +413,6 @@
         btnSubcatchments.classList.toggle('toggled', App.subcatchmentsVisible);
         if (window.applySubcatchmentsVisibility) window.applySubcatchmentsVisibility();
     });
-
-    const btnMesh2D = document.getElementById('btn-toggle-mesh2d');
-    if (btnMesh2D) {
-        btnMesh2D.addEventListener('click', () => {
-            App.mesh2DVisible = !App.mesh2DVisible;
-            btnMesh2D.classList.toggle('toggled', App.mesh2DVisible);
-            if (window.applyMesh2DVisibility) window.applyMesh2DVisibility();
-        });
-    }
 
     const btnLabels = document.getElementById('btn-toggle-labels');
     btnLabels.addEventListener('click', () => {
@@ -455,6 +452,28 @@
         });
     }
 
+    const btnLock = document.getElementById('btn-lock-network');
+    const lockText = document.getElementById('lock-text');
+    if (btnLock) {
+        btnLock.addEventListener('click', () => {
+            const isLocked = !(window.App && window.App.isLocked);
+            if (window.App) window.App.isLocked = isLocked;
+            btnLock.classList.toggle('active', isLocked);
+            if (lockText) lockText.textContent = isLocked ? 'Locked' : 'Lock';
+            if (window.showResultsWarning) {
+                window.showResultsWarning(isLocked ? 'Project locked: Node movement disabled.' : 'Project unlocked: Node movement enabled.');
+            }
+        });
+    }
+
+    const btnToggleHoverStats = document.getElementById('btn-toggle-hoverstats');
+    if (btnToggleHoverStats) {
+        btnToggleHoverStats.addEventListener('click', () => {
+            const active = btnToggleHoverStats.classList.toggle('toggled');
+            if (window.App) window.App.hoverStatsVisible = active;
+        });
+    }
+
     const btnSampleAllDem = document.getElementById('btn-sample-all-dem');
     if (btnSampleAllDem) {
         btnSampleAllDem.addEventListener('click', () => {
@@ -462,25 +481,81 @@
         });
     }
 
-    const openMeshDialog = () => {
-        if (window.Mesh2DDialog) {
-            window.Mesh2DDialog.open();
-        } else {
-            alert('Mesh dialog module not loaded.');
-        }
-    };
-    const btnGenMesh = document.getElementById('btn-generate-mesh2d');
-    if (btnGenMesh) btnGenMesh.addEventListener('click', openMeshDialog);
-    const btnMeshToolbar = document.getElementById('btn-mesh2d-toolbar');
-    if (btnMeshToolbar) btnMeshToolbar.addEventListener('click', openMeshDialog);
+    // ---- Collapsible sections ----
+    document.querySelectorAll('#map-settings-card .ms-section-header').forEach(header => {
+        header.addEventListener('click', () => {
+            const section = header.closest('.ms-section');
+            const body = section.querySelector('.ms-section-body');
+            const expanded = section.getAttribute('data-ms-expanded') === 'true';
+            section.setAttribute('data-ms-expanded', String(!expanded));
+            body.classList.toggle('ms-collapsed', expanded);
+        });
+    });
 
-    const btnClearMesh = document.getElementById('btn-clear-mesh2d');
-    if (btnClearMesh) {
-        btnClearMesh.addEventListener('click', () => {
-            if (window.Mesh2DGenerator) window.Mesh2DGenerator.clearMesh();
-            if (window.Net) window.Net.clearIndexedMesh();
-            if (window.refreshNetworkData) window.refreshNetworkData();
-            if (window.showResultsWarning) window.showResultsWarning('2D Mesh cleared.');
+    // ---- Display Sizes sliders ----
+    const sizeConfigs = [
+        { sliderId: 'size-node-radius', valueId: 'val-node-radius',
+          apply: (v) => {
+            const b = Number(v);
+            if (map && map.getLayer('swmm-nodes-layer')) {
+                map.setPaintProperty('swmm-nodes-layer', 'circle-radius',
+                    ['case', ['boolean',['feature-state','selected'],false], Math.round(b*1.5),
+                             ['boolean',['feature-state','hovered'],false], Math.round(b*1.33), b]);
+                map.setPaintProperty('swmm-nodes-layer', 'circle-stroke-width',
+                    ['case', ['boolean',['feature-state','selected'],false], 3,
+                             ['boolean',['feature-state','hovered'],false], 2.5, Math.max(1, b*0.25)]);
+            }
+            if (window.Network3D && window.Network3D.setNodeScale) {
+                window.Network3D.setNodeScale(b / 6.0);
+            }
+          }
+        },
+        { sliderId: 'size-link-width', valueId: 'val-link-width',
+          apply: (v) => {
+            const b = Number(v);
+            if (map && map.getLayer('swmm-links-layer')) {
+                map.setPaintProperty('swmm-links-layer', 'line-width',
+                    ['case', ['boolean',['feature-state','selected'],false], Math.round(b*1.67),
+                             ['boolean',['feature-state','hovered'],false], Math.round(b*1.5), b]);
+            }
+            if (window.Network3D && window.Network3D.setLinkWidthScale) {
+                window.Network3D.setLinkWidthScale(b / 3.0);
+            }
+          }
+        },
+        { sliderId: 'size-label-size', valueId: 'val-label-size',
+          apply: (v) => {
+            if (!map || !map.getLayer('swmm-nodes-labels')) return;
+            map.setLayoutProperty('swmm-nodes-labels', 'text-size', Number(v));
+          }
+        },
+        { sliderId: 'size-arrow-spacing', valueId: 'val-arrow-spacing',
+          apply: (v) => {
+            if (!map || !map.getLayer('swmm-links-arrows')) return;
+            map.setLayoutProperty('swmm-links-arrows', 'symbol-spacing', Number(v));
+          }
+        }
+    ];
+    sizeConfigs.forEach(cfg => {
+        const slider = document.getElementById(cfg.sliderId);
+        const valEl  = document.getElementById(cfg.valueId);
+        if (!slider) return;
+        slider.addEventListener('input', () => {
+            if (valEl) valEl.textContent = slider.value;
+            cfg.apply(slider.value);
+        });
+    });
+
+    // ---- Layer Search ----
+    const layerSearchInput = document.getElementById('layer-search');
+    if (layerSearchInput) {
+        layerSearchInput.addEventListener('input', () => {
+            const q = layerSearchInput.value.toLowerCase().trim();
+            document.querySelectorAll('#layer-tree-body .layer-tree-row').forEach(row => {
+                const label = row.querySelector('label');
+                const text = label ? label.textContent.toLowerCase() : '';
+                row.style.display = (!q || text.includes(q)) ? '' : 'none';
+            });
         });
     }
 
@@ -950,6 +1025,13 @@
             });
         }
 
+        const btnSectionView = document.getElementById('prop-section-view');
+        if (btnSectionView) {
+            btnSectionView.addEventListener('click', () => {
+                if (window.NodeSchematic) window.NodeSchematic.open(el.id);
+            });
+        }
+
         const propId = document.getElementById('prop-id');
         if (type === 'MESH2D') {
             propId.readOnly = true;
@@ -1144,6 +1226,10 @@
             // Sync profile plot to current time step
             if (window.ProfilePlot && typeof window.ProfilePlot.update === 'function') {
                 window.ProfilePlot.update(step);
+            }
+            // Sync node schematic section view to current time step
+            if (window.NodeSchematic && typeof window.NodeSchematic.update === 'function') {
+                window.NodeSchematic.update(step);
             }
             // Sync Street View overlay animation
             if (window.StreetViewOverlay && typeof window.StreetViewOverlay.scheduleRedraw === 'function') {
