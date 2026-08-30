@@ -1,0 +1,838 @@
+\documentclass[11pt,a4paper]{article}
+
+% =============================================================================
+% Paquetes
+% =============================================================================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-minimal]{babel}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{geometry}
+\geometry{margin=2.6cm}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usepackage{float}
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  urlcolor=blue!60!black,
+  citecolor=blue!60!black,
+  pdftitle={Las extensiones de HydroCouple al motor SWMM de la US EPA}
+}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{siunitx}
+
+% =============================================================================
+% Entornos y macros
+% =============================================================================
+\newtheorem{definition}{Definición}[section]
+\newtheorem{remark}{Observación}[section]
+
+\newcommand{\st}{\mathrm{s}}
+\newcommand{\ft}{\mathrm{ft}}
+\newcommand{\cfs}{\mathrm{ft^3/s}}
+\newcommand{\sfft}{\mathrm{ft^2}}
+\newcommand{\R}{\mathbb{R}}
+\renewcommand{\arraystretch}{1.25}
+
+% Abreviatura para rutas del motor
+\newcommand{\src}[1]{\texttt{src/engine/#1}}
+
+\title{\textbf{Las Modificaciones de HydroCouple al Motor SWMM}\\[0.6em]
+\large de la US EPA: el motor OpenSWMM y sus extensiones}
+\author{Documento de Referencia Técnica}
+\date{Agosto 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Este documento describe, a nivel de ecuaciones y de diseño, el trabajo que el
+grupo \textbf{HydroCouple} ha realizado sobre el motor de simulación
+hidráulica \textbf{SWMM} de la \textbf{U.S.\ Environmental Protection Agency}
+(US EPA). El motor \textbf{OpenSWMM} no es una modificación puntual del código
+C del SWMM~5.x oficial: es una reescritura moderna en C$++$ que persigue dos
+objetivos simultáneos: (i) \emph{paridad bit a bit} con el motor EPA para las
+funcionalidades estándar, y (ii) una capa de \emph{extensiones numéricas y de
+plataforma} que el motor oficial no posee. Este documento se enfoca en esa
+segunda capa: la formulación semi-implícita de continuidad de nodo, la
+aceleración de Anderson del ciclo de Picard, la ranura de Preissmann dinámica,
+las uniones virtuales, el solver 1D explícito de volúmenes finitos, el módulo
+2D con acoplamiento 1D--2D, la recuperación física del RDII, el paralelismo
+OpenMP bit-exacto y los cambios de comportamiento por defecto.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% =============================================================================
+% 1. INTRODUCCIÓN
+% =============================================================================
+\section{Introducción}
+
+\subsection{Contexto: OpenSWMM y su relación con SWMM de la US EPA}
+
+El SWMM (\emph{Storm Water Management Model}) es el modelo de gestión de aguas
+lluvias y aguas servidas de la US EPA. Su motor hidráulico 1D (SWMM~5.x)
+resuelve las ecuaciones de de~Saint-Venant sobre una red de nodos y enlaces con
+tres formulaciones de tránsito (escurrimiento permanente, onda cinemática y
+onda dinámica), y ha evolucionado lentamente desde la década de 1970.
+
+El proyecto \textbf{OpenSWMM} (motor \texttt{openswmm.engine}), liderado por
+HydroCouple, reimplementa ese motor desde cero en C$++$ moderno con dos
+principios de diseño:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Paridad bit a bit} con el motor EPA para las funcionalidades
+        estándar: cada término aritmético de los solvers clásicos reproduce
+        exactamente el orden de operaciones y los valores del código legado
+        (por ejemplo, el exponente $1.33333$ de la fricción de Manning, los
+        factores de conversión truncados, la agrupación de operaciones en coma
+        flotante). Esto se valida con una batería de pruebas de regresión
+        contra el motor original y con \emph{soluciones manufacturadas}.
+  \item \textbf{Una capa de extensiones}: algoritmos numéricos nuevos y
+        opciones que el SWMM oficial no posee, orientados a mejorar la
+        estabilidad, la convergencia y la fidelidad física de los transitorios,
+        junto con arquitecturas de cómputo modernas (paralelismo, GPU,
+        WebAssembly).
+\end{enumerate}
+
+Este documento se ocupa exclusivamente de la segunda capa. Las secciones
+siguientes describen cada extensión con sus ecuaciones, su motivación y su
+sintaxis de entrada. Todas las referencias de código apuntan al directorio
+\texttt{src/engine/} del motor (\texttt{hydraulics/},
+\texttt{hydraulics/fv/}, \texttt{2d/} y \texttt{hydrology/}).
+
+\subsection{La reescritura arquitectónica como base}
+
+Aunque no es una ``extensión'' funcional, la reescritura es el habilitador de
+todo lo demás. Las decisiones arquitectónicas clave son:
+
+\begin{itemize}[nosep]
+  \item \textbf{Almacenamiento orientado a columnas (SoA)}: los datos de nodos
+        y enlaces se almacenan como arreglos paralelos (\texttt{NodeData.hpp},
+        \texttt{LinkData.hpp}), lo que permite accesos contiguos a caché y
+        vectorización SIMD en los bucles internos.
+  \item \textbf{Geometría por lotes}: la clase \texttt{XSectGroups}
+        (\texttt{XSectBatch.cpp}) agrupa los conductos por forma geométrica y
+        calcula áreas, radios hidráulicos y espejos de agua de todos los
+        conductos en pasadas vectorizables, sin despacho por forma dentro del
+        bucle interno.
+  \item \textbf{Núcleos de momentum por categoría}: cada conducto se clasifica
+        una vez por iteración en una categoría (seco, Manning a superficie
+        libre, cerrado a sección llena, impulsión por Hazen--Williams o por
+        Darcy--Weisbach) y se despacha a un núcleo sin ramas.
+  \item \textbf{Paralelismo OpenMP bit-exacto}: el ciclo de Picard completo
+        corre dentro de una única región \texttt{omp parallel} (equipo
+        persistente), con un \texttt{THREADS n} en \texttt{[OPTIONS]}. La
+        exactitud bit a bit a cualquier número de hilos se garantiza por
+        diseño: cada bucle paralelo escribe elementos disjuntos (un solo
+        productor por elemento), y el único combine entre hilos es un contador
+        entero de nodos no convergidos, libre de orden. El barrido de
+        caudales hacia los nodos se hace mediante una adyacencia CSR
+        nodo$\to$conducto que reproduce exactamente el orden de acumulación en
+        coma flotante del barrido serial (\texttt{buildConduitNodeCSR}).
+\end{itemize}
+
+% =============================================================================
+% 2. CONTINUIDAD DE NODO SEMI-IMPLÍCITA
+% =============================================================================
+\section{Continuidad de nodo semi-implícita (\texttt{NODE\_CONTINUITY})}
+
+\subsection{Motivación}
+
+En el SWMM clásico, la actualización del tirante en un nodo usa dos ramas
+separadas:
+\begin{itemize}[nosep]
+  \item \emph{Superficie libre}: $\Delta y = \Delta V / A_S$, con $A_S$ el área
+        superficial del ensamble de nodo;
+  \item \emph{En carga (EXTRAN)}: $\Delta y = \alpha\,\Delta Q / \mathrm{denom}$,
+        donde el denominador incorpora el gradiente $\sum dQ/dH$.
+\end{itemize}
+
+La conmutación entre ambas ramas ocurre exactamente en la cota de la clave del
+conducto más alto conectado al nodo. El operador de actualización de carga es,
+por tanto, \emph{discontinuo} en la clave: un nodo que entra o sale de la
+condición en carga cambia de fórmula de un paso al siguiente. Esta
+discontinuidad es una fuente de oscilaciones y de iteraciones adicionales en
+redes que transitan repetidamente por la clave (muy común en redes unitarias).
+
+\subsection{La formulación unificada}
+
+La extensión \texttt{NODE\_CONTINUITY SEMI\_IMPLICIT} reemplaza las dos ramas
+por una única expresión suave. La idea es reconocer que los caudales que
+entran a la actualización de la ecuación de continuidad dependen de la propia
+carga que se está resolviendo. Linealizando el caudal neto alrededor de la
+estimación actual con los gradientes de caudal:
+\begin{equation}
+  \sum Q^{t+\Delta t} \approx \sum Q + \sum\frac{dQ}{dH}\,\Delta H,
+\end{equation}
+y sustituyendo en la actualización trapezoidal de la carga,
+\begin{equation}
+  \Delta V = \tfrac{\Delta t}{2}\left(\sum Q^{t} + \sum Q^{t+\Delta t}\right),
+\end{equation}
+se obtiene la expresión unificada que el motor implementa en
+\texttt{setNodeDepth} (\texttt{DynamicWave.cpp}):
+\begin{equation}
+  \Delta y = \frac{\Delta V}{A_S + \tfrac{\Delta t}{2}\sum \frac{dQ}{dH}},
+  \qquad
+  y^{t+\Delta t} = y^{t} + \Delta y,
+\end{equation}
+con el denominador pisado por el área mínima $A_{\min}$.
+
+\subsection{Interpretación y convención de signo}
+
+El motor acumula $\sum dQ/dH$ como una \emph{magnitud positiva}, con
+$dQ_{\mathrm{net}}/dH = -\sum dQ/dH$ (una subida de carga aumenta la salida
+neta). Bajo esa convención, el término $\tfrac{\Delta t}{2}\sum dQ/dH$ del
+denominador es positivo y \emph{amortigua} la actualización: una subida de
+carga que incrementa la salida neta reduce el llenado neto. El comportamiento
+es el esperado en ambos regímenes:
+
+\begin{itemize}[nosep]
+  \item cuando el área superficial domina el denominador, la expresión colapsa
+        a la fórmula clásica de superficie libre $\Delta y = \Delta V/A_S$;
+  \item cuando el nodo se acerca y atraviesa la clave, el término de gradiente
+        de caudal toma el rol que la fórmula de surcharge EXTRAN juega en la
+        formulación explícita, sin cambiar de rama.
+\end{itemize}
+
+Esta es una \emph{corrección} sobre la ambigüedad de signo del manual del
+SWMM oficial: el motor fue corregido para usar el signo más
+(\texttt{DynamicWave.cpp:3374}, con el comentario de derivación
+$\Delta H = \Delta V/(A_S + 0.5\,\Delta t\,\mathrm{sumdqdh})$ para
+$\mathrm{sumdqdh} > 0$).
+
+\subsection{Ventajas}
+
+La continuidad de nodo semi-implícita:
+\begin{itemize}[nosep]
+  \item elimina la rama en la clave, por lo que el operador es $C^1$-suave a
+        través de la transición superficie libre $\leftrightarrow$ en carga;
+  \item es el ajuste \emph{recomendado} para modelos con uniones virtuales
+        (Sección~\ref{sec:vj}), porque el acoplamiento de momentum a través del
+        nodo requiere suavidad;
+  \item es la configuración natural para combinarla con la aceleración de
+        Anderson (Sección~\ref{sec:anderson}): bajo \texttt{EXPLICIT} los
+        nodos en carga quedan excluidos de la aceleración, mientras que bajo
+        \texttt{SEMI\_IMPLICIT} siguen siendo elegibles.
+\end{itemize}
+
+% =============================================================================
+% 3. ACELERACIÓN DE ANDERSON
+% =============================================================================
+\section{Aceleración de Anderson del ciclo de Picard (\texttt{ANDERSON\_ACCEL})}
+\label{sec:anderson}
+
+\subsection{Motivación}
+
+El solver de onda dinámica resuelve las ecuaciones de nodo y de enlace por
+\emph{iteración funcional} (Picard / aproximaciones sucesivas): cada pasada
+aplica el mismo operador de actualización de carga $G$ a las últimas
+estimaciones de carga hasta que ningún nodo cambia más que la tolerancia de
+carga $\varepsilon_H$. La iteración de punto fijo converge \emph{linealmente},
+y el factor de subrelajación $\omega = 0.5$ que amortigua cada actualización
+estabiliza la iteración sin mejorar su tasa. En redes con muchos nodos
+fuertemente acoplados, el solver puede consumir sus 8 intentos
+(\texttt{MAX\_TRIALS}) en casi todos los pasos de tránsito, incluso en
+condiciones suaves.
+
+\subsection{El método}
+
+La aceleración de Anderson de profundidad 2 (equivalente a la actualización de
+Aitken) mezcla las dos salidas más recientes del operador. Sea
+$H_k$ la estimación de carga al entrar a la iteración $k$, el residual es
+\begin{equation}
+  r_k = G(H_k) - H_k,
+\end{equation}
+y el coeficiente de mezcla es
+\begin{equation}
+  \alpha_k = \mathrm{clamp}\!\left(
+    \frac{r_k\,(r_k - r_{k-1})}{(r_k - r_{k-1})^{2}},\ 0,\ 1\right),
+  \qquad
+  H_{k+1} = (1-\alpha_k)\,G(H_k) + \alpha_k\,G(H_{k-1}).
+\end{equation}
+El acotamiento de $\alpha_k$ a $[0,1]$ restringe la actualización a una
+\emph{interpolación} entre dos salidas del operador ya calculadas y ya acotadas;
+nunca se produce una carga extrapolada. La mezcla se aplica por nodo a partir
+del segundo intento de cada paso de tránsito.
+
+\subsection{Salvaguardas}
+
+\begin{itemize}[nosep]
+  \item \textbf{Compuerta por magnitud del residual}: la mezcla se aplica solo
+        cuando $\lvert r_k \rvert \le 20\,\varepsilon_H$; lejos del régimen
+        lineal la mezcla podría sobrepasar.
+  \item \textbf{Cotas físicas}: un tirante mezclado negativo se descarta en
+        favor de la iteración ordinaria de Picard.
+  \item \textbf{Exclusión de nodos no suaves}: la aceleración se omite en los
+        nodos donde el operador $G$ es conocido no suave (Tabla~\ref{tab:aa}):
+        nodos en carga bajo \texttt{EXTRAN} con continuidad \texttt{EXPLICIT}
+        (la rama cambia en la clave), ranura dinámica activa, conductos cerca
+        del corte de la ranura estática, vertederos u orificios en la clave,
+        extremos de bombas (estado discreto on/off) y el borde de
+        encharcamiento.
+  \item \textbf{Criterio de convergencia doble}: un nodo se cuenta como
+        convergido solo cuando tanto el residual crudo $\lvert G(H_k) - H_k
+        \rvert$ como el movimiento aceptado $\lvert H_{k+1} - H_k \rvert$ están
+        dentro de la tolerancia. Sin esta doble condición, una mezcla que
+        aterrice cerca de la iteración anterior podría declarar convergencia
+        mientras el balance de caudales sigue sin satisfacerse.
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{>{\raggedright}p{3.4cm}>{\raggedright}p{6.0cm}>{\raggedright\arraybackslash}p{5.4cm}}
+\toprule
+\textbf{Condición} & \textbf{Cuándo} & \textbf{Razón} \\
+\midrule
+Nodo en carga & \texttt{SURCHARGE\_METHOD EXTRAN} con
+  \texttt{NODE\_CONTINUITY EXPLICIT} & la rama cambia en la clave \\
+Ranura dinámica activa & \texttt{SURCHARGE\_METHOD DYNAMIC\_SLOT} & la geometría
+  se reescribe por iteración \\
+Cerca del corte estático & \texttt{SURCHARGE\_METHOD SLOT}, $0.98 \le
+  \bar y/y_{\mathrm{full}} \le 1.02$ & el ancho de ranura entra abruptamente \\
+Vertedero/orificio en la clave & LGH aguas arriba $\ge$ clave & la ecuación de
+  caudal cambia de forma \\
+Bombas & ambos nodos extremos & el estado on/off es discreto \\
+Borde de encharcamiento & nodo encharcado en $d_{\mathrm{full}}$ & piso C$^0$ en
+  el límite de encharcamiento \\
+\bottomrule
+\end{tabular}
+\caption{Nodos excluidos de la aceleración de Anderson.}
+\label{tab:aa}
+\end{table}
+
+El efecto medido: reducción de los conteos de intentos en aproximadamente 25 a
+50\,\% por paso de tránsito en redes que de otro modo iteran hasta el límite.
+
+% =============================================================================
+% 4. RANURA DE PREISSMANN DINÁMICA
+% =============================================================================
+\section{Ranura de Preissmann dinámica}
+\label{sec:dps}
+
+\subsection{Motivación}
+
+La opción \texttt{SURCHARGE\_METHOD DYNAMIC\_SLOT} agrega un tercer método de
+escurrimiento en carga. El SWMM oficial ofrece dos formas de representar el
+escurrimiento presurizado
+en conductos cerrados: el algoritmo EXTRAN (perturbación tipo Hardy--Cross con
+$dQ/dH$) y la ranura de Preissmann estática. Ambos tienen limitaciones
+conocidas en los transitorios de llenado/vaciado: la ranura estática fija su
+ancho a partir de la profundidad instantánea, lo que en el frente de mezcla
+superficie libre/presión produce ``apretón de ranura'' (\emph{slot squeezing}),
+una amplificación de energía artificial. La extensión \texttt{DYNAMIC\_SLOT}
+implementa la formulación de ranura de Preissmann \emph{dinámica} de Sharior,
+Hodges \& Vasconcelos (2023), en la que el área de la ranura evoluciona en el
+tiempo como un elemento de \emph{almacenamiento transitorio}.
+
+\subsection{Formulación}
+
+La ranura dinámica tiene un ancho superior que depende del número de
+Preissmann $P$ y de una celeridad de onda de presión objetivo $c_{pT}$
+(el usuario la fija con \texttt{DPS\_CELERITY}, por defecto 25 m/s):
+\begin{equation}
+  T_s = \frac{g\,A_{\mathrm{full}}}{c_{pT}^{2}}\,P^{2},
+\end{equation}
+donde $A_{\mathrm{full}}$ es el área de sección llena. El número de Preissmann
+parte, al inicio de la presurización, en
+\begin{equation}
+  P_{0} = \max\!\left(\frac{c_{pT}}{\alpha\,c_g},\ 1\right),
+  \qquad c_g = \sqrt{g\,A_{\mathrm{full}}/W_{\max}},
+\end{equation}
+con $\alpha$ el parámetro de choque (\texttt{DPS\_ALPHA}, por defecto 3) y
+$c_g$ la celeridad de la onda de gravedad a sección llena. El área de ranura se
+acumula de forma \emph{dependiente de la trayectoria}:
+\begin{equation}
+  A_s \leftarrow \max\!\left(A_s + T_s\,\Delta h_s,\ 0\right),
+  \qquad h_s = \max(\bar y - y_{\mathrm{full}},\ 0),
+\end{equation}
+es decir, cada incremento de almacenamiento se crea con el ancho de ranura
+vigente en el momento en que se acumula, y las contribuciones previas nunca se
+reescriben cuando $P$ decae. Esta propiedad es la que evita la amplificación de
+energía del ``apretón de ranura''. Si la carga cae bajo la clave con área
+residual, la carga de sobrepresión se mantiene en cero y el área restante
+drena a través de incrementos negativos sucesivos (histéresis de
+despresurización).
+
+Después de la presurización, $P$ decae exponencialmente hacia 1 con la escala
+de tiempo \texttt{DPS\_DECAY\_TIME} ($r = 0.5$ s por defecto):
+\begin{equation}
+  \hat P(t) = 1 + (\hat P_0 - 1)\exp\!\left(-\frac{10\,(t - t_s)}{r}\right),
+\end{equation}
+con $t_s$ el instante en que el conducto entró en carga, y se suaviza
+espacialmente una vez por paso promediando $\hat P$ sobre los conductos
+incidentes a cada nodo y tomando como $P$ de trabajo el promedio de los dos
+extremos del conducto.
+
+\subsection{Consecuencias para el solver}
+
+Mientras una ranura está activa:
+\begin{itemize}[nosep]
+  \item el área hidráulica es $A = A_{\mathrm{full}} + A_s$ y el ancho superior
+        es $T_s$;
+  \item el área superficial aportada a un nodo extremo en carga es
+        $T_s\,L/4$;
+  \item el radio hidráulico se mantiene en su valor de sección llena (la
+        ranura aporta almacenamiento pero no fricción);
+  \item las cargas de los nodos se actualizan \emph{siempre} con la fórmula
+        ordinaria de superficie libre; la rama de surcharge EXTRAN nunca se
+        invoca, y la carga piezométrica sobre la clave emerge naturalmente como
+        $z_{\mathrm{inv}} + y_{\mathrm{full}} + h_s$.
+\end{itemize}
+El paso de tiempo variable usa la celeridad de presión efectiva
+$c_p = c_{pT}/P$ en la condición de Courant del conducto en carga:
+\begin{equation}
+  \Delta t \le \frac{L}{\lvert \bar U \rvert + c_{pT}/P}.
+\end{equation}
+
+% =============================================================================
+% 5. UNIONES VIRTUALES
+% =============================================================================
+\section{Uniones virtuales (\texttt{[VIRTUAL\_JUNCTIONS]})}
+\label{sec:vj}
+
+\subsection{Motivación}
+
+Un cambio de pendiente en un conducto debe dividirse en una cámara de unión.
+Pero una cámara de unión ordinaria introduce dos artefactos numéricos:
+\begin{enumerate}[nosep]
+  \item \textbf{Almacenamiento artificial}: su área superficial se pisa con el
+        mínimo $A_{\min} = 12.566\ \sfft$, lo que agrega un volumen de
+        estancamiento que ``emborrona'' los transitorios;
+  \item \textbf{Ruptura de momentum}: el nodo actúa como un pequeño volumen de
+        estancamiento que interrumpe la transmisión de momentum entre los dos
+        conductos.
+\end{enumerate}
+
+Una \textbf{unión virtual} (\texttt{[VIRTUAL\_JUNCTIONS]}, sección con nombre y
+cota de batea; todo lo demás se deriva) elimina ambos artefactos para dos
+conductos colineales de sección idéntica que se encuentran en un quiebre de
+pendiente. Se declara un nodo sellado de almacenamiento idénticamente nulo. Las
+reglas de elegibilidad se verifican en la lectura: exactamente dos enlaces,
+ambos conductos; secciones transversales idénticas (forma, dimensiones,
+referencia de curva, número de barriles; la rugosidad de Manning puede
+diferir); ambos desfases en el nodo nulos con batea continua; sin aportes
+laterales de ningún tipo; y método de tránsito de onda dinámica. Cualquier
+violación es un error de entrada.
+
+\subsection{Tratamiento de continuidad}
+
+Una unión virtual es un nodo sellado de almacenamiento cero. Su carga se
+actualiza con la fórmula de superficie libre usando el área superficial natural
+de medio enlace aportada por sus dos conductos, \emph{sin} el piso de área
+mínima (ese piso es precisamente el almacenamiento artificial que la
+funcionalidad elimina). Cuando el área natural se anula (par seco, o par en
+carga con ancho de ranura pequeño), la actualización cae a una forma pura de
+balance de caudales de la actualización en carga con $\alpha = 1$ y sin piso.
+En la convergencia, $\sum Q = 0$ en el nodo. El nodo está sellado: su carga
+puede subir sobre la clave sin límite (como una cámara con tapa empernada),
+nunca se anega ni se encharca, y su volumen y rebalse son idénticamente cero.
+
+\subsection{Tratamiento de momentum}
+
+Para un par de paso (un conducto entrando, otro saliendo), el conducto aguas
+abajo toma como estado aguas arriba los valores medios del conducto aguas
+arriba en su ponderación por Froude (mecanismo de \emph{upwinding} a través
+del nodo), transportando el momentum advectado a través del nodo en lugar de
+reiniciarlo. Con \texttt{VIRTUAL\_JUNCTION\_MOMENTUM FULL} (por defecto
+\texttt{BASIC}) se agrega además una corrección convectiva al término de
+inercia de ambos conductos:
+\begin{equation}
+  \Delta Q_j = \Delta t\,\sigma_j\,
+    \frac{\left(\bar U^{2}\bar A\right)_{\mathrm{ab}} -
+          \left(\bar U^{2}\bar A\right)_{\mathrm{ar}}}{\Lambda},
+  \qquad \Lambda = \frac{L_{\mathrm{ar}} + L_{\mathrm{ab}}}{2},
+\end{equation}
+con $\sigma_j$ un factor de amortiguación de la forma de Froude; la corrección
+se anula cuando los dos conductos no transportan caudal en el mismo sentido a
+través del nodo. Los pares en silla (ambos conductos hacia el nodo) o en cresta
+(ambos desde el nodo) reciben el tratamiento de continuidad de almacenamiento
+cero pero no el acoplamiento direccional de momentum. La pareja siempre se
+resuelve junta (no se congela por el bypass de convergencia) y se agrega una
+verificación de Courant a nivel de par.
+
+La guía de uso: las uniones virtuales están pensadas para quiebres de
+pendiente de pequeña deflexión; los cambios de alineación horizontal deben
+seguir siendo cámaras de unión ordinarias con coeficientes de pérdida.
+
+% =============================================================================
+% 6. SOLVER 1D EXPLÍCITO DE VOLÚMENES FINITOS
+% =============================================================================
+\section{Tránsito 1D por volúmenes finitos explícitos (\texttt{FLOW\_ROUTING FV})}
+\label{sec:fv}
+
+\subsection{Motivación}
+
+El SWMM oficial solo ofrece esquemas implícitos con linealización (onda
+dinámica) u ondas cinemática/permanente. El solver de onda dinámica, aunque es
+el estándar de la industria, tiene dificultades bien documentadas con el flujo
+transcrítico, la propagación de frentes bruscos y la transición seco/húmedo. La
+extensión \texttt{FLOW\_ROUTING FV} agrega un solver 1D de \emph{volúmenes
+finitos explícito y conservativo} de tipo Godunov, que resuelve el flujo
+transcrítico de forma nativa y maneja seco/húmedo sin las ramas ad hoc de la
+onda dinámica.
+
+\subsection{Arquitectura del solver}
+
+El solver vive en \src{hydraulics/fv/}. Cada conducto se discretiza en celdas
+(por defecto al menos \texttt{FV\_MIN\_CELLS} = 4 por conducto, o con un blanco
+de longitud \texttt{FV\_CELL\_LENGTH}); el estado conservado de cada celda es
+el área hidráulica $A$ y el caudal $Q$. El paso temporal global obedece la
+condición de Courant, y el solver sub-pasea internamente a su propio límite
+CFL, de modo que el paso de tránsito (de reporting/forzamiento) no necesita
+encogerse por estabilidad.
+
+Las opciones principales (claves \texttt{FV\_*} en \texttt{[OPTIONS]}) son:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{>{\raggedright}p{4.6cm}>{\raggedright}p{2.6cm}>{\raggedright\arraybackslash}p{7.2cm}}
+\toprule
+\textbf{Opción} & \textbf{Defecto} & \textbf{Descripción} \\
+\midrule
+\texttt{FV\_CFL} & 0.5 & número de Courant \\
+\texttt{FV\_RIEMANN} & HLLC & solver de Riemann (HLL / HLLC) \\
+\texttt{FV\_ORDER} & 1 & orden espacial (1 = Godunov, 2 = MUSCL--Hancock) \\
+\texttt{FV\_LIMITER} & MINMOD & limitador de pendiente (MINMOD/VANLEER/SUPERBEE) \\
+\texttt{FV\_CELL\_LENGTH} & 0 & blanco de $\Delta x$ (0 = solo piso de celdas) \\
+\texttt{FV\_MIN\_CELLS} & 4 & piso de celdas por conducto \\
+\texttt{FV\_SLOT\_CELERITY} & 100 ft/s & celeridad de presión (ancho de ranura) \\
+\texttt{FV\_NODE\_COUPLING} & SEMI\_IMPLICIT & acoplamiento nodo--celda \\
+\texttt{FV\_STRUCTURE\_COUPLING} & SUBSTEP & cuándo se re-evalúan las estructuras \\
+\texttt{FV\_LTS} & true & paso de tiempo local \\
+\texttt{FV\_LTS\_MAX\_TIERS} & 6 & máximo de niveles LTS \\
+\texttt{FV\_DISPERSION} & 0 & coeficiente de dispersión longitudinal \\
+\bottomrule
+\end{tabular}
+\caption{Opciones del solver 1D de volúmenes finitos.}
+\label{tab:fv}
+\end{table}
+
+\subsection{Diseños clave}
+
+\begin{itemize}[nosep]
+  \item \textbf{Nodos algebraicos}: las cámaras de unión no son estados con
+        área (como en la onda dinámica, donde el área de trabajo pertenece a
+        los conductos); un nodo de grado 2 sin aporte lateral pasa los flujos
+        directamente como una cara, y los demás nodos resuelven su carga desde
+        el balance instantáneo de flujos por subpaso. Esto elimina el límite de
+        paso de milisegundos que un área de cámara imponía al modelo completo.
+  \item \textbf{Acoplamiento nodo--celda semi-implícito}: el flujo de cada cara
+        de acoplamiento se linealiza en la carga del nodo, lo que saca al nodo
+        del límite de estabilidad explícito (la cámara, no la tubería, era el
+        factor limitante del subpaso). La conservación no se altera: el flujo
+        corregido es el que ven tanto el nodo como la celda. Con
+        \texttt{FV\_NODE\_PICARD\_SWEEPS} $> 1$ se re-evalúan área, ancho y
+        flujos de Riemann en cada barrido.
+  \item \textbf{Paso de tiempo local (LTS)}: las celdas rígidas (conductos
+        cortos, presurizados) avanzan a su propio $\Delta t = 2^k\,\Delta t_0$
+        mientras el resto avanza al paso global; cuando el reparto no separa
+        nada, el solver cae al camino de paso global bit a bit.
+  \item \textbf{Estructuras}: las ecuaciones de bombas/orificios/vertederos/
+        descargas se re-evalúan por defecto en \emph{cada} subpaso explícito
+        (\texttt{FV\_STRUCTURE\_COUPLING SUBSTEP}), lo que es físicamente
+        exacto; la alternativa es una vez por paso de tránsito.
+  \item \textbf{Backends}: el mismo núcleo escalar se compila para CPU,
+        OpenMP y dispositivos (CUDA/HIP/SYCL mediante plugins Kokkos); el
+        resultado debe ser bit a bit idéntico entre backends.
+\end{itemize}
+
+% =============================================================================
+% 7. MÓDULO 2D Y ACOPLE 1D–2D
+% =============================================================================
+\section{El módulo 2D y el acoplamiento 1D--2D}
+\label{sec:2d}
+
+La extensión de mayor envergadura es el módulo de \emph{escurrimiento
+superficial 2D}: una malla triangular no estructurada sobre la que se resuelven
+las ecuaciones de aguas someras en su forma \emph{local-inercial}
+(de~Almeida \& Bates, 2013):
+\begin{equation}
+  \frac{\partial h}{\partial t} + \nabla\cdot \mathbf{q} = i - e + s,
+  \qquad
+  \frac{\partial \mathbf{q}}{\partial t} + g\,h\,\nabla\eta +
+  g\,n^{2}\,\frac{\lvert\mathbf{q}\rvert\,\mathbf{q}}{h^{7/3}} = 0,
+\end{equation}
+donde $h$ es el tirante, $\mathbf{q}$ el caudal específico (m$^2$/s),
+$\eta$ la cota de superficie libre, $n$ la rugosidad de Manning, $i$ la lluvia
+sobre la malla y $e$, $s$ los términos de evaporación y fuente. Se conserva el
+término $\partial \mathbf{q}/\partial t$ (inercia local) pero se omite la
+aceleración convectiva: preciso para flujo subcrítico de pendiente suave
+($\mathrm{Fr} \lesssim 0.5$). El módulo se activa por la sola presencia de una
+malla (\texttt{[2D\_VERTICES]} / \texttt{[2D\_TRIANGLES]} o archivo de malla),
+y su solver está portado a GPU/WebGPU con exactitud bit a bit respecto del
+backend serial.
+
+\subsection{La ley de orificio de acoplamiento}
+
+El intercambio entre un nodo 1D y una celda 2D es una ley de descarga tipo
+orificio gobernada por la diferencia de carga $\Delta h = h_{2D} - h_{1D}$
+(\texttt{NodeCoupling.cpp}):
+\begin{equation}
+  Q = C_d\,A_{\mathrm{eff}}\,\mathrm{sign}(\Delta h)\,\sqrt{2g}\,
+      \varphi(\lvert\Delta h\rvert),
+\end{equation}
+positiva en el sentido 2D$\to$1D (drenaje). La raíz cuadrada se regulariza
+con la función $C^1$
+\begin{equation}
+  \varphi(x) = \begin{cases}
+    \dfrac{3}{2\sqrt{\varepsilon}}\,x - \dfrac{1}{2\varepsilon^{3/2}}\,x^{2}
+      & x < \varepsilon,\\[1em]
+    \sqrt{x} & x \ge \varepsilon,
+  \end{cases}
+  \qquad \varepsilon = 0.02\ \mathrm{m},
+\end{equation}
+que coincide con $\sqrt{x}$ en valor y pendiente en $\varepsilon$ y tiene
+pendiente finita en el origen. Esto elimina la singularidad
+$dQ/d\Delta h \to \infty$ en $\Delta h \to 0$, exactamente el régimen de
+equilibrio llenado/vaciado donde el orificio desnudo era una fuente de
+rigidez y oscilaciones.
+
+Además se aplican tres regularizaciones:
+\begin{itemize}[nosep]
+  \item \textbf{Compuerta de conducto con tapa}: sobre la clave, una
+        \emph{smoothstep} de Hermite en una banda de 5 cm multiplica $Q$; bajo
+        la clave el intercambio es exactamente cero (el nodo solo intercambia
+        cuando sobrepasa la clave). El área efectiva crece linealmente de $A$
+        en la clave a $2A$ a 5 cm sobre ella.
+  \item \textbf{Rampa seco/húmedo del lado fuente}: $Q$ se multiplica por una
+        smoothstep sobre el tirante vivo del lado fuente relativo al
+        \texttt{DRY\_DEPTH}, de modo que un drenaje se autolimita a cero cuando
+        la celda se vacía y un rebalse se autolimita cuando el nodo se vacía.
+  \item \textbf{Sensibilidad a la carga (Jacobiano)}: se dispersa la derivada
+        $-dQ/dh_{1D}$ en el denominador de continuidad del nodo de la onda
+        dinámica ($\sum dQ/dH$), convirtiendo la fuente explícita en un
+        amortiguador que estabiliza la iteración de drenaje/rebalse.
+\end{itemize}
+
+\subsection{Presupuestos de volumen y cadencia}
+
+El intercambio se evalúa \emph{en vivo} dentro del marchante 2D en la cadencia
+de nivel 0 del paso de tiempo local, contra cargas 2D actuales y cargas 1D
+congeladas al inicio del lote, acumulando $\int Q\,dt$ exactamente por punto.
+Dos topes duros garantizan que un drenaje no pueda tomar más de una fracción
+$\beta$ de la celda por subpaso y que la misma agua no pueda rebalsar dos veces
+dentro de un paso de tránsito. Los volúmenes de intercambio de las cámaras se
+entregan al 1D a través de una \emph{cola de entrega} que drena a tasa uniforme
+sobre el lapso del lote (no como un pulso $\mathrm{volumen}/\Delta t$ que
+inundaba cámaras pequeñas y provocaba oscilaciones).
+
+\subsection{Acoplamiento por área de encharcamiento}
+
+Para que el HGL de un nodo acoplado pueda subir sobre la clave y rastrear la
+superficie 2D (y para que el rebalse/ingreso dispare), el router 2D
+\emph{sobrescribe el área de encharcamiento} del nodo con la huella de las
+celdas 2D circundantes (el área dual mediana de las celdas del stencil), y
+marca al nodo como capaz de encharcarse \emph{independientemente} de la opción
+global \texttt{ALLOW\_PONDING}. Esto es el \texttt{nodeCanPond} de la onda
+dinámica extendido a nodos acoplados: el área de encharcamiento no es un dato
+del usuario sino el área de la celda 2D asignada.
+
+% =============================================================================
+% 8. RECUPERACIÓN FÍSICA DEL RDII
+% =============================================================================
+\section{Recuperación física de la abstracción del RDII (\texttt{[RDII\_DECAY]})}
+
+\subsection{Motivación}
+
+En el SWMM oficial, la infiltración/entrada por lluvia (RDII, \emph{rain-derived
+inflow and infiltration}) se modela con el método RTK: cada nodo responde con
+hasta tres hidrogramas unitarios triangulares (corto, medio y largo) definidos
+por $R$, $T$ y $K$, convolucionados con la precipitación. La abstracción
+inicial (capacidad de almacenamiento antes de que se genere RDII) se recupera
+entre eventos a \emph{tasa constante} dada por una tabla mensual
+(\texttt{IA\_Recov}): la variación estacional debe pre-cocinarse en los datos de
+entrada del usuario.
+
+\subsection{La extensión: abstracción de decaimiento exponencial}
+
+La extensión \texttt{[RDII\_DECAY]} reemplaza esa recuperación constante por un
+modelo físico de \emph{relajación exponencial de primer orden} cuya tasa depende
+de la \emph{temperatura del aire}. Los parámetros por par (grupo de
+hidrogramas, respuesta) son $k_{\mathrm{dep}}$, $k_0$, $k_T$, $T_{\mathrm{ref}}$,
+$\theta_{\mathrm{rec}}$, $T_{\mathrm{cong}}$ y, opcionalmente, un particionado
+lluvia/nieve.
+
+\textbf{Agotamiento durante la lluvia} ($k_{\mathrm{dep}}$): la capacidad
+disponible se agota exponencialmente con la lámina de lluvia $\Delta P$,
+\begin{equation}
+  IA_{\mathrm{avail}}^{+} = IA_{\mathrm{avail}}\,
+    e^{-k_{\mathrm{dep}}\,\Delta P},
+  \qquad
+  P_{\mathrm{net}} = \max\!\left(0,\ \Delta P -
+    \left(IA_{\mathrm{avail}} - IA_{\mathrm{avail}}^{+}\right)\right),
+\end{equation}
+con contabilidad másica consistente (el almacenamiento drena exactamente lo
+que abstrae). $k_{\mathrm{dep}} = 0$ desactiva la abstracción.
+
+\textbf{Recuperación entre eventos} ($k_0$, $k_T$, $T_{\mathrm{ref}}$): la
+capacidad disponible relaja hacia el máximo,
+\begin{equation}
+  \frac{d\,IA_{\mathrm{avail}}}{dt} = k_{\mathrm{rec}}(T)\,
+    \left(IA_{\max} - IA_{\mathrm{avail}}\right),
+  \qquad
+  IA_{\mathrm{avail}}^{+} = IA_{\max} - \left(IA_{\max} - IA_{\mathrm{avail}}\right)
+    e^{-k_{\mathrm{rec}}(T)\,\Delta t},
+\end{equation}
+donde la tasa de recuperación depende de la temperatura con una base
+independiente de la temperatura (drenaje gravitacional / redistribución
+capilar) más un término térmico:
+\begin{equation}
+  k_{\mathrm{rec}}(T) = \max\!\left(0,\ k_0 + k_T\,
+    e^{\theta_{\mathrm{rec}}\,(T - T_{\mathrm{ref}})}\right),
+\end{equation}
+y se anula bajo la temperatura de congelamiento $T_{\mathrm{cong}}$ (suelo
+congelado), reproduciendo la elevación de RDII de inicios de primavera. La
+temperatura proviene de la fuente \texttt{[TEMPERATURE]} del proyecto (serie de
+tiempo o archivo); si no se configura, $T$ se fija en $T_{\mathrm{ref}}$ y se
+emite una advertencia.
+
+\textbf{Particionado lluvia/nieve (opcional)}: con la cláusula \texttt{SNOW},
+$T \le T_{\mathrm{nieve}}$ acumula la precipitación como equivalente en nieve
+(sin aporte líquido), y con nieve presente y $T > T_{\mathrm{nieve}}$ se agrega
+un derretimiento de grado-día $m = \min(SWE,\ DDF\,(T - T_{\mathrm{nieve}})\,
+\Delta t)$ a la lluvia (lluvia sobre nieve).
+
+La recuperación de primer orden es más rápida cuando el déficit es grande y se
+ralentiza cerca de la saturación, a diferencia de la tasa constante lineal del
+SWMM oficial. Los pares sin fila en \texttt{[RDII\_DECAY]} usan el modelo
+lineal legado; el estado de ejecución (el tirante $ia_{\mathrm{used}}$) es
+intercambiable entre formulaciones, por lo que los archivos de arranque en
+caliente son compatibles.
+
+% =============================================================================
+% 9. CAMBIOS DE COMPORTAMIENTO Y PLATAFORMA
+% =============================================================================
+\section{Cambios de comportamiento por defecto y de plataforma}
+
+\subsection{Cambios de comportamiento}
+
+Además de las extensiones funcionales, el motor introduce cambios de
+comportamiento que conviene conocer:
+
+\begin{itemize}[nosep]
+  \item \textbf{Paso de tiempo variable por defecto}: \texttt{VARIABLE\_STEP}
+        por defecto es \textbf{0.75} (paso adaptativo por Courant), mientras
+        que el manual del SWMM 5.x documenta 0 (paso fijo). Para reproducir el
+        comportamiento del SWMM oficial debe fijarse \texttt{VARIABLE\_STEP 0}.
+  \item \textbf{Manejo de unidades de las tolerancias}: la \texttt{HEAD\_TOLERANCE}
+        y el \texttt{MIN\_SURFAREA} se convierten desde las unidades del
+        proyecto al sistema interno (pies) al inicializar, corrigiendo errores
+        de factor 3.3--10.8 en modelos SI del motor anterior.
+  \item \textbf{Pérdidas de conducto por iteración}: bajo onda dinámica, la
+        evaporación y filtración de conductos se recalculan en \emph{cada}
+        iteración de Picard (con la compuerta de clase de escurrimiento),
+        igual que el motor legado, en lugar de una vez por paso.
+  \item \textbf{Recuento de convergencia}: un paso que converge en su último
+        intento permitido se cuenta como convergido (solo falla si no converge
+        tras \texttt{MAX\_TRIALS}).
+  \item \textbf{Salto de estado estacionario}: \texttt{SKIP\_STEADY\_STATE}
+        omite el tránsito cuando no hubo acciones de control, el error de
+        continuidad está bajo la tolerancia y los aportes no cambiaron.
+\end{itemize}
+
+\subsection{Extensiones de plataforma y formato}
+
+\begin{itemize}[nosep]
+  \item \textbf{CRS}: la opción \texttt{CRS} en \texttt{[OPTIONS]} acepta un
+        EPSG o una cadena PROJ, transportando el sistema de referencia espacial
+        del modelo (el SWMM oficial no la posee).
+  \item \textbf{Claves de extensión}: \texttt{ext\_options} almacena
+        cualquier clave desconocida de \texttt{[OPTIONS]} para plugins.
+  \item \textbf{IGNORE\_2D}: permite desactivar el solver 2D conservando la
+        malla en el archivo (para ejecutar el modelo solo 1D).
+  \item \textbf{Geopackage}: entrada/salida nativa en GeoPackage
+        (incluida la tabla \texttt{rdii\_decay} de los parámetros de
+        recuperación), además del formato \texttt{.inp}.
+  \item \textbf{API C}: una API en C (con envoltorios) expone todas las
+        extensiones (por ejemplo \texttt{swmm\_rdii\_decay\_add}).
+  \item \textbf{WebAssembly}: el motor se compila a WASM para ejecutarse en el
+        navegador (como usa LocalSWMM), con el solver 2D en GPU/WebGPU.
+  \item \textbf{Pruebas de soluciones manufacturadas}: el repositorio incluye
+        una batería de benchmarks con soluciones analíticas (rotura de presa
+        de Ritter, lago en reposo, ondas de macdonald, curvas de referencia de
+        impulsiones, entre otras) que anclan la fidelidad de los solvers.
+\end{itemize}
+
+% =============================================================================
+% 10. RESUMEN DE OPCIONES NUEVAS
+% =============================================================================
+\section{Resumen de opciones nuevas del motor}
+
+La Tabla~\ref{tab:nuevas} resume las opciones y secciones que HydroCouple
+agrega sobre el SWMM oficial.
+
+\begin{longtable}{>{\raggedright}p{5.4cm}>{\raggedright}p{5.0cm}>{\raggedright\arraybackslash}p{3.8cm}}
+\toprule
+\textbf{Opción / sección} & \textbf{Qué agrega} & \textbf{Valor por defecto} \\
+\midrule
+\endhead
+\texttt{NODE\_CONTINUITY} & continuidad de nodo unificada semi-implícita &
+  EXPLICIT (legado) \\
+\texttt{ANDERSON\_ACCEL} & aceleración de Anderson del ciclo de Picard & NO \\
+\texttt{SURCHARGE\_METHOD} & tercer método de carga: DYNAMIC\_SLOT &
+  EXTRAN (legado) \\
+\texttt{DPS\_CELERITY} / \texttt{DPS\_ALPHA} / \texttt{DPS\_DECAY\_TIME} &
+  parámetros de la ranura dinámica & 25 m/s, 3, 0.5 s \\
+\texttt{[VIRTUAL\_JUNCTIONS]} & nodos sellados de almacenamiento cero con
+  transmisión de momentum & --- \\
+\texttt{VIRTUAL\_JUNCTION\_MOMENTUM} & corrección convectiva a través de la
+  unión virtual & BASIC \\
+\texttt{FLOW\_ROUTING FV} & solver 1D explícito de volúmenes finitos &
+  DYNWAVE (legado) \\
+\texttt{FV\_*} & opciones del solver FV (CFL, Riemann, orden, LTS, ...) &
+  ver Tabla~\ref{tab:fv} \\
+\texttt{[2D\_VERTICES]} \\[-2pt] \texttt{[2D\_TRIANGLES]} & malla 2D de aguas
+  someras local-inercial & --- \\
+\texttt{[2D\_OPTIONS]} & opciones del marchante 2D y del acople
+  (\texttt{COUPLING\_CD}, \texttt{COUPLING\_SYNC}, ...) & COUPLING\_CD 0.65 \\
+\texttt{IGNORE\_2D} & desactiva el solver 2D conservando la malla & NO \\
+\texttt{[RDII\_DECAY]} & recuperación exponencial de la abstracción del RDII
+  con temperatura ($k_0$, $k_T$, $T_{\mathrm{ref}}$) & --- \\
+\texttt{THREADS} & hilos OpenMP bit-exactos del solver & 1 \\
+\texttt{CRS} & sistema de referencia espacial (EPSG/PROJ) & vacío \\
+\texttt{SKIP\_STEADY\_STATE} & omite el tránsito en régimen permanente & NO \\
+\bottomrule
+\caption{Opciones y secciones nuevas del motor OpenSWMM respecto del SWMM
+oficial de la US EPA.}
+\label{tab:nuevas}
+\end{longtable}
+
+% =============================================================================
+% 11. REFERENCIAS
+% =============================================================================
+\section{Referencias}
+
+\begin{enumerate}[nosep,label={[\arabic*]}]
+  \item Rossman, L.~A. (2017). \emph{Storm Water Management Model Reference
+        Manual Volume II -- Hydraulics}. U.S.\ EPA.
+  \item Sharior, S., Hodges, B.~R., \& Vasconcelos, J.~G. (2023).
+        Generalized, dynamic, and transient-storage form of the Preissmann
+        slot. \emph{Journal of Hydraulic Engineering}, 149(11).
+  \item de~Almeida, G.~A.~M., \& Bates, P.~D. (2013). Applicability of the
+        local inertial approximation of the shallow water equations to flood
+        modeling. \emph{Water Resources Research}, 49(8).
+  \item Código fuente del motor OpenSWMM (HydroCouple):
+        \begin{itemize}[nosep,itemsep=0pt]
+          \item \src{hydraulics/DynamicWave.cpp} \\
+                \src{hydraulics/HydStructures.cpp} \\
+                \src{hydraulics/fv/ExplicitFvSolver.cpp}
+          \item \src{engine/2d/} (marchante y acople) \\
+                \src{engine/hydrology/RDII.cpp} \\
+                \src{core/SimulationOptions.hpp}
+        \end{itemize}
+  \item Manuales de referencia del motor OpenSWMM (Vol.\ II -- Hydraulics,
+        cap.\ 3, 7, 9; Vol.\ I -- Hydrology, cap.\ 7).
+\end{enumerate}
+
+\end{document}
