@@ -165,7 +165,6 @@
                 hasData = true;
             }
 
-            const popup = getResultPopup();
             if (popup) {
                 if (hasData) {
                     popup.setHTML(html);
