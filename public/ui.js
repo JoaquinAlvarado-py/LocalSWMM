@@ -356,7 +356,7 @@
         panelRight.classList.toggle('collapsed', !visible);
         reopenRight.classList.toggle('hidden', visible);
         document.getElementById('app-grid').classList.toggle('panel-collapsed', !visible);
-        setTimeout(() => map.resize(), 50);
+        setTimeout(() => { if (window.map && typeof window.map.resize === 'function') window.map.resize(); }, 50);
     }
 
     document.getElementById('btn-collapse-right').addEventListener('click', () => setRightPanel(false));
@@ -375,7 +375,7 @@
             palette.classList.add('collapsed');
             reopenLeft.classList.remove('hidden');
         }
-        setTimeout(() => map.resize(), 50);
+        setTimeout(() => { if (window.map && typeof window.map.resize === 'function') window.map.resize(); }, 50);
     }
     btnCollapseLeft.addEventListener('click', () => setLeftPalette(false));
     reopenLeft.addEventListener('click', () => setLeftPalette(true));
@@ -667,7 +667,7 @@
         } else {
             if (window.StreetViewOverlay) window.StreetViewOverlay.destroy();
         }
-        setTimeout(() => map.resize(), 50);
+        setTimeout(() => { if (window.map && typeof window.map.resize === 'function') window.map.resize(); }, 50);
     });
 
     document.getElementById('btn-close-sv').addEventListener('click', () => {
@@ -675,7 +675,7 @@
         btnPegman.classList.remove('active');
         svWrapper.classList.add('hidden');
         if (window.StreetViewOverlay) window.StreetViewOverlay.destroy();
-        setTimeout(() => map.resize(), 50);
+        setTimeout(() => { if (window.map && typeof window.map.resize === 'function') window.map.resize(); }, 50);
     });
 
     // Street view resizing
