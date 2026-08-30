@@ -108,36 +108,11 @@
                 resultOr(active ? 'rgba(0,0,0,0)' : '#90caf9'));
         } catch (e) { }
     }
-    window.set2DResultLayerMode = set2DResultLayerMode;
-
     // ---------- Network layers ----------
     function ensureNetworkLayers() {
         // Draft (in-progress drawing) source
         if (!map.getSource('draft')) {
             map.addSource('draft', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-        }
-
-        if (!map.getSource('swmm-2d-mesh')) {
-            map.addSource('swmm-2d-mesh', { type: 'geojson', promoteId: 'id', data: Net.mesh2DGeoJSON() });
-            map.addLayer({
-                id: 'swmm-2d-mesh-fill',
-                type: 'fill',
-                source: 'swmm-2d-mesh',
-                paint: {
-                    'fill-color': resultOr('#90caf9'),
-                    'fill-opacity': selectedCase(0.7, 0.6, 0.4)
-                }
-            });
-            map.addLayer({
-                id: 'swmm-2d-mesh-line',
-                type: 'line',
-                source: 'swmm-2d-mesh',
-                paint: {
-                    'line-color': '#1565c0',
-                    'line-width': 1,
-                    'line-opacity': 0.5
-                }
-            });
         }
 
         if (window.LayerTree && window.LayerTree.refresh) window.LayerTree.refresh();
@@ -1123,133 +1098,6 @@
         } catch (e) { }
 
         return 3500;
-    }
-
-    function run2DSimulationInWorker(inpText, triangleIds, meshFile) {
-        // The f64 WASM engine is the faithful reference: the whole INP runs
-        // through the engine's own co-advance (real 1D-2D coupling, f64
-        // precision, no project-only DT_FLOOR guard, NATURAL_NEIGHBOUR rain).
-        // The WebGPU f32 marcher is the performance path — it deviates from
-        // the engine (f32 vs f64, uniform-mean rain, DT_FLOOR) and produced
-        // the clumped/erratic depth fields, so it is now OPT-IN: re-enable
-        // with `Net.useGpu2d = true` before a run.
-        const wantGpu = window.Net && Net.useGpu2d === true && typeof navigator !== 'undefined' && !!navigator.gpu;
-        // The worker posts progress2d { elapsedMs } per sampled frame; the Run
-        // Status UI is driven from simulated time (not wall clock) so the bar
-        // reflects true model progress even when the explicit solver's dt
-        // collapses near the end of a storm.
-        const totalMs = parseSimDurationInDays(inpText) * 86400000;
-        const attempt = (workerUrl) => {
-            fetch('openswmm2d.version.json')
-                .then(r => r.ok ? r.json() : null)
-                .then(v => { if (v) console.info('OpenSWMM 2D engine build:', v.engineDescribe || v.engineCommit, '| built', v.builtAtUtc); })
-                .catch(() => { });
-            return new Promise((resolve, reject) => {
-                if (sim2DWorker) {
-                    try { sim2DWorker.terminate(); } catch (e) { }
-                }
-                sim2DWorker = new Worker(workerUrl + '?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now()));
-                let stderrCount = 0;
-                sim2DWorker.onmessage = event => {
-                    const message = event.data || {};
-                    if (message.type === 'stdout') console.log('OpenSWMM 2D:', message.text);
-                    else if (message.type === 'stderr') {
-                        stderrCount++;
-                        if (stderrCount <= 50) {
-                            console.warn('OpenSWMM 2D:', message.text);
-                        } else if (stderrCount === 51) {
-                            console.warn('OpenSWMM 2D: Throttling excessive console warnings (>50 messages received).');
-                        }
-                    }
-                    else if (message.type === 'progress2d') {
-                        const elapsedMs = Number(message.elapsedMs);
-                        if (Number.isFinite(elapsedMs) && elapsedMs >= 0) {
-                            const frac = Math.max(0, Math.min(1, elapsedMs / (totalMs > 0 ? totalMs : 1)));
-                            const percent = Math.min(99, Math.floor(frac * 100));
-                            const elapsedDays = elapsedMs / 86400000;
-                            const days = Math.floor(elapsedDays);
-                            const remHoursFrac = (elapsedDays - days) * 24;
-                            const hours = Math.floor(remHoursFrac);
-                            const minutes = Math.floor((remHoursFrac - hours) * 60);
-                            updateRunStatusUI(percent, days,
-                                String(hours).padStart(2, '0') + ':' + String(minutes).padStart(2, '0'));
-                        }
-                        console.debug('OpenSWMM 2D elapsed milliseconds:', message.elapsedMs);
-                    }
-                    else if (message.type === 'results2d') {
-                        if (sim2DWorker) { sim2DWorker.terminate(); sim2DWorker = null; }
-                        resolve(message);
-                    } else if (message.type === 'error') {
-                        if (sim2DWorker) { sim2DWorker.terminate(); sim2DWorker = null; }
-                        const detail = message.detail ? `\n${message.detail}` : '';
-                        const err = new Error((message.message || 'OpenSWMM 2D worker failed.') + detail);
-                        err.workerMessage = message.message || '';
-                        reject(err);
-                    }
-                };
-                sim2DWorker.onerror = event => {
-                    if (sim2DWorker) { sim2DWorker.terminate(); sim2DWorker = null; }
-                    const missingBuild = /openswmm2d/i.test(event.message || '');
-                    reject(new Error(missingBuild
-                        ? 'OpenSWMM 2D WebAssembly is not built. Run npm run build:2d-wasm, then reload the application.'
-                        : (event.message || 'OpenSWMM 2D worker failed to start.')));
-                };
-                sim2DWorker.postMessage({
-                    type: 'run2d', inp: inpText, triangleIds,
-                    meshFile: meshFile || null,
-                    triangleVertices: Net.mesh2DIndexed ? Net.mesh2DIndexed.triangles.map(t => t.v) : null,
-                    dryDepth: Net.mesh2DIndexed && Net.mesh2DIndexed.options ? Net.mesh2DIndexed.options.dryDepth : 0.001,
-                    wantVertexFields: true, frameIntervalMs: 60000
-                });
-            });
-        };
-        const tryGpu = async () => {
-            try {
-                return await attempt('webgpu/gpu2dWorker.js');
-            } catch (e) {
-                // COUPLING_STATE_NONFINITE: the split's 1D diverged. The WASM
-                // co-advance runs the full INP through the engine's own
-                // stepping, so retrying there is worthwhile rather than
-                // surfacing a poisoned 2D field.
-                if (!/WEBGPU_|VERTEX_COUPLING|COUPLING_STATE_NONFINITE/.test(e.workerMessage || e.message || '')) throw e;
-                console.warn('WebGPU 2D unavailable, falling back to the WASM worker:', e.message);
-                return await attempt('openSwmm2dWorker.js');
-            }
-        };
-        return wantGpu ? tryGpu() : attempt('openSwmm2dWorker.js');
-    }
-
-    function apply2DResults(result) {
-        // Normalize completion markers from older WASM builds before any UI
-        // or animation code sees them.
-        if (result && Array.isArray(result.frames) && result.frames.length > 1) {
-            const last = result.frames[result.frames.length - 1];
-            const previous = result.frames[result.frames.length - 2];
-            if (Number(last && last.elapsedMs) <= 0 && Number(previous && previous.elapsedMs) > 0) {
-                result.frames = result.frames.slice(0, -1);
-            }
-        }
-        const finalFrame = result.frames && result.frames[result.frames.length - 1];
-        if (!finalFrame) throw new Error('The 2D engine returned no surface result frames.');
-        const ids = result.triangleIds || [];
-        if (ids.length !== finalFrame.depth.length) {
-            throw new Error(`2D result array length (${finalFrame.depth.length}) does not match triangle IDs count (${ids.length}).`);
-        }
-        ids.forEach((id, index) => {
-            const cell = Net._meshCell(id);
-            if (!cell) return;
-            cell.props ||= {};
-            const d = finalFrame.depth[index];
-            const h = finalFrame.head[index];
-            const v = finalFrame.velocity[index];
-            cell.props.depth = Number.isFinite(d) ? d : 0;
-            cell.props.head = Number.isFinite(h) ? h : 0;
-            cell.props.velocity = Number.isFinite(v) ? v : 0;
-        });
-        window.App.results2D = result;
-        window.App.resultFrame2D = result.frames.length - 1;
-        set2DResultLayerMode(true);
-        if (window.refreshNetworkData) window.refreshNetworkData();
     }
 
     function runSimulationInWorker(inpText, targetDurationMs) {

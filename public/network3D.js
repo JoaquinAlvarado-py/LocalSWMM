@@ -287,4 +287,8 @@
             });
         }
     }
+
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = { toMeters, octagon, stripPolygon, linkPathSegments, nodeFeatures, linkFeatures, buildGeoJSON };
+    }
 })();
