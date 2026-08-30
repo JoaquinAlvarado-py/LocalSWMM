@@ -14,6 +14,12 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*args, directory=PUBLIC_DIR, **kwargs)
 
     def end_headers(self):
+        # Cross-origin isolation is required by the threaded WASM engine
+        # (SharedArrayBuffer / pthreads). Mirror the production headers from
+        # public/_headers so local dev and the Chrome harness exercise the
+        # same runtime as Cloudflare Pages.
+        self.send_header('Cross-Origin-Opener-Policy', 'same-origin')
+        self.send_header('Cross-Origin-Embedder-Policy', 'credentialless')
         self.send_header('Cache-Control', 'no-store')
         super().end_headers()
 

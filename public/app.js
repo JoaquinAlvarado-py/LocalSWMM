@@ -98,34 +98,21 @@
         ['!=', ['feature-state', 'resultColor'], null], ['feature-state', 'resultColor'],
         base];
 
+    // Once a 2D result is active, an unpainted cell must not fall back to the
+    // pre-result mesh blue. This keeps invalid/dry result cells transparent.
+    function set2DResultLayerMode(active) {
+        const layer = map.getLayer('swmm-2d-mesh-fill');
+        if (!layer) return;
+        try {
+            map.setPaintProperty('swmm-2d-mesh-fill', 'fill-color',
+                resultOr(active ? 'rgba(0,0,0,0)' : '#90caf9'));
+        } catch (e) { }
+    }
     // ---------- Network layers ----------
     function ensureNetworkLayers() {
         // Draft (in-progress drawing) source
         if (!map.getSource('draft')) {
             map.addSource('draft', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-        }
-
-        if (!map.getSource('swmm-2d-mesh')) {
-            map.addSource('swmm-2d-mesh', { type: 'geojson', promoteId: 'id', data: Net.mesh2DGeoJSON() });
-            map.addLayer({
-                id: 'swmm-2d-mesh-fill',
-                type: 'fill',
-                source: 'swmm-2d-mesh',
-                paint: {
-                    'fill-color': resultOr('#90caf9'),
-                    'fill-opacity': selectedCase(0.7, 0.6, 0.4)
-                }
-            });
-            map.addLayer({
-                id: 'swmm-2d-mesh-line',
-                type: 'line',
-                source: 'swmm-2d-mesh',
-                paint: {
-                    'line-color': '#1565c0',
-                    'line-width': 1,
-                    'line-opacity': 0.5
-                }
-            });
         }
 
         if (window.LayerTree && window.LayerTree.refresh) window.LayerTree.refresh();
@@ -257,6 +244,7 @@
         }
         (window.App.importedLayers || []).forEach(addConstraintLayer);
 
+        set2DResultLayerMode(!!window.App.results2D);
         applyResultStylingIfAny();
     }
 
@@ -306,8 +294,12 @@
 
     function setElementState(id, state) {
         const src = sourceForId(id);
-        if (!src || !map.getSource(src)) return;
-        try { map.setFeatureState({ source: src, id: id }, state); } catch (e) { /* source not ready */ }
+        if (src && map.getSource(src)) {
+            try { map.setFeatureState({ source: src, id: id }, state); } catch (e) { /* source not ready */ }
+        }
+        if (map.getSource('swmm-3d')) {
+            try { map.setFeatureState({ source: 'swmm-3d', id: id }, state); } catch (e) { /* source not ready */ }
+        }
     }
     window.setElementState = setElementState;
 
@@ -353,13 +345,14 @@
 
     // ---------- 3D extras (terrain + buildings) ----------
     function apply3D() {
+        if (map.setTerrain) map.setTerrain(null);
+        if (map.setFog) map.setFog(null);
         if (window.App.is3D) {
             if (window.App.currentStyle !== 'blank') {
                 add3DBuildings();
             }
             if (map.getPitch() < 30) map.easeTo({ pitch: 55, duration: 800 });
         } else {
-            map.setTerrain(null);
             if (map.getLayer('3d-buildings-base')) map.setLayoutProperty('3d-buildings-base', 'visibility', 'none');
             map.easeTo({ pitch: 0, bearing: 0, duration: 800 });
         }
@@ -909,7 +902,7 @@
         return new Promise((resolve, reject) => {
             let worker = null;
             try {
-                worker = new Worker('parseWorker.js?v=' + Date.now());
+                worker = new Worker('parseWorker.js?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now()));
             } catch (e) {
                 try { resolve(window.inpParser.parse(text)); }
                 catch (err) { reject(err); }
@@ -947,7 +940,7 @@
     let sim2DWorker = null;
     function getSimWorker() {
         if (!simWorker) {
-            simWorker = new Worker('simWorker.js?v=' + Date.now());
+            simWorker = new Worker('simWorker.js?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now()));
             simWorker.onerror = () => {
                 try { simWorker.terminate(); } catch (e) { }
                 simWorker = null;
@@ -1105,78 +1098,6 @@
         } catch (e) { }
 
         return 3500;
-    }
-
-    async function run2DSimulationInWorker(inpText, triangleIds, meshFile) {
-        fetch('openswmm2d.version.json')
-            .then(r => r.ok ? r.json() : null)
-            .then(v => { if (v) console.info('OpenSWMM 2D engine build:', v.engineDescribe || v.engineCommit, '| built', v.builtAtUtc); })
-            .catch(() => { });
-        return new Promise((resolve, reject) => {
-            if (sim2DWorker) {
-                try { sim2DWorker.terminate(); } catch (e) { }
-            }
-            sim2DWorker = new Worker('openSwmm2dWorker.js?v=' + Date.now());
-            let stderrCount = 0;
-            sim2DWorker.onmessage = event => {
-                const message = event.data || {};
-                if (message.type === 'stdout') console.log('OpenSWMM 2D:', message.text);
-                else if (message.type === 'stderr') {
-                    stderrCount++;
-                    if (stderrCount <= 50) {
-                        console.warn('OpenSWMM 2D:', message.text);
-                    } else if (stderrCount === 51) {
-                        console.warn('OpenSWMM 2D: Throttling excessive console warnings (>50 messages received).');
-                    }
-                }
-                else if (message.type === 'progress2d') console.debug('OpenSWMM 2D elapsed milliseconds:', message.elapsedMs);
-                else if (message.type === 'results2d') {
-                    if (sim2DWorker) { sim2DWorker.terminate(); sim2DWorker = null; }
-                    resolve(message);
-                } else if (message.type === 'error') {
-                    if (sim2DWorker) { sim2DWorker.terminate(); sim2DWorker = null; }
-                    const detail = message.detail ? `\n${message.detail}` : '';
-                    reject(new Error((message.message || 'OpenSWMM 2D worker failed.') + detail));
-                }
-            };
-            sim2DWorker.onerror = event => {
-                if (sim2DWorker) { sim2DWorker.terminate(); sim2DWorker = null; }
-                const missingBuild = /openswmm2d/i.test(event.message || '');
-                reject(new Error(missingBuild
-                    ? 'OpenSWMM 2D WebAssembly is not built. Run npm run build:2d-wasm, then reload the application.'
-                    : (event.message || 'OpenSWMM 2D worker failed to start.')));
-            };
-            sim2DWorker.postMessage({
-                type: 'run2d', inp: inpText, triangleIds,
-                meshFile: meshFile || null,
-                triangleVertices: Net.mesh2DIndexed ? Net.mesh2DIndexed.triangles.map(t => t.v) : null,
-                dryDepth: Net.mesh2DIndexed && Net.mesh2DIndexed.options ? Net.mesh2DIndexed.options.dryDepth : 0.001,
-                wantVertexFields: true, frameIntervalMs: 60000
-            });
-        });
-    }
-
-    function apply2DResults(result) {
-        const finalFrame = result.frames && result.frames[result.frames.length - 1];
-        if (!finalFrame) throw new Error('The 2D engine returned no surface result frames.');
-        const ids = result.triangleIds || [];
-        if (ids.length !== finalFrame.depth.length) {
-            throw new Error(`2D result array length (${finalFrame.depth.length}) does not match triangle IDs count (${ids.length}).`);
-        }
-        ids.forEach((id, index) => {
-            const cell = Net._meshCell(id);
-            if (!cell) return;
-            cell.props ||= {};
-            const d = finalFrame.depth[index];
-            const h = finalFrame.head[index];
-            const v = finalFrame.velocity[index];
-            cell.props.depth = Number.isFinite(d) ? d : 0;
-            cell.props.head = Number.isFinite(h) ? h : 0;
-            cell.props.velocity = Number.isFinite(v) ? v : 0;
-        });
-        window.App.results2D = result;
-        window.App.resultFrame2D = result.frames.length - 1;
-        if (window.refreshNetworkData) window.refreshNetworkData();
     }
 
     function runSimulationInWorker(inpText, targetDurationMs) {

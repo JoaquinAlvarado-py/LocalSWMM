@@ -1,4 +1,4 @@
-﻿/**
+/**
  * lid.js — LID (Low Impact Development) Controls for SWMM 6
  */
 (function () {
@@ -101,6 +101,7 @@
             "</div></div></div>"
         ].join("\n");
         document.body.appendChild(modalEl);
+        if (window.initModalDrag) window.initModalDrag(modalEl, modalEl.querySelector('.ts-modal-header'));
         listEl = document.getElementById("lid-list");
         editorEl = document.getElementById("lid-editor-panel");
         document.getElementById("btn-lid-close").onclick = function () { modalEl.classList.add("hidden"); };

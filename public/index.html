@@ -58,16 +58,16 @@
                     </div>
                 </div>
                 <button id="btn-export-inp" class="tb-btn">Export INP</button>
+                <button id="btn-lock-network" class="tb-btn" title="Lock project to prevent accidental moving of nodes/objects">
+                    <svg id="lock-icon" viewBox="0 0 24 24" width="13" height="13" style="vertical-align:middle;margin-right:4px;"><path fill="currentColor" d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6z"/></svg>
+                    <span id="lock-text">Lock</span>
+                </button>
             </div>
 
             <div class="tb-group tb-group-right">
                 <button id="btn-options" class="tb-btn" title="Simulation Options">
                     <svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:middle;margin-right:4px;"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
                     Options
-                </button>
-                <button id="btn-mesh2d-toolbar" class="tb-btn" title="2D Surface Mesh Settings & Generation">
-                    <svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:middle;margin-right:4px;"><path fill="currentColor" d="M12 2L2 22h20L12 2zm0 4.2L18.4 19H5.6L12 6.2z"/></svg>
-                    2D Mesh
                 </button>
                 <button id="btn-ts-plot" class="tb-btn" title="Time Series Plot Selection">
                     <svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:middle;margin-right:4px;"><path fill="currentColor" d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.09-4-4L2 15.08l1.5 3.41z"/></svg>
@@ -82,7 +82,6 @@
                 <div class="tb-dropdown">
                     <button id="btn-data-menu" class="tb-btn">Data <span class="caret">▾</span></button>
                     <div class="tb-dropdown-menu" id="data-menu" style="left:auto;right:0;min-width:200px;">
-                        <button id="btn-mesh2d-menu" class="tb-menu-item">2D Surface Mesh…</button>
                         <button id="btn-curves" class="tb-menu-item">Curves…</button>
                         <button id="btn-lid" class="tb-menu-item">LID Controls…</button>
                         <button id="btn-quality" class="tb-menu-item">Water Quality…</button>
@@ -162,64 +161,157 @@
                 <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
             </button>
 
-            <!-- Floating Map Settings Card -->
+            <!-- Floating Map Settings Card — Glassmorphism -->
             <div id="map-settings-card" class="hidden">
-                <div class="settings-group">
-                    <span class="settings-label">Basemap</span>
-                    <div class="tb-pills" id="map-style-pills">
-                        <button class="tb-pill active" data-style="streets">Streets</button>
-                        <button class="tb-pill" data-style="satellite">Satellite</button>
-                        <button class="tb-pill" data-style="blank">Blank</button>
+                <!-- Header -->
+                <div class="ms-header">
+                    <div class="ms-header-left">
+                        <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+                        <span>Map Settings</span>
                     </div>
-                </div>
-                <div class="settings-group">
-                    <span class="settings-label">Network Layers</span>
-                    <div class="settings-group-row">
-                        <button id="btn-toggle-nodes" class="tb-pill toggled" title="Toggle Nodes">Nodes</button>
-                        <button id="btn-toggle-links" class="tb-pill toggled" title="Toggle Links">Links</button>
-                        <button id="btn-toggle-subcatchments" class="tb-pill toggled" title="Toggle Subcatchments">Subcatch</button>
-                        <button id="btn-toggle-mesh2d" class="tb-pill toggled" title="Toggle 2D Mesh">2D Mesh</button>
-                    </div>
-                </div>
-                <div class="settings-group-grid" style="margin-top:4px;">
-                    <button id="btn-toggle-labels" class="tb-pill toggled" title="Toggle map labels">Labels</button>
-                    <button id="btn-toggle-3d" class="tb-pill" title="Toggle 3D terrain &amp; buildings">3D View</button>
-                    <button id="btn-toggle-warnings" class="tb-pill toggled" title="Toggle map warnings">Warnings</button>
-                    <button id="btn-toggle-landcover" class="tb-pill" title="Toggle Mapbox land-use and land-cover overlay">Land Cover</button>
-                </div>
-                <div class="settings-group">
-                    <span class="settings-label">Units</span>
-                    <select id="units-select" class="tb-select">
-                        <option value="SI" selected>SI (m, mm, LPS)</option>
-                        <option value="US">US (ft, in, CFS)</option>
-                    </select>
-                </div>
-                <div class="settings-group" style="margin-top:8px;">
-                    <span class="settings-label">Terrain DEM Source</span>
-                    <select id="dem-source-select" class="tb-select" style="width:100%;margin-bottom:4px;">
-                        <option value="MAPBOX" selected>Mapbox Terrain DEM (Default)</option>
-                        <option value="COP30">OpenTopography: Copernicus 30m</option>
-                        <option value="USGS10m">OpenTopography: USGS 3DEP 10m DTM</option>
-                        <option value="SRTMGL1">OpenTopography: NASA SRTM 30m</option>
-                        <option value="NASADEM">OpenTopography: NASADEM 30m</option>
-                    <option value="ANADEM">OpenTopography: ANADEM ML DTM 30m (S. America)</option>
-                    <option value="GEDTM30">OpenTopography: Global Ensemble DTM 30m</option>
-                    </select>
-                    <input type="password" id="opentopo-api-key" class="tb-input" placeholder="OpenTopography API Key (Optional)" style="width:100%;font-size:11px;padding:3px 6px;margin-bottom:4px;">
-                    <span style="font-size:9px;color:var(--text-light);line-height:1.2;">Used for terrain profiles and 3D visualization</span>
-                </div>
-                <div class="settings-group" style="margin-top:6px;">
-                    <button id="btn-sample-all-dem" class="tb-btn" style="width:100%;font-size:11px;" title="Extract terrain elevation from selected DEM source for all network nodes">Sample DEM for All Nodes</button>
+                    <button id="btn-close-map-settings" class="ms-close-btn" title="Close">&times;</button>
                 </div>
 
-            <!-- Layer Tree Card -->
-            <div id="layer-tree-card" class="hidden">
-                <div class="settings-group" style="padding:4px 0;">
-                 <span class="settings-label">2D Layer Tree</span>
-                    <div id="layer-tree-body" style="font-size:11px;"></div>
+                <!-- Basemap (collapsed by default) -->
+                <div class="ms-section" data-ms-expanded="false">
+                    <button class="ms-section-header" type="button">
+                        <svg class="ms-chevron" viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>
+                        <span>Basemap</span>
+                    </button>
+                    <div class="ms-section-body ms-collapsed">
+                        <div class="tb-pills" id="map-style-pills">
+                            <button class="tb-pill active" data-style="streets">
+                                <svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg>
+                                Streets
+                            </button>
+                            <button class="tb-pill" data-style="satellite">
+                                <svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>
+                                Satellite
+                            </button>
+                            <button class="tb-pill" data-style="blank">
+                                <svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/></svg>
+                                Blank
+                            </button>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
+                <!-- Network Layers (collapsed by default) -->
+                <div class="ms-section" data-ms-expanded="false">
+                    <button class="ms-section-header" type="button">
+                        <svg class="ms-chevron" viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>
+                        <span>Network Layers</span>
+                    </button>
+                    <div class="ms-section-body ms-collapsed">
+                        <div class="ms-toggle-list">
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">Nodes</span>
+                                <button id="btn-toggle-nodes" class="ms-switch toggled" title="Toggle Nodes"></button>
+                            </div>
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">Links</span>
+                                <button id="btn-toggle-links" class="ms-switch toggled" title="Toggle Links"></button>
+                            </div>
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">Subcatchments</span>
+                                <button id="btn-toggle-subcatchments" class="ms-switch toggled" title="Toggle Subcatchments"></button>
+                            </div>
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">Labels</span>
+                                <button id="btn-toggle-labels" class="ms-switch toggled" title="Toggle Labels"></button>
+                            </div>
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">3D View</span>
+                                <button id="btn-toggle-3d" class="ms-switch" title="Toggle 3D terrain &amp; buildings"></button>
+                            </div>
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">3D Network</span>
+                                <button id="btn-toggle-3d-network" class="ms-switch" title="Toggle 3D network geometry"></button>
+                            </div>
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">Warnings</span>
+                                <button id="btn-toggle-warnings" class="ms-switch toggled" title="Toggle Warnings"></button>
+                            </div>
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">Land Cover</span>
+                                <button id="btn-toggle-landcover" class="ms-switch" title="Toggle Land Cover"></button>
+                            </div>
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">Hover Info Cards</span>
+                                <button id="btn-toggle-hoverstats" class="ms-switch toggled" title="Toggle object hover status popups"></button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Display Sizes (collapsed by default) -->
+                <div class="ms-section" data-ms-expanded="false">
+                    <button class="ms-section-header" type="button">
+                        <svg class="ms-chevron" viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>
+                        <span>Display Sizes</span>
+                    </button>
+                    <div class="ms-section-body ms-collapsed">
+                        <div class="ms-size-row">
+                            <label for="size-node-radius">Node Radius</label>
+                            <input type="range" id="size-node-radius" min="2" max="14" value="6">
+                            <span class="ms-size-value" id="val-node-radius">6</span>
+                        </div>
+                        <div class="ms-size-row">
+                            <label for="size-link-width">Link Width</label>
+                            <input type="range" id="size-link-width" min="1" max="8" value="3">
+                            <span class="ms-size-value" id="val-link-width">3</span>
+                        </div>
+                        <div class="ms-size-row">
+                            <label for="size-label-size">Label Size</label>
+                            <input type="range" id="size-label-size" min="6" max="18" value="10">
+                            <span class="ms-size-value" id="val-label-size">10</span>
+                        </div>
+                        <div class="ms-size-row">
+                            <label for="size-arrow-spacing">Arrow Spacing</label>
+                            <input type="range" id="size-arrow-spacing" min="30" max="200" value="80">
+                            <span class="ms-size-value" id="val-arrow-spacing">80</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Units (collapsed by default) -->
+                <div class="ms-section" data-ms-expanded="false">
+                    <button class="ms-section-header" type="button">
+                        <svg class="ms-chevron" viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>
+                        <span>Units</span>
+                    </button>
+                    <div class="ms-section-body ms-collapsed">
+                        <select id="units-select" class="tb-select">
+                            <option value="SI" selected>SI (m, mm, LPS)</option>
+                            <option value="US">US (ft, in, CFS)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Terrain DEM Source (collapsed by default) -->
+                <div class="ms-section" data-ms-expanded="false">
+                    <button class="ms-section-header" type="button">
+                        <svg class="ms-chevron" viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>
+                        <span>Terrain DEM Source</span>
+                    </button>
+                    <div class="ms-section-body ms-collapsed">
+                        <select id="dem-source-select" class="tb-select" style="width:100%;margin-bottom:6px;">
+                            <option value="MAPBOX" selected>Mapbox Terrain DEM (Default)</option>
+                            <option value="COP30">OpenTopography: Copernicus 30m</option>
+                            <option value="USGS10m">OpenTopography: USGS 3DEP 10m DTM</option>
+                            <option value="SRTMGL1">OpenTopography: NASA SRTM 30m</option>
+                            <option value="NASADEM">OpenTopography: NASADEM 30m</option>
+                            <option value="ANADEM">OpenTopography: ANADEM ML DTM 30m (S. America)</option>
+                            <option value="GEDTM30">OpenTopography: Global Ensemble DTM 30m</option>
+                        </select>
+                        <input type="password" id="opentopo-api-key" class="ms-input" placeholder="OpenTopography API Key (Optional)">
+                        <span class="ms-hint">Used for terrain profiles and 3D visualization</span>
+                        <button id="btn-sample-all-dem" class="ms-action-btn" title="Extract terrain elevation from selected DEM source for all network nodes">
+                            <svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                            Sample DEM for All Nodes
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <!-- Street View pegman -->
@@ -245,12 +337,15 @@
                 </button>
             </div>
 
-            <!-- Profile Plot Modal -->
+            <!-- Unified Section & Profile Analysis Modal -->
             <div id="profile-modal" class="hidden">
                 <div id="profile-header">
                     <svg viewBox="0 0 24 24" width="14" height="14" style="flex-shrink:0;opacity:0.7"><path fill="currentColor" d="M3 3v18h18v-2H5V3H3zm4 14l4-4 3 3 4-6 2 2V7h-5l2 2-3 5-3-3-5 4.5L7 17z"/></svg>
-                    <span id="profile-title" class="profile-title-text">Water Elevation Profile</span>
-                    <button id="btn-profile-close" title="Close profile">
+                    <span id="profile-title" class="profile-title-text">Section &amp; Profile Analysis</span>
+                    <select id="profile-element-select" class="profile-element-dropdown" style="margin-left:auto;margin-right:8px;">
+                        <option value="path_full">Full Path Profile</option>
+                    </select>
+                    <button id="btn-profile-close" title="Close window">
                         <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg>
                     </button>
                 </div>
@@ -258,6 +353,16 @@
                     <canvas id="profile-canvas"></canvas>
                 </div>
                 <div id="profile-resize-handle" title="Drag to resize"></div>
+            </div>
+
+            <!-- Right-Click Map Context Menu -->
+            <div id="map-context-menu" class="hidden">
+                <button class="cm-item" id="cm-section-view">Section View / Schematic</button>
+                <button class="cm-item" id="cm-profile-from">Profile from Node...</button>
+                <button class="cm-item" id="cm-timeseries">Time Series Plot</button>
+                <div class="cm-divider"></div>
+                <button class="cm-item" id="cm-properties">Edit Properties</button>
+                <button class="cm-item" id="cm-delete" style="color:var(--danger)">Delete Element</button>
             </div>
 
             <!-- Time Series Plot Selection Modal -->
@@ -586,159 +691,6 @@
         </div>
     </div>
 
-    <!-- Generate 2D Mesh Modal -->
-    <div id="mesh2d-modal" class="modal-overlay hidden">
-        <div class="modal-box" style="max-width:680px;max-height:90vh;overflow-y:auto;">
-            <h2>Generate 2D Mesh</h2>
-            <div class="mtab-bar" style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:12px;">
-                <button class="mtab-btn active" data-mtab="sources" style="padding:8px 16px;border:none;background:none;font-weight:600;font-size:13px;cursor:pointer;border-bottom:2px solid var(--accent);margin-bottom:-2px;">Sources</button>
-                <button class="mtab-btn" data-mtab="quality" style="padding:8px 16px;border:none;background:none;font-weight:600;font-size:13px;cursor:pointer;color:var(--text-mid);">Quality</button>
-                <button class="mtab-btn" data-mtab="hydraulics" style="padding:8px 16px;border:none;background:none;font-weight:600;font-size:13px;cursor:pointer;color:var(--text-mid);">Hydraulics</button>
-            </div>
-            <!-- Sources Tab -->
-            <div id="mtab-sources" class="mtab-content active">
-                <div class="m2d-section">
-                    <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">DTM / Elevation Source</h4>
-                    <select id="m2d-dtm-source" class="tb-select" style="width:100%;margin-bottom:4px;">
-                        <option value="CURRENT" selected>Current DEM source (Map Settings)</option>
-                        <option value="NONE">None — use node rim elevations</option>
-                        <option value="MAPBOX">Mapbox terrain (online DEM)</option>
-                        <option value="GEOTIFF">GeoTIFF upload</option>
-                        <option value="COP30">OpenTopography — Copernicus 30m</option>
-                        <option value="USGS10m">OpenTopography — USGS 3DEP 10m</option>
-                        <option value="SRTMGL1">OpenTopography — NASA SRTM 30m</option>
-                        <option value="NASADEM">OpenTopography — NASADEM 30m</option>
-                        <option value="ANADEM">OpenTopography — ANADEM 30m</option>
-                        <option value="GEDTM30">OpenTopography — Global Ensemble 30m</option>
-                    </select>
-                     <div id="m2d-geotiff-row" style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
-                         <input type="file" id="m2d-geotiff-file" accept=".tif,.tiff" style="font-size:11px;flex:1;">
-                     </div>
-                     <small style="display:block;color:var(--text-light);font-size:10px;line-height:1.25;margin-bottom:5px;">With no boundary polygon selected, a GeoTIFF uses its full extent as the 2D domain. Subcatchments remain regions and roughness sources.</small>
-                    <div style="display:flex;gap:6px;margin-bottom:4px;">
-                        <div style="flex:1;"><label style="font-size:10px;color:var(--text-light);">Vertical unit</label>
-                            <select id="m2d-vertical-unit" class="tb-select" style="width:100%;font-size:11px;"><option value="m">meters</option><option value="ft">feet</option><option value="cm">centimeters</option></select></div>
-                        <div style="flex:1;"><label style="font-size:10px;color:var(--text-light);">Z factor</label>
-                            <input type="number" id="m2d-z-factor" value="1" step="0.01" class="tb-input" style="width:100%;font-size:11px;"></div>
-                        <div style="flex:1;"><label style="font-size:10px;color:var(--text-light);">EPSG override</label>
-                            <input type="text" id="m2d-epsg-override" placeholder="auto" class="tb-input" style="width:100%;font-size:11px;"></div>
-                    </div>
-                </div>
-                <div class="m2d-section" style="margin-top:10px;">
-                    <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">Boundary & Constraints</h4>
-                    <div style="display:flex;gap:6px;margin-bottom:6px;">
-                        <div style="flex:2;"><label style="font-size:10px;color:var(--text-light);">Boundary polygon layer</label>
-                        <select id="m2d-boundary-layer" class="tb-select" style="width:100%;font-size:11px;"><option value="">Auto domain: GeoTIFF extent, otherwise model hull</option></select></div>
-                        <div style="flex:1;"><label style="font-size:10px;color:var(--text-light);">Auto buffer (m)</label>
-                         <input type="number" id="m2d-domain-buffer" value="10" min="0" step="10" class="tb-input" style="width:100%;font-size:11px;"></div>
-                    </div>
-                    <label style="font-size:10px;color:var(--text-light);">Constraining layers</label>
-                    <div id="m2d-constraint-layers" style="max-height:80px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:4px;margin-bottom:6px;font-size:11px;"></div>
-                </div>
-                <div class="m2d-section" style="margin-top:10px;">
-                    <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">1D Geometry Coupling</h4>
-                    <label class="m2d-check" style="display:block;font-size:11px;margin-bottom:2px;"><input type="checkbox" id="m2d-include-nodes" checked> Nodes → Steiner vertices</label>
-                    <div style="padding-left:18px;margin-bottom:4px;">
-                        <label class="m2d-check" style="display:block;font-size:11px;"><input type="checkbox" id="m2d-use-rimz" checked> Use rim elevation (invert + max depth)</label>
-                        <div style="display:flex;gap:6px;margin:2px 0;">
-                            <div><label style="font-size:10px;color:var(--text-light);">Flatten radius (m)</label><input type="number" id="m2d-flatten-radius" value="5" step="0.5" class="tb-input" style="width:80px;font-size:11px;"></div>
-                            <div><label style="font-size:10px;color:var(--text-light);">Min separation (m)</label><input type="number" id="m2d-min-node-sep" value="2" step="0.5" class="tb-input" style="width:80px;font-size:11px;"></div>
-                        </div>
-                    </div>
-                    <label class="m2d-check" style="display:block;font-size:11px;margin-bottom:2px;"><input type="checkbox" id="m2d-include-conduits" checked> Conduits → constraint segments</label>
-                    <label class="m2d-check" style="display:block;font-size:11px;margin-bottom:2px;"><input type="checkbox" id="m2d-include-subs" checked> Subcatchments → triangle regions</label>
-                    <label class="m2d-check" style="display:block;font-size:11px;"><input type="checkbox" id="m2d-emit-node-map" checked> Emit vertex-node coupling map</label>
-                </div>
-            </div>
-
-            <!-- Quality Tab -->
-            <div id="mtab-quality" class="mtab-content">
-                <div class="m2d-section">
-                    <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">Triangle Quality</h4>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                         <div><label style="font-size:10px;color:var(--text-light);">Max area (m², 0=none)</label><input type="number" id="m2d-max-area" value="200" step="10" class="tb-input" style="width:90px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">Min angle (°)</label><input type="number" id="m2d-min-angle" value="33" step="1" class="tb-input" style="width:70px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">Max Steiner (0=∞)</label><input type="number" id="m2d-max-steiner" value="0" step="100" class="tb-input" style="width:80px;font-size:11px;"></div>
-                    </div>
-                    <label class="m2d-check" style="display:block;font-size:11px;margin-top:4px;"><input type="checkbox" id="m2d-allow-boundary-steiner" checked> Allow Steiner points on boundary</label>
-                </div>
-                <div class="m2d-section" style="margin-top:10px;">
-                    <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">PSLG Simplification</h4>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                        <div><label style="font-size:10px;color:var(--text-light);">ε (m)</label><input type="number" id="m2d-simplify-eps" value="0.1" step="0.01" class="tb-input" style="width:70px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">Snap radius (m)</label><input type="number" id="m2d-snap-radius" value="0.01" step="0.001" class="tb-input" style="width:80px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">Max boundary edge (m, 0=none)</label><input type="number" id="m2d-max-edge-len" value="0" step="5" class="tb-input" style="width:110px;font-size:11px;"></div>
-                    </div>
-                </div>
-                <div class="m2d-section" style="margin-top:10px;">
-                    <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">Terrain-Adaptive Thinning</h4>
-                    <label class="m2d-check" style="display:block;font-size:11px;margin-bottom:4px;"><input type="checkbox" id="m2d-thinning-enabled" checked> Enable adaptive thinning (finer where terrain varies)</label>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                        <div><label style="font-size:10px;color:var(--text-light);">Normal dot threshold</label><input type="number" id="m2d-thinning-normal-dot" value="0.6" step="0.05" class="tb-input" style="width:80px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">Passes</label><input type="number" id="m2d-thinning-passes" value="3" step="1" class="tb-input" style="width:60px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">Max points</label><input type="number" id="m2d-thinning-max-points" value="10000" step="500" class="tb-input" style="width:80px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">Min spacing (m)</label><input type="number" id="m2d-thinning-min-spacing" value="40" step="5" class="tb-input" style="width:80px;font-size:11px;"></div>
-                    </div>
-                </div>
-            </div>
-
-
-            <!-- Hydraulics Tab -->
-            <div id="mtab-hydraulics" class="mtab-content">
-                <div class="m2d-section">
-                    <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">Roughness & Coupling</h4>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                        <div><label style="font-size:10px;color:var(--text-light);">Default Manning's n</label><input type="number" id="m2d-default-n" value="0.045" step="0.005" class="tb-input" style="width:80px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">COUPLING_CD</label><input type="number" id="m2d-coupling-cd" value="0.65" step="0.05" class="tb-input" style="width:70px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">COUPLING_AREA</label>
-                            <select id="m2d-coupling-area" class="tb-select" style="font-size:11px;"><option value="AUTO">AUTO</option><option value="DEFAULT">DEFAULT</option></select></div>
-                    </div>
-                </div>
-                <div class="m2d-section" style="margin-top:10px;">
-                    <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">2D Solver Options</h4>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                        <div><label style="font-size:10px;color:var(--text-light);">MAX_TIMESTEP (s)</label><input type="number" id="m2d-max-timestep" value="10" step="0.5" class="tb-input" style="width:70px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">DRY_DEPTH (m)</label><input type="number" id="m2d-dry-depth" value="0.001" step="0.001" class="tb-input" style="width:70px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">COUPLING_SYNC (s)</label><input type="number" id="m2d-coupling-sync" value="1" step="0.5" class="tb-input" style="width:70px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">THETA</label><input type="number" id="m2d-theta" value="0.5" step="0.05" class="tb-input" style="width:60px;font-size:11px;"></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">CFL_NUMBER</label><input type="number" id="m2d-cfl-number" value="0.8" step="0.05" class="tb-input" style="width:60px;font-size:11px;"></div>
-                         <div><label style="font-size:10px;color:var(--text-light);">H_MOVE (m)</label><input type="number" id="m2d-hmove" value="0.003" step="0.001" class="tb-input" style="width:70px;font-size:11px;"></div>
-                         <div><label style="font-size:10px;color:var(--text-light);">FROUDE_MAX</label><input type="number" id="m2d-froude-max" value="1.0" step="0.1" class="tb-input" style="width:60px;font-size:11px;"></div>
-                         <div><label style="font-size:10px;color:var(--text-light);">LTS_TIERS</label><input type="number" id="m2d-lts-tiers" value="4" step="1" class="tb-input" style="width:50px;font-size:11px;"></div>
-                         <div><label style="font-size:10px;color:var(--text-light);">LIMITER_EPSILON</label><input type="number" id="m2d-limiter-epsilon" value="0.000001" step="0.000001" class="tb-input" style="width:90px;font-size:11px;"></div>
-                         <div><label style="font-size:10px;color:var(--text-light);">FLUX_DH_EPS</label><input type="number" id="m2d-flux-dh-eps" value="0.000001" step="0.000001" class="tb-input" style="width:90px;font-size:11px;"></div>
-                     </div>
-                     <div style="display:flex;gap:8px;margin-top:4px;">
-                         <div><label style="font-size:10px;color:var(--text-light);">CELL_CLOSURE</label>
-                             <select id="m2d-cell-closure" class="tb-select" style="font-size:11px;"><option value="FLAT">FLAT</option><option value="VFR">VFR</option></select></div>
-                         <div><label style="font-size:10px;color:var(--text-light);">FACE_RECONSTRUCTION</label>
-                             <select id="m2d-face-reconstruction" class="tb-select" style="font-size:11px;"><option value="MEAN">MEAN</option><option value="VFR_FACE">VFR_FACE</option></select></div>
-                         <div><label style="font-size:10px;color:var(--text-light);">VFR_MIN_WET_FRAC</label><input type="number" id="m2d-vfr-min-wet-frac" value="0.1" min="0.000001" max="0.5" step="0.01" class="tb-input" style="width:75px;font-size:11px;"></div>
-                         <div><label style="font-size:10px;color:var(--text-light);">RAINFALL_MODE</label>
-                            <select id="m2d-rainfall-mode" class="tb-select" style="font-size:11px;"><option value="NATURAL_NEIGHBOUR">NATURAL_NEIGHBOUR</option><option value="SYSTEM">SYSTEM</option><option value="NONE">NONE</option></select></div>
-                        <div><label style="font-size:10px;color:var(--text-light);">REPORT_2D</label>
-                            <select id="m2d-report-2d" class="tb-select" style="font-size:11px;"><option value="NO">NO</option><option value="YES">YES</option></select></div>
-                    </div>
-                </div>
-                <div class="m2d-section" style="margin-top:10px;">
-                    <h4 style="margin:0 0 6px;font-size:12px;color:var(--text-mid);">Output Format</h4>
-                    <label class="m2d-check" style="display:block;font-size:11px;"><input type="radio" name="m2d-output-mode" value="inline" checked> Inline .inp (2D sections embedded)</label>
-                    <label class="m2d-check" style="display:block;font-size:11px;"><input type="radio" name="m2d-output-mode" value="external"> External .2dm file</label>
-                    <button id="m2d-btn-download-2dm" class="tb-btn" style="font-size:11px;margin-top:4px;">Download .2dm</button>
-                </div>
-            </div>
-            <!-- Footer -->
-            <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;">
-                <div id="m2d-log" style="max-height:100px;overflow-y:auto;font-size:10px;font-family:monospace;background:var(--bg-subtle);border-radius:4px;padding:6px;margin-bottom:8px;color:var(--text-mid);"></div>
-                <div class="modal-actions" style="display:flex;gap:6px;align-items:center;">
-                    <button id="m2d-btn-clear" class="tb-btn" style="margin-right:auto;color:var(--danger, #ff6b6b);">Clear Mesh</button>
-                    <button id="m2d-btn-close" class="tb-btn">Close</button>
-                    <button id="m2d-btn-generate" class="tb-btn tb-btn-run">Generate</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Run Status Modal (Classic EPA SWMM style) -->
     <div id="run-status-modal" class="modal-overlay hidden">
         <div class="modal-box run-status-box">
@@ -795,6 +747,7 @@
 
     <!-- API Configuration -->
     <script src="config.js"></script>
+    <script src="build-version.js"></script>
     <script>
         if (typeof CONFIG !== 'undefined' && CONFIG.GOOGLE_MAPS_API_KEY) {
             const script = document.createElement('script');
@@ -812,42 +765,31 @@
     <!-- Shapefile & DXF parsers -->
     <script src="https://unpkg.com/shpjs@4.0.4/dist/shp.js"></script>
     <script src="https://unpkg.com/dxf-parser@1.1.2/dist/dxf-parser.js"></script>
-    <!-- poly2tri.js for Constrained Delaunay Triangulation (2D mesh generation) -->
-    <script src="https://cdn.jsdelivr.net/npm/poly2tri@1.5.0/dist/poly2tri.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
 
     <!-- Application -->
-    <script src="inpParser.js?v=12"></script>
-    <script src="inpExporter.js?v=12"></script>
-    <script src="network.js?v=12"></script>
-    <script src="swmmOutParser.js?v=12"></script>
-    <script src="street_view_overlay.js?v=12"></script>
-    <script src="swmm6wasm.js?v=12"></script>
-    <script src="results.js?v=12"></script>
-    <script src="importers.js?v=12"></script>
-    <script src="app.js?v=12"></script>
-    <script src="tools.js?v=12"></script>
-    <script src="profile.js?v=12"></script>
-    <script src="plot.js?v=12"></script>
-    <script src="vendor/triangle/triangle-loader.js?v=12"></script>
-    <script src="mesh2dProj.js?v=12"></script>
-    <script src="mesh2dPslg.js?v=12"></script>
-    <script src="mesh2dTerrain.js?v=12"></script>
-    <script src="mesh2dTriangle.js?v=12"></script>
-    <script src="mesh2dCoupling.js?v=12"></script>
-    <script src="mesh2dExport.js?v=12"></script>
-    <script src="mesh2dRender.js?v=12"></script>
-    <script src="meshGlLayer.js?v=12"></script>
-    <script src="mesh2d.js?v=12"></script>
-    <script src="mesh2dInp.js?v=12"></script>
-    <script src="mesh2dDialog.js?v=12"></script>
-    <script src="layerTree.js?v=12"></script>
-    <script src="landcover.js?v=12"></script>
-    <script src="curves.js?v=12"></script>
-    <script src="lid.js?v=12"></script>
-    <script src="quality.js?v=12"></script>
-    <script src="aquifer.js?v=12"></script>
-    <script src="snowpack.js?v=12"></script>
-    <script src="ui.js?v=12"></script>
+    <script src="inpParser.js?v=14"></script>
+    <script src="inpExporter.js?v=14"></script>
+    <script src="network.js?v=14"></script>
+    <script src="swmmOutParser.js?v=14"></script>
+    <script src="street_view_overlay.js?v=14"></script>
+    <script src="swmm6wasm.js?v=14"></script>
+    <script src="view2d.js?v=16"></script>
+    <script src="results.js?v=16"></script>
+    <script src="importers.js?v=14"></script>
+    <script src="app.js?v=15"></script>
+    <script src="network3D.js?v=19"></script>
+    <script src="tools.js?v=14"></script>
+    <script src="profile.js?v=14"></script>
+    <script src="nodeSchematic.js?v=1"></script>
+    <script src="plot.js?v=14"></script>
+    <script src="layerTree.js?v=15"></script>
+    <script src="landcover.js?v=14"></script>
+    <script src="curves.js?v=14"></script>
+    <script src="lid.js?v=14"></script>
+    <script src="quality.js?v=14"></script>
+    <script src="aquifer.js?v=14"></script>
+    <script src="snowpack.js?v=14"></script>
+    <script src="ui.js?v=14"></script>
 </body>
 </html>

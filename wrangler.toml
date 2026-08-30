@@ -1,0 +1,7 @@
+# Cloudflare Pages configuration.
+# Deploys happen from .github/workflows/cloudflare.yml (cloudflare/pages-action);
+# this file lets you also push manually with:
+#   npx wrangler pages deploy public
+name = "local-swmm"
+pages_build_output_dir = "public"
+compatibility_date = "2025-01-01"

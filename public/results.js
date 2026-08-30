@@ -22,16 +22,16 @@
     }
     window.rampColor = rampColor; // used by street_view_overlay.js
 
-    // min/max via loop — Math.min(...arr) overflows the stack on >100k elements
-    function arrayMinMax(arr) {
-        let min = Infinity, max = -Infinity;
-        for (let i = 0; i < arr.length; i++) {
-            const v = arr[i];
-            if (v < min) min = v;
-            if (v > max) max = v;
+        // min/max via loop — Math.min(...arr) overflows the stack on >100k elements
+        function arrayMinMax(arr) {
+            let min = Infinity, max = -Infinity;
+            for (let i = 0; i < arr.length; i++) {
+                const v = arr[i];
+                if (v < min) min = v;
+                if (v > max) max = v;
+            }
+            return { min, max };
         }
-        return { min, max };
-    }
 
     // ---------- rpt parsing ----------
     // All parsers take the pre-split lines array — the report is split ONCE
@@ -364,11 +364,28 @@
         _appliedLink: new Map(),
         _applied2D: new Map(),
 
+        // Mirror resultColor onto the 3D network source when it exists.
+        _push3D(id, color) {
+            try {
+                if (window.map && window.map.getSource('swmm-3d')) {
+                    window.map.setFeatureState({ source: 'swmm-3d', id }, { resultColor: color });
+                }
+            } catch (e) { /* source not ready */ }
+        },
+
+        // Replay current result colors onto the 3D source unconditionally —
+        // used when the swmm-3d source is (re)created after colors were already pushed.
+        push3DAll() {
+            Object.entries(this.nodeColors).forEach(([id, color]) => this._push3D(id, color));
+            Object.entries(this.linkColors).forEach(([id, color]) => this._push3D(id, color));
+        },
+
         applyToMap() {
             Object.entries(this.nodeColors).forEach(([id, color]) => {
                 if (this._appliedNode.get(id) === color) return;
                 this._appliedNode.set(id, color);
                 try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: color }); } catch (e) { }
+                this._push3D(id, color);
                 this._applied2D.set(id, color);
                 try { map.setFeatureState({ source: 'swmm-2d-mesh', id }, { resultColor: color }); } catch (e) { }
             });
@@ -376,6 +393,7 @@
                 if (this._appliedLink.get(id) === color) return;
                 this._appliedLink.set(id, color);
                 try { map.setFeatureState({ source: 'swmm-links', id }, { resultColor: color }); } catch (e) { }
+                this._push3D(id, color);
             });
         },
 
@@ -395,17 +413,37 @@
                 if (frame) {
                     const varKey = this.active2DVar; // 'depth' | 'head' | 'velocity'
                     const arr = frame[varKey];
-                    const mMin = this.mesh2DMinMax.min, mMax = this.mesh2DMinMax.max;
                     if (arr) {
                         const ids = r2d.triangleIds;
+                        // Absolute scale, stable across frames: depth/velocity
+                        // use the global-across-frames robust max, head keeps
+                        // the global range. No per-frame re-normalization.
+                        const mMax = this.mesh2DMinMax.max;
+                        const mMin = varKey === 'head' ? this.mesh2DMinMax.min : 0;
+                        const depthArr = frame.depth;
+                        const shouldShow = window.View2D ? window.View2D.shouldShow : null;
                         for (let i = 0; i < ids.length; i++) {
-                            const val = arr[i] || 0;
-                            const t = mMax > mMin ? (val - mMin) / (mMax - mMin) : 0;
-                            const color = val > 0 ? rampColor(t) : 'rgba(0,0,0,0)';
+                            const raw = Number(arr[i]);
+                            const val = Number.isFinite(raw) ? raw : 0;
+                            // Per-variable masking (View2D.shouldShow / CONTEXT.md):
+                            // depth hides the film below the mask; head shows only
+                            // cells with water present; velocity is source-gated.
+                            const show = shouldShow ? shouldShow(varKey, val, depthArr ? Number(depthArr[i]) : NaN) : (Number.isFinite(raw) && val > 0);
+                            const t = mMax > mMin ? Math.min(1, (val - mMin) / (mMax - mMin)) : 0;
+                            const color = show ? rampColor(t) : 'rgba(0,0,0,0)';
                             if (this._applied2D.get(ids[i]) === color) continue;
                             this._applied2D.set(ids[i], color);
                             try { map.setFeatureState({ source: 'swmm-2d-mesh', id: ids[i] }, { resultColor: color }); } catch (e) { }
                         }
+                    } else {
+                        // Do not leave a previous frame painted when a backend
+                        // omits the selected field.
+                        r2d.triangleIds.forEach(id => {
+                            const color = 'rgba(0,0,0,0)';
+                            if (this._applied2D.get(id) === color) return;
+                            this._applied2D.set(id, color);
+                            try { map.setFeatureState({ source: 'swmm-2d-mesh', id }, { resultColor: color }); } catch (e) { }
+                        });
                     }
                     if (window.Mesh2DLayers) window.Mesh2DLayers.onStep(step, frame);
                 }
@@ -432,6 +470,7 @@
                         if (this._appliedNode.get(id) === color) return;
                         this._appliedNode.set(id, color);
                         try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: color }); } catch (e) { }
+                        this._push3D(id, color);
                     });
                 }
 
@@ -444,6 +483,7 @@
                         if (this._appliedLink.get(id) === color) return;
                         this._appliedLink.set(id, color);
                         try { map.setFeatureState({ source: 'swmm-links', id }, { resultColor: color }); } catch (e) { }
+                        this._push3D(id, color);
                     });
                 }
             } else if (!r2d) {
@@ -456,6 +496,7 @@
                         if (this._appliedNode.get(id) === color) return;
                         this._appliedNode.set(id, color);
                         try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: color }); } catch (e) { }
+                        this._push3D(id, color);
                     }
                 });
 
@@ -467,6 +508,7 @@
                         if (this._appliedLink.get(id) === color) return;
                         this._appliedLink.set(id, color);
                         try { map.setFeatureState({ source: 'swmm-links', id }, { resultColor: color }); } catch (e) { }
+                        this._push3D(id, color);
                     }
                 });
             }
@@ -490,9 +532,11 @@
             const linkIds = new Set([...Object.keys(this.linkColors), ...this._appliedLink.keys()]);
             nodeIds.forEach(id => {
                 try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: null }); } catch (e) { }
+                this._push3D(id, null);
             });
             linkIds.forEach(id => {
                 try { map.setFeatureState({ source: 'swmm-links', id }, { resultColor: null }); } catch (e) { }
+                this._push3D(id, null);
             });
             // Clear 2D mesh feature states
             this._applied2D.forEach((_, id) => {
@@ -506,6 +550,8 @@
             this.linkColors = {};
             this.timeSeries = null;
             this.outData = null;
+            this.mesh2DMinMax = null;
+            this.mesh2DDepthScale = null;
             if (window.AnimationUI) window.AnimationUI.hide();
         }
     };
@@ -737,6 +783,7 @@
 
     window.clearResults = function () {
         ResultStyling.clear();
+        if (window.set2DResultLayerMode) window.set2DResultLayerMode(false);
         if (sparkObserver) sparkObserver.disconnect();
         const select = parkCategorySelect();
         if (select) select.classList.add('hidden');
@@ -1267,40 +1314,61 @@
         const report = result.report || '';
 
         // ---- compute global min/max across all frames for the active 2D variable ----
+        // Depth/velocity use a global-across-frames robust max (stable scale
+        // across the animation); head keeps the true global range (its
+        // gradient is the signal). See View2D.fieldScale / CONTEXT.md.
         function compute2DMinMax(varKey) {
             let min = Infinity, max = -Infinity;
+            let finiteCount = 0;
             for (let f = 0; f < frames.length; f++) {
                 const arr = frames[f][varKey];
                 if (!arr) continue;
                 for (let i = 0; i < arr.length; i++) {
-                    const v = arr[i];
+                    const v = Number(arr[i]);
+                    if (!Number.isFinite(v)) continue;
+                    finiteCount++;
                     if (v < min) min = v;
                     if (v > max) max = v;
                 }
             }
-            if (!isFinite(min)) min = 0;
-            if (!isFinite(max)) max = 0.1;
-            return { min: min, max: Math.max(max, min + 0.001) };
+            if (!Number.isFinite(min)) min = 0;
+            if (!Number.isFinite(max)) max = 0;
+            return { min: min, max: Math.max(max, min + 0.001), hasFinite: finiteCount > 0 };
         }
+        const scaleOf = (varKey) => (window.View2D ? window.View2D.fieldScale(frames, varKey) : compute2DMinMax(varKey));
 
-        const depthRange = compute2DMinMax('depth');
-        const headRange = compute2DMinMax('head');
-        const velRange = compute2DMinMax('velocity');
+        const depthScale = scaleOf('depth');
+        const headScale = scaleOf('head');
+        const velScale = scaleOf('velocity');
+        const rangeMap = { depth: depthScale, head: headScale, velocity: velScale };
+        const invalidFields = [];
+        if (!depthScale.hasFinite) invalidFields.push('depth');
+        if (!velScale.hasFinite) invalidFields.push('velocity');
 
         // ---- set up ResultStyling for 2D ----
         ResultStyling.clear();
         ResultStyling.active2DVar = 'depth';
-        ResultStyling.mesh2DMinMax = depthRange;
-        if (window.LayerTree && window.LayerTree.enableResultsDefaults) window.LayerTree.enableResultsDefaults();
+        ResultStyling.mesh2DMinMax = depthScale;
+        ResultStyling.mesh2DDepthScale = depthScale;
+        if (window.LayerTree && window.LayerTree.applyResultsPreset) window.LayerTree.applyResultsPreset('depth');
 
         // Color-code mesh with last-frame depth values initially
-        const lastFrame = frames[frames.length - 1];
+        // Some engine builds emit a completion marker with elapsedMs=0 after
+        // the real last frame. Never use that marker as the initial map field.
+        const renderFrames = frames.filter(frame => frame && Number.isFinite(Number(frame.elapsedMs)) &&
+            (Number(frame.elapsedMs) > 0 || frames.length === 1));
+        const lastFrame = (renderFrames.length ? renderFrames : frames)[(renderFrames.length ? renderFrames : frames).length - 1];
         if (lastFrame) {
-            const dMin = depthRange.min, dMax = depthRange.max;
+            const dMin = depthScale.min;
+            const dMax = depthScale.max;
             ids.forEach((id, i) => {
-                const val = lastFrame.depth[i] || 0;
-                const t = dMax > dMin ? (val - dMin) / (dMax - dMin) : 0;
-                const color = val > 0 ? rampColor(t) : 'rgba(0,0,0,0)';
+                const raw = Number(lastFrame.depth && lastFrame.depth[i]);
+                const val = Number.isFinite(raw) ? raw : 0;
+                const t = dMax > dMin ? Math.min(1, (val - dMin) / (dMax - dMin)) : 0;
+                // Absolute depth scale: cells below the mask render nothing
+                // (uniform-rain film stays hidden — CONTEXT.md).
+                const show = window.View2D ? window.View2D.shouldShow('depth', val, val) : (Number.isFinite(raw) && val >= 0.005);
+                const color = show ? rampColor(t) : 'rgba(0,0,0,0)';
                 ResultStyling.nodeColors[id] = color;
             });
         }
@@ -1334,6 +1402,9 @@
         const chips = contPct !== null
             ? `<div class="rv-chips"><span class="rv-chip ${Math.abs(parseFloat(contPct)) < 5 ? 'ok' : Math.abs(parseFloat(contPct)) < 10 ? 'warn' : 'bad'}" title="2D surface continuity error">2D Continuity <b>${contPct}%</b></span></div>`
             : '';
+        const dataWarning = invalidFields.length
+            ? `<div class="results-warning">2D ${invalidFields.join(' and ')} output has no finite values; dry/invalid cells are hidden.</div>`
+            : '';
 
         let html = `
             <div class="rv-hero">
@@ -1345,7 +1416,7 @@
                     </div>
                 </div>
                 ${chips}
-            </div>`;
+            </div>${dataWarning}`;
 
         // ---- KPI cards ----
         const kpis = [];
@@ -1353,8 +1424,10 @@
         let peakDepth = 0, peakVel = 0;
         for (const frame of frames) {
             for (let i = 0; i < ids.length; i++) {
-                if ((frame.depth[i] || 0) > peakDepth) peakDepth = frame.depth[i];
-                if ((frame.velocity[i] || 0) > peakVel) peakVel = frame.velocity[i];
+                const depth = Number(frame.depth && frame.depth[i]);
+                const velocity = Number(frame.velocity && frame.velocity[i]);
+                if (Number.isFinite(depth) && depth > peakDepth) peakDepth = depth;
+                if (Number.isFinite(velocity) && velocity > peakVel) peakVel = velocity;
             }
         }
         const isUS = (window.Net && Net.units === 'US');
@@ -1367,13 +1440,18 @@
         kpis.push(`<div class="rv-kpi"><div class="rv-kpi-label">Time frames</div><div class="rv-kpi-value">${frames.length}</div></div>`);
         html += `<div class="rv-kpis">${kpis.join('')}</div>`;
 
-        // ---- color ramp legend ----
+        // ---- color ramp legend (updates with the selected variable) ----
         const grad = `linear-gradient(90deg, ${RAMP.join(', ')})`;
+        const legendMeta = {
+            depth: { title: '2D Water Depth', unit: depthUnit },
+            head: { title: '2D Hydraulic Head', unit: depthUnit },
+            velocity: { title: '2D Flow Velocity', unit: velUnit }
+        };
         html += `
-            <div class="rv-legend">
-                <div class="rv-legend-title"><span>2D Water depth</span><span class="rv-legend-unit">${esc(depthUnit)}</span></div>
+            <div class="rv-legend" id="results-2d-legend">
+                <div class="rv-legend-title"><span id="results-2d-legend-title">${esc(legendMeta.depth.title)}</span><span class="rv-legend-unit" id="results-2d-legend-unit">${esc(depthUnit)}</span></div>
                 <div class="rv-legend-bar" style="background:${grad}"></div>
-                <div class="rv-legend-scale"><span>${fmtVal(depthRange.min, 3)}</span><span>${fmtVal((depthRange.min + depthRange.max) / 2, 3)}</span><span>${fmtVal(depthRange.max, 3)}</span></div>
+                <div class="rv-legend-scale" id="results-2d-legend-scale"><span>${fmtVal(depthScale.min, 3)}</span><span>${fmtVal((depthScale.min + depthScale.max) / 2, 3)}</span><span>${fmtVal(depthScale.max, 3)}</span></div>
             </div>`;
 
         // ---- 2D variable selector ----
@@ -1419,13 +1497,25 @@
         // ---- wire up 2D variable selector ----
         const varSelect = document.getElementById('results-2d-var-select');
         if (varSelect) {
-            const rangeMap = { depth: depthRange, head: headRange, velocity: velRange };
+            const legendTitle = document.getElementById('results-2d-legend-title');
+            const legendUnit = document.getElementById('results-2d-legend-unit');
+            const legendScale = document.getElementById('results-2d-legend-scale');
+            const refreshLegend = (varKey, scale) => {
+                const meta = legendMeta[varKey] || legendMeta.depth;
+                if (legendTitle) legendTitle.textContent = meta.title;
+                if (legendUnit) legendUnit.textContent = meta.unit;
+                if (legendScale) {
+                    legendScale.innerHTML = `<span>${fmtVal(scale.min, 3)}</span><span>${fmtVal((scale.min + scale.max) / 2, 3)}</span><span>${fmtVal(scale.max, 3)}</span>`;
+                }
+            };
             varSelect.addEventListener('change', () => {
                 const varKey = varSelect.value;
                 ResultStyling.active2DVar = varKey;
-                ResultStyling.mesh2DMinMax = rangeMap[varKey] || depthRange;
+                ResultStyling.mesh2DMinMax = rangeMap[varKey] || depthScale;
                 ResultStyling._applied2D.clear(); // force full repaint
                 ResultStyling.applyToMapForStep(ResultStyling.currentStep);
+                refreshLegend(varKey, ResultStyling.mesh2DMinMax);
+                if (window.LayerTree && window.LayerTree.applyResultsPreset) window.LayerTree.applyResultsPreset(varKey);
             });
         }
 

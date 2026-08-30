@@ -1,4 +1,4 @@
-﻿/**
+/**
  * aquifer.js — Groundwater & Aquifer Editor for SWMM 6
  */
 (function () {
@@ -51,6 +51,7 @@
             "<p style=\"color:var(--text-faint);font-size:12px;\">Select or add an aquifer to edit.</p></div></div></div>"
         ].join("\n");
         document.body.appendChild(modalEl);
+        if (window.initModalDrag) window.initModalDrag(modalEl, modalEl.querySelector('.ts-modal-header'));
         document.getElementById("btn-aquifer-close").onclick = function () { modalEl.classList.add("hidden"); };
         document.getElementById("btn-aquifer-add").onclick = function () { var a = addAquifer(); renderList(); selectAquifer(a.id); };
         document.getElementById("btn-aquifer-del").onclick = function () { var s = document.getElementById("aquifer-list").value; if (s) removeAquifer(s); renderList(); document.getElementById("aquifer-editor-panel").innerHTML = "<p style=\"color:var(--text-faint);font-size:12px;\">Select or add an aquifer to edit.</p>"; };

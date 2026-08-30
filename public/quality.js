@@ -1,4 +1,4 @@
-﻿/**
+/**
  * quality.js — Water Quality Editor for SWMM 6
  */
 (function () {
@@ -53,6 +53,7 @@
             "<p style=\"color:var(--text-faint);font-size:12px;\">Select a tab above.</p></div></div>"
         ].join("\n");
         document.body.appendChild(modalEl);
+        if (window.initModalDrag) window.initModalDrag(modalEl, modalEl.querySelector('.ts-modal-header'));
         document.getElementById("btn-quality-close").onclick = function () { modalEl.classList.add("hidden"); };
         document.getElementById("btn-quality-tab-pollutants").onclick = renderPollutants;
         document.getElementById("btn-quality-tab-landuse").onclick = renderLandUses;

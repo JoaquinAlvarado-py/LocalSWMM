@@ -253,9 +253,30 @@
 
     // 4. DRAW
     function draw(step) {
-        if (!ctx || !currentPath || !canvasEl) return;
+        if (!ctx || !canvasEl) return;
         currentStep = step;
 
+        const select = document.getElementById('profile-element-select');
+        const val = select ? select.value : 'path_full';
+
+        if (val === 'path_full' || !val) {
+            if (!currentPath) return;
+            drawLongitudinalProfile(step);
+        } else if (val.startsWith('node:')) {
+            const nodeId = val.slice(5);
+            if (window.NodeSchematic && window.NodeSchematic.drawNodeOnCanvas) {
+                window.NodeSchematic.drawNodeOnCanvas(canvasEl, nodeId, step);
+            }
+        } else if (val.startsWith('conduit:')) {
+            const conduitId = val.slice(8);
+            if (window.NodeSchematic && window.NodeSchematic.drawConduitOnCanvas) {
+                window.NodeSchematic.drawConduitOnCanvas(canvasEl, conduitId, step);
+            }
+        }
+    }
+
+    function drawLongitudinalProfile(step) {
+        if (!ctx || !currentPath || !canvasEl) return;
         const geo = buildGeometry(step);
         if (!geo.segments.length) return;
 
@@ -504,33 +525,49 @@
             ctx.stroke();
         }
 
-        // Node vertical bars + labels
+        // Node chambers + labels
         for (const [nid, xd] of Object.entries(geo.nodeX)) {
             const node = Net.getNode(nid);
             if (!node) continue;
-            const x       = cx(xd);
-            const invY    = cy(node.props.invertEl || 0);
-            const gndY    = cy((node.props.invertEl || 0) + (node.props.maxDepth || 2));
+            const x = cx(xd);
+            const invY = cy(node.props.invertEl || 0);
+            const gndY = cy((node.props.invertEl || 0) + (node.props.maxDepth || 2));
+            const nw = 14;
 
-            // Thin vertical line (node manhole)
-            ctx.beginPath();
-            ctx.strokeStyle = '#475569';
+            // Chamber concrete walls
+            ctx.fillStyle = '#e2e8f0';
+            ctx.fillRect(x - nw / 2, gndY, nw, Math.max(4, invY - gndY + 4));
+
+            // Inner chamber water fill if water is present
+            let nodeDepth = 0;
+            if (ts && ts.nodes && ts.nodes[nid]) {
+                const nd = ts.nodes[nid];
+                if (nd.depth && nd.depth[step] !== undefined) nodeDepth = nd.depth[step];
+            }
+            if (nodeDepth > 0.001) {
+                const wEl = Math.min((node.props.invertEl || 0) + (node.props.maxDepth || 2), (node.props.invertEl || 0) + nodeDepth);
+                const wY = cy(wEl);
+                ctx.fillStyle = 'rgba(2, 132, 199, 0.5)';
+                ctx.fillRect(x - nw / 2 + 2, wY, nw - 4, invY - wY);
+            }
+
+            // Outer chamber outline
+            ctx.strokeStyle = '#334155';
             ctx.lineWidth = 1.5;
-            ctx.moveTo(x, gndY);
-            ctx.lineTo(x, invY);
-            ctx.stroke();
+            ctx.strokeRect(x - nw / 2, gndY, nw, Math.max(4, invY - gndY + 4));
 
-            // Node ID label above ground line
-            ctx.fillStyle = '#1e293b';
+            // Top cover cap
+            ctx.fillStyle = '#475569';
+            ctx.fillRect(x - nw / 2 - 2, gndY - 3, nw + 4, 3);
+
+            // Node ID label
             ctx.font = 'bold 11px Inter, system-ui, sans-serif';
             ctx.textAlign = 'center';
-
-            // White halo behind label
             const lw = ctx.measureText(nid).width;
-            ctx.fillStyle = 'rgba(255,255,255,0.8)';
-            ctx.fillRect(x - lw / 2 - 2, gndY - 20, lw + 4, 14);
+            ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            ctx.fillRect(x - lw / 2 - 3, gndY - 22, lw + 6, 14);
             ctx.fillStyle = '#0f172a';
-            ctx.fillText(nid, x, gndY - 9);
+            ctx.fillText(nid, x, gndY - 11);
         }
 
         ctx.restore(); // end clip
@@ -627,8 +664,96 @@
     }
 
     // 6. PUBLIC API
+    let currentSelectedView = 'path_full';
+
+    function populateElementSelect(path, targetId, targetType) {
+        const select = document.getElementById('profile-element-select');
+        if (!select) return;
+        select.innerHTML = '';
+
+        if (path && path.nodeIds && path.nodeIds.length >= 2) {
+            const optFull = document.createElement('option');
+            optFull.value = 'path_full';
+            optFull.textContent = `Full Path Profile (${path.nodeIds.join(' → ')})`;
+            select.appendChild(optFull);
+
+            for (let i = 0; i < path.nodeIds.length; i++) {
+                const nid = path.nodeIds[i];
+                const optN = document.createElement('option');
+                optN.value = `node:${nid}`;
+                optN.textContent = `Node ${nid}`;
+                select.appendChild(optN);
+
+                if (i < path.edges.length) {
+                    const edge = path.edges[i];
+                    const optC = document.createElement('option');
+                    optC.value = `conduit:${edge.conduit.id}`;
+                    optC.textContent = `Conduit ${edge.conduit.id} (${edge.from} → ${edge.to})`;
+                    select.appendChild(optC);
+                }
+            }
+        } else if (targetId) {
+            if (targetType === 'LINK' || Net.getLink(targetId)) {
+                const link = Net.getLink(targetId);
+                if (link) {
+                    const optC = document.createElement('option');
+                    optC.value = `conduit:${link.id}`;
+                    optC.textContent = `Conduit ${link.id} (${link.from} → ${link.to})`;
+                    select.appendChild(optC);
+
+                    const optFrom = document.createElement('option');
+                    optFrom.value = `node:${link.from}`;
+                    optFrom.textContent = `Upstream Node ${link.from}`;
+                    select.appendChild(optFrom);
+
+                    const optTo = document.createElement('option');
+                    optTo.value = `node:${link.to}`;
+                    optTo.textContent = `Downstream Node ${link.to}`;
+                    select.appendChild(optTo);
+                }
+            } else {
+                const optN = document.createElement('option');
+                optN.value = `node:${targetId}`;
+                optN.textContent = `Node ${targetId}`;
+                select.appendChild(optN);
+
+                const conn = Net.links.filter(l => l.from === targetId || l.to === targetId);
+                conn.forEach(l => {
+                    const optC = document.createElement('option');
+                    optC.value = `conduit:${l.id}`;
+                    optC.textContent = `Connected Conduit ${l.id}`;
+                    select.appendChild(optC);
+                });
+            }
+        }
+
+        if (targetId) {
+            const val = (targetType === 'LINK' || Net.getLink(targetId)) ? `conduit:${targetId}` : `node:${targetId}`;
+            if (select.querySelector(`option[value="${val}"]`)) {
+                select.value = val;
+                currentSelectedView = val;
+            } else {
+                select.selectedIndex = 0;
+                currentSelectedView = select.value;
+            }
+        } else {
+            select.selectedIndex = 0;
+            currentSelectedView = 'path_full';
+        }
+    }
+
+    function ensureModalVisible(modal) {
+        if (!modal) return;
+        const top = modal.offsetTop;
+        if (top < 50) {
+            modal.style.top = '54px';
+            modal.style.bottom = 'auto';
+        }
+    }
+
     function openForNodes(nodeIds) {
         if (nodeIds.length < 2) {
+            if (nodeIds.length === 1) return openForElement(nodeIds[0], 'NODE');
             alert('Select at least 2 connected nodes to view a profile.');
             return;
         }
@@ -641,24 +766,22 @@
 
         currentPath = path;
         isViewModified = false;
-        currentTerrainProfile = null; // reset before new sampling
+        currentTerrainProfile = null;
 
-        // Update modal title
+        populateElementSelect(path, null, null);
+
         const titleEl = document.getElementById('profile-title');
-        if (titleEl) titleEl.textContent = `Water Elevation Profile: ${path.nodeIds.join(' → ')}`;
+        if (titleEl) titleEl.textContent = `Path: ${path.nodeIds.join(' → ')}`;
 
         modalEl.classList.remove('hidden');
-
-        // Small delay so layout is computed before sizing
+        ensureModalVisible(modalEl);
         setTimeout(resizeCanvas, 50);
 
-        // Start async DEM terrain sampling in background
         if (!terrainSamplingInProgress) {
             terrainSamplingInProgress = true;
             sampleTerrainAlongPath().then(profile => {
                 currentTerrainProfile = profile;
                 terrainSamplingInProgress = false;
-                // Redraw with terrain data
                 if (!modalEl.classList.contains('hidden')) {
                     draw(currentStep);
                 }
@@ -668,8 +791,34 @@
         }
     }
 
+    function openForElement(id, type) {
+        const link = Net.getLink(id);
+        const node = Net.getNode(id);
+        if (!link && !node) return;
+
+        if (link && link.from && link.to) {
+            const path = tracePath([link.from, link.to]);
+            if (path) currentPath = path;
+        } else if (node) {
+            const conn = Net.links.find(l => l.from === id || l.to === id);
+            if (conn) {
+                const path = tracePath([conn.from, conn.to]);
+                if (path) currentPath = path;
+            }
+        }
+
+        populateElementSelect(currentPath, id, type || (link ? 'LINK' : 'NODE'));
+
+        const titleEl = document.getElementById('profile-title');
+        if (titleEl) titleEl.textContent = `Analysis: ${id}`;
+
+        modalEl.classList.remove('hidden');
+        ensureModalVisible(modalEl);
+        setTimeout(resizeCanvas, 50);
+    }
+
     function update(step) {
-        if (!modalEl || modalEl.classList.contains('hidden') || !currentPath) return;
+        if (!modalEl || modalEl.classList.contains('hidden')) return;
         draw(step);
     }
 
@@ -679,19 +828,37 @@
 
     // 7. DRAGGING
     function initDrag(modal, handle) {
-        let ox = 0, oy = 0, ml = 0, mt = 0;
+        if (!modal || !handle) return;
 
         handle.addEventListener('mousedown', e => {
-            if (e.target.closest('button')) return;
-            const rect = modal.getBoundingClientRect();
-            ml = rect.left; mt = rect.top;
-            ox = e.clientX; oy = e.clientY;
-            modal.style.right = 'auto'; modal.style.bottom = 'auto';
+            if (e.target.closest('button') || e.target.closest('select') || e.target.closest('input') || e.target.closest('.profile-element-dropdown')) return;
+            
+            const startLeft = modal.offsetLeft;
+            const startTop = modal.offsetTop;
+            const startX = e.clientX;
+            const startY = e.clientY;
+
+            modal.style.right = 'auto';
+            modal.style.bottom = 'auto';
+            modal.style.transform = 'none';
+            modal.style.left = startLeft + 'px';
+            modal.style.top = startTop + 'px';
             modal.style.transition = 'none';
 
             const move = ev => {
-                modal.style.left = (ml + ev.clientX - ox) + 'px';
-                modal.style.top  = (mt + ev.clientY - oy) + 'px';
+                const minTop = 50; // Keep header below top navigation bar (44px + 6px margin)
+                const maxTop = window.innerHeight - 60;
+                const minLeft = 10;
+                const maxLeft = window.innerWidth - 120;
+
+                let targetLeft = startLeft + ev.clientX - startX;
+                let targetTop = startTop + ev.clientY - startY;
+
+                targetLeft = Math.max(minLeft, Math.min(maxLeft, targetLeft));
+                targetTop = Math.max(minTop, Math.min(maxTop, targetTop));
+
+                modal.style.left = targetLeft + 'px';
+                modal.style.top  = targetTop + 'px';
             };
             const up = () => {
                 document.removeEventListener('mousemove', move);
@@ -701,6 +868,7 @@
             document.addEventListener('mouseup', up);
         });
     }
+    window.initModalDrag = initDrag;
 
     // 8. INIT
     function init() {
@@ -823,6 +991,13 @@
             draw(currentStep);
         });
 
+        const select = document.getElementById('profile-element-select');
+        if (select) {
+            select.addEventListener('change', () => {
+                draw(currentStep);
+            });
+        }
+
         // Resize canvas when modal size changes
         const ro = new ResizeObserver(() => {
             if (!modalEl.classList.contains('hidden')) resizeCanvas();
@@ -841,5 +1016,5 @@
         init();
     }
 
-    window.ProfilePlot = { openForNodes, update, close };
+    window.ProfilePlot = { openForNodes, openForElement, update, close, draw };
 })();

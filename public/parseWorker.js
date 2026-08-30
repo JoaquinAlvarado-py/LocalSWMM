@@ -6,7 +6,7 @@
 
 'use strict';
 
-importScripts('inpParser.js?v=' + Date.now());
+importScripts('inpParser.js?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now()));
 
 self.onmessage = (e) => {
     const { text } = e.data || {};

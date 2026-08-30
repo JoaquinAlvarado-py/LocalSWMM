@@ -1,4 +1,4 @@
-﻿/**
+/**
  * curves.js — Curve Editor for SWMM 6
  * Supports: Storage, Pump, Rating, Weir, Orifice, Shape, Diversion curves.
  */
@@ -76,6 +76,7 @@
             '</div>'
         ].join('\n');
         document.body.appendChild(modalEl);
+        if (window.initModalDrag) window.initModalDrag(modalEl, modalEl.querySelector('.ts-modal-header'));
         curveListEl = document.getElementById('curve-list');
         curveEditorEl = document.getElementById('curve-editor-panel');
         document.getElementById('btn-curve-close').onclick = function () { modalEl.classList.add('hidden'); };
