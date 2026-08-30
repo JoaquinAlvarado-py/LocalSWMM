@@ -525,33 +525,49 @@
             ctx.stroke();
         }
 
-        // Node vertical bars + labels
+        // Node chambers + labels
         for (const [nid, xd] of Object.entries(geo.nodeX)) {
             const node = Net.getNode(nid);
             if (!node) continue;
-            const x       = cx(xd);
-            const invY    = cy(node.props.invertEl || 0);
-            const gndY    = cy((node.props.invertEl || 0) + (node.props.maxDepth || 2));
+            const x = cx(xd);
+            const invY = cy(node.props.invertEl || 0);
+            const gndY = cy((node.props.invertEl || 0) + (node.props.maxDepth || 2));
+            const nw = 14;
 
-            // Thin vertical line (node manhole)
-            ctx.beginPath();
-            ctx.strokeStyle = '#475569';
+            // Chamber concrete walls
+            ctx.fillStyle = '#e2e8f0';
+            ctx.fillRect(x - nw / 2, gndY, nw, Math.max(4, invY - gndY + 4));
+
+            // Inner chamber water fill if water is present
+            let nodeDepth = 0;
+            if (ts && ts.nodes && ts.nodes[nid]) {
+                const nd = ts.nodes[nid];
+                if (nd.depth && nd.depth[step] !== undefined) nodeDepth = nd.depth[step];
+            }
+            if (nodeDepth > 0.001) {
+                const wEl = Math.min((node.props.invertEl || 0) + (node.props.maxDepth || 2), (node.props.invertEl || 0) + nodeDepth);
+                const wY = cy(wEl);
+                ctx.fillStyle = 'rgba(2, 132, 199, 0.5)';
+                ctx.fillRect(x - nw / 2 + 2, wY, nw - 4, invY - wY);
+            }
+
+            // Outer chamber outline
+            ctx.strokeStyle = '#334155';
             ctx.lineWidth = 1.5;
-            ctx.moveTo(x, gndY);
-            ctx.lineTo(x, invY);
-            ctx.stroke();
+            ctx.strokeRect(x - nw / 2, gndY, nw, Math.max(4, invY - gndY + 4));
 
-            // Node ID label above ground line
-            ctx.fillStyle = '#1e293b';
+            // Top cover cap
+            ctx.fillStyle = '#475569';
+            ctx.fillRect(x - nw / 2 - 2, gndY - 3, nw + 4, 3);
+
+            // Node ID label
             ctx.font = 'bold 11px Inter, system-ui, sans-serif';
             ctx.textAlign = 'center';
-
-            // White halo behind label
             const lw = ctx.measureText(nid).width;
-            ctx.fillStyle = 'rgba(255,255,255,0.8)';
-            ctx.fillRect(x - lw / 2 - 2, gndY - 20, lw + 4, 14);
+            ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            ctx.fillRect(x - lw / 2 - 3, gndY - 22, lw + 6, 14);
             ctx.fillStyle = '#0f172a';
-            ctx.fillText(nid, x, gndY - 9);
+            ctx.fillText(nid, x, gndY - 11);
         }
 
         ctx.restore(); // end clip
@@ -658,21 +674,21 @@
         if (path && path.nodeIds && path.nodeIds.length >= 2) {
             const optFull = document.createElement('option');
             optFull.value = 'path_full';
-            optFull.textContent = `📈 Full Path Profile (${path.nodeIds.join(' → ')})`;
+            optFull.textContent = `Full Path Profile (${path.nodeIds.join(' → ')})`;
             select.appendChild(optFull);
 
             for (let i = 0; i < path.nodeIds.length; i++) {
                 const nid = path.nodeIds[i];
                 const optN = document.createElement('option');
                 optN.value = `node:${nid}`;
-                optN.textContent = `📐 Node ${nid}`;
+                optN.textContent = `Node ${nid}`;
                 select.appendChild(optN);
 
                 if (i < path.edges.length) {
                     const edge = path.edges[i];
                     const optC = document.createElement('option');
                     optC.value = `conduit:${edge.conduit.id}`;
-                    optC.textContent = `🛡️ Conduit ${edge.conduit.id} (${edge.from} → ${edge.to})`;
+                    optC.textContent = `Conduit ${edge.conduit.id} (${edge.from} → ${edge.to})`;
                     select.appendChild(optC);
                 }
             }
@@ -682,30 +698,30 @@
                 if (link) {
                     const optC = document.createElement('option');
                     optC.value = `conduit:${link.id}`;
-                    optC.textContent = `🛡️ Conduit ${link.id} (${link.from} → ${link.to})`;
+                    optC.textContent = `Conduit ${link.id} (${link.from} → ${link.to})`;
                     select.appendChild(optC);
 
                     const optFrom = document.createElement('option');
                     optFrom.value = `node:${link.from}`;
-                    optFrom.textContent = `📐 Upstream Node ${link.from}`;
+                    optFrom.textContent = `Upstream Node ${link.from}`;
                     select.appendChild(optFrom);
 
                     const optTo = document.createElement('option');
                     optTo.value = `node:${link.to}`;
-                    optTo.textContent = `📐 Downstream Node ${link.to}`;
+                    optTo.textContent = `Downstream Node ${link.to}`;
                     select.appendChild(optTo);
                 }
             } else {
                 const optN = document.createElement('option');
                 optN.value = `node:${targetId}`;
-                optN.textContent = `📐 Node ${targetId}`;
+                optN.textContent = `Node ${targetId}`;
                 select.appendChild(optN);
 
                 const conn = Net.links.filter(l => l.from === targetId || l.to === targetId);
                 conn.forEach(l => {
                     const optC = document.createElement('option');
                     optC.value = `conduit:${l.id}`;
-                    optC.textContent = `🛡️ Connected Conduit ${l.id}`;
+                    optC.textContent = `Connected Conduit ${l.id}`;
                     select.appendChild(optC);
                 });
             }
@@ -723,6 +739,15 @@
         } else {
             select.selectedIndex = 0;
             currentSelectedView = 'path_full';
+        }
+    }
+
+    function ensureModalVisible(modal) {
+        if (!modal) return;
+        const top = modal.offsetTop;
+        if (top < 50) {
+            modal.style.top = '54px';
+            modal.style.bottom = 'auto';
         }
     }
 
@@ -749,6 +774,7 @@
         if (titleEl) titleEl.textContent = `Path: ${path.nodeIds.join(' → ')}`;
 
         modalEl.classList.remove('hidden');
+        ensureModalVisible(modalEl);
         setTimeout(resizeCanvas, 50);
 
         if (!terrainSamplingInProgress) {
@@ -787,6 +813,7 @@
         if (titleEl) titleEl.textContent = `Analysis: ${id}`;
 
         modalEl.classList.remove('hidden');
+        ensureModalVisible(modalEl);
         setTimeout(resizeCanvas, 50);
     }
 
@@ -802,23 +829,36 @@
     // 7. DRAGGING
     function initDrag(modal, handle) {
         if (!modal || !handle) return;
-        let ox = 0, oy = 0, ml = 0, mt = 0;
 
         handle.addEventListener('mousedown', e => {
-            if (e.target.closest('button')) return;
-            const rect = modal.getBoundingClientRect();
-            ml = rect.left; mt = rect.top;
-            ox = e.clientX; oy = e.clientY;
+            if (e.target.closest('button') || e.target.closest('select') || e.target.closest('input') || e.target.closest('.profile-element-dropdown')) return;
+            
+            const startLeft = modal.offsetLeft;
+            const startTop = modal.offsetTop;
+            const startX = e.clientX;
+            const startY = e.clientY;
+
             modal.style.right = 'auto';
             modal.style.bottom = 'auto';
             modal.style.transform = 'none';
-            modal.style.left = ml + 'px';
-            modal.style.top = mt + 'px';
+            modal.style.left = startLeft + 'px';
+            modal.style.top = startTop + 'px';
             modal.style.transition = 'none';
 
             const move = ev => {
-                modal.style.left = (ml + ev.clientX - ox) + 'px';
-                modal.style.top  = (mt + ev.clientY - oy) + 'px';
+                const minTop = 50; // Keep header below top navigation bar (44px + 6px margin)
+                const maxTop = window.innerHeight - 60;
+                const minLeft = 10;
+                const maxLeft = window.innerWidth - 120;
+
+                let targetLeft = startLeft + ev.clientX - startX;
+                let targetTop = startTop + ev.clientY - startY;
+
+                targetLeft = Math.max(minLeft, Math.min(maxLeft, targetLeft));
+                targetTop = Math.max(minTop, Math.min(maxTop, targetTop));
+
+                modal.style.left = targetLeft + 'px';
+                modal.style.top  = targetTop + 'px';
             };
             const up = () => {
                 document.removeEventListener('mousemove', move);

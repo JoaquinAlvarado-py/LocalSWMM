@@ -519,6 +519,7 @@
     // ---------- node dragging (select tool) ----------
     map.on('mousedown', (e) => {
         if (Tools.active !== 'select' || e.originalEvent.button !== 0) return;
+        if (window.App && window.App.isLocked) return; // Project locked: prevent node movement
         const snapped = Tools.snapNodeAt(e.point, false);
         if (!snapped) return;
         Tools.dragging = snapped.id;

@@ -159,33 +159,44 @@
 
     function makeDraggable(el, handle) {
         if (!el || !handle) return;
-        let isDragging = false, startX = 0, startY = 0, initialLeft = 0, initialTop = 0;
+        if (window.initModalDrag) {
+            window.initModalDrag(el, handle);
+            return;
+        }
 
         handle.style.cursor = 'grab';
         handle.onmousedown = (e) => {
-            if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
-            isDragging = true;
+            if (e.target.tagName === 'BUTTON' || e.target.closest('button') || e.target.closest('select') || e.target.closest('input')) return;
             handle.style.cursor = 'grabbing';
-            startX = e.clientX;
-            startY = e.clientY;
-            const rect = el.getBoundingClientRect();
-            initialLeft = rect.left;
-            initialTop = rect.top;
+            const startLeft = el.offsetLeft;
+            const startTop = el.offsetTop;
+            const startX = e.clientX;
+            const startY = e.clientY;
 
-            el.style.left = `${initialLeft}px`;
-            el.style.top = `${initialTop}px`;
+            el.style.right = 'auto';
+            el.style.bottom = 'auto';
             el.style.transform = 'none';
+            el.style.left = `${startLeft}px`;
+            el.style.top = `${startTop}px`;
+            el.style.transition = 'none';
 
             const onMouseMove = (ev) => {
-                if (!isDragging) return;
+                const minTop = 50;
+                const maxTop = Math.max(minTop + 20, window.innerHeight - 60);
+                const minLeft = 10;
+                const maxLeft = Math.max(minLeft + 20, window.innerWidth - 120);
+
                 const dx = ev.clientX - startX;
                 const dy = ev.clientY - startY;
-                el.style.left = `${Math.max(10, initialLeft + dx)}px`;
-                el.style.top = `${Math.max(10, initialTop + dy)}px`;
+
+                let targetLeft = Math.max(minLeft, Math.min(maxLeft, startLeft + dx));
+                let targetTop = Math.max(minTop, Math.min(maxTop, startTop + dy));
+
+                el.style.left = `${targetLeft}px`;
+                el.style.top = `${targetTop}px`;
             };
 
             const onMouseUp = () => {
-                isDragging = false;
                 handle.style.cursor = 'grab';
                 window.removeEventListener('mousemove', onMouseMove);
                 window.removeEventListener('mouseup', onMouseUp);

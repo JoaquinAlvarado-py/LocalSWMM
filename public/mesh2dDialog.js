@@ -612,6 +612,10 @@
         populateLayers();
         writeSettings(loadSettings());
         modal.classList.remove('hidden');
+        if (window.initModalDrag) {
+            var header = modal.querySelector('.ts-modal-header') || modal.querySelector('.modal-header') || modal.querySelector('h3');
+            if (header) window.initModalDrag(modal, header);
+        }
         if (window.App && window.App.mesh2DBellingeTif) {
             log('ℹ Bellinge2.tif DEM is bundled and pre-selected as the GeoTIFF source for this model.');
         }

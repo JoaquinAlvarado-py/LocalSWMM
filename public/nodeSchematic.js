@@ -428,8 +428,8 @@
 
         // Right Node Chamber (toNode)
         ctx.fillStyle = '#e2e8f0';
-        ctx.fillRect(x2, yToRim, 20, yToRim - yToRim + 6);
-        ctx.strokeRect(x2, yToRim, 20, yToRim - yToRim + 6);
+        ctx.fillRect(x2, yToRim, 20, yToInv - yToRim + 6);
+        ctx.strokeRect(x2, yToRim, 20, yToInv - yToRim + 6);
 
         // Dry Pipe cross-section polygon
         ctx.beginPath();

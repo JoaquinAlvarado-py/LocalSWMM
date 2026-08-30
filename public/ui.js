@@ -430,6 +430,20 @@
         });
     }
 
+    const btnLock = document.getElementById('btn-lock-network');
+    const lockText = document.getElementById('lock-text');
+    if (btnLock) {
+        btnLock.addEventListener('click', () => {
+            const isLocked = !(window.App && window.App.isLocked);
+            if (window.App) window.App.isLocked = isLocked;
+            btnLock.classList.toggle('active', isLocked);
+            if (lockText) lockText.textContent = isLocked ? 'Locked' : 'Lock';
+            if (window.showResultsWarning) {
+                window.showResultsWarning(isLocked ? 'Project locked: Node movement disabled.' : 'Project unlocked: Node movement enabled.');
+            }
+        });
+    }
+
     const btnToggleHoverStats = document.getElementById('btn-toggle-hoverstats');
     if (btnToggleHoverStats) {
         btnToggleHoverStats.addEventListener('click', () => {
