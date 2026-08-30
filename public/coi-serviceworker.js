@@ -27,7 +27,6 @@
                             headers: newHeaders,
                         });
                     })
-                    .catch(e => console.error(e))
             );
         });
     } else {

@@ -373,6 +373,11 @@
             } catch (e) { /* source not ready */ }
         },
 
+        _setFeatureState(source, id, state) {
+            if (!map || !map.getSource || !map.getSource(source)) return;
+            try { map.setFeatureState({ source, id }, state); } catch (e) { }
+        },
+
         // Replay current result colors onto the 3D source unconditionally —
         // used when the swmm-3d source is (re)created after colors were already pushed.
         push3DAll() {
@@ -384,15 +389,15 @@
             Object.entries(this.nodeColors).forEach(([id, color]) => {
                 if (this._appliedNode.get(id) === color) return;
                 this._appliedNode.set(id, color);
-                try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: color }); } catch (e) { }
+                this._setFeatureState('swmm-nodes', id, { resultColor: color });
                 this._push3D(id, color);
                 this._applied2D.set(id, color);
-                try { map.setFeatureState({ source: 'swmm-2d-mesh', id }, { resultColor: color }); } catch (e) { }
+                this._setFeatureState('swmm-2d-mesh', id, { resultColor: color });
             });
             Object.entries(this.linkColors).forEach(([id, color]) => {
                 if (this._appliedLink.get(id) === color) return;
                 this._appliedLink.set(id, color);
-                try { map.setFeatureState({ source: 'swmm-links', id }, { resultColor: color }); } catch (e) { }
+                this._setFeatureState('swmm-links', id, { resultColor: color });
                 this._push3D(id, color);
             });
         },
@@ -433,7 +438,7 @@
                             const color = show ? rampColor(t) : 'rgba(0,0,0,0)';
                             if (this._applied2D.get(ids[i]) === color) continue;
                             this._applied2D.set(ids[i], color);
-                            try { map.setFeatureState({ source: 'swmm-2d-mesh', id: ids[i] }, { resultColor: color }); } catch (e) { }
+                            this._setFeatureState('swmm-2d-mesh', ids[i], { resultColor: color });
                         }
                     } else {
                         // Do not leave a previous frame painted when a backend
@@ -442,7 +447,7 @@
                             const color = 'rgba(0,0,0,0)';
                             if (this._applied2D.get(id) === color) return;
                             this._applied2D.set(id, color);
-                            try { map.setFeatureState({ source: 'swmm-2d-mesh', id }, { resultColor: color }); } catch (e) { }
+                            this._setFeatureState('swmm-2d-mesh', id, { resultColor: color });
                         });
                     }
                     if (window.Mesh2DLayers) window.Mesh2DLayers.onStep(step, frame);
@@ -531,16 +536,16 @@
             const nodeIds = new Set([...Object.keys(this.nodeColors), ...this._appliedNode.keys()]);
             const linkIds = new Set([...Object.keys(this.linkColors), ...this._appliedLink.keys()]);
             nodeIds.forEach(id => {
-                try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: null }); } catch (e) { }
+                this._setFeatureState('swmm-nodes', id, { resultColor: null });
                 this._push3D(id, null);
             });
             linkIds.forEach(id => {
-                try { map.setFeatureState({ source: 'swmm-links', id }, { resultColor: null }); } catch (e) { }
+                this._setFeatureState('swmm-links', id, { resultColor: null });
                 this._push3D(id, null);
             });
             // Clear 2D mesh feature states
             this._applied2D.forEach((_, id) => {
-                try { map.setFeatureState({ source: 'swmm-2d-mesh', id }, { resultColor: null }); } catch (e) { }
+                this._setFeatureState('swmm-2d-mesh', id, { resultColor: null });
             });
             this._appliedNode.clear();
             this._appliedLink.clear();
