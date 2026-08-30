@@ -11,6 +11,12 @@
             if (event.request.cache === 'only-if-cached' && event.request.mode !== 'same-origin') {
                 return;
             }
+            try {
+                const requestUrl = new URL(event.request.url);
+                if (requestUrl.origin !== self.location.origin) {
+                    return; // Do NOT intercept cross-origin requests!
+                }
+            } catch (e) { }
             event.respondWith(
                 fetch(event.request)
                     .then(response => {

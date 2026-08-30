@@ -1288,7 +1288,11 @@
                 } else if (msg.type === 'log') {
                     console.log('SWMM:', msg.text);
                 } else if (msg.type === 'err') {
-                    console.warn('SWMM Err:', msg.text);
+                    if (msg.text && (msg.text.includes('OMP: Info') || msg.text.includes('kmp_set_blocktime'))) {
+                        console.info('SWMM Info:', msg.text);
+                    } else {
+                        console.warn('SWMM Err:', msg.text);
+                    }
                 } else if (msg.type === 'done') {
                     if (simProgressTimer) { clearInterval(simProgressTimer); simProgressTimer = null; }
                     updateRunStatusUI(100, Math.floor(totalDays), '23:59');

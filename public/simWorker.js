@@ -20,7 +20,8 @@ let compiledWasmPromise = null;
 function getCompiledWasm() {
     if (!compiledWasmPromise) {
         compiledWasmPromise = (async () => {
-            const resp = await fetch('swmm6wasm.wasm?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now()));
+            const wasmVer = typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : 'dev';
+            const resp = await fetch('swmm6wasm.wasm?v=' + wasmVer);
             try {
                 return await WebAssembly.compileStreaming(resp.clone());
             } catch (e) {
