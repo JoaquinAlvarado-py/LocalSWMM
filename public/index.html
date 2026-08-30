@@ -236,6 +236,10 @@
                                 <span class="ms-toggle-label">Land Cover</span>
                                 <button id="btn-toggle-landcover" class="ms-switch" title="Toggle Land Cover"></button>
                             </div>
+                            <div class="ms-toggle-row">
+                                <span class="ms-toggle-label">Hover Info Cards</span>
+                                <button id="btn-toggle-hoverstats" class="ms-switch toggled" title="Toggle object hover status popups"></button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -348,12 +352,15 @@
                 </button>
             </div>
 
-            <!-- Profile Plot Modal -->
+            <!-- Unified Section & Profile Analysis Modal -->
             <div id="profile-modal" class="hidden">
                 <div id="profile-header">
                     <svg viewBox="0 0 24 24" width="14" height="14" style="flex-shrink:0;opacity:0.7"><path fill="currentColor" d="M3 3v18h18v-2H5V3H3zm4 14l4-4 3 3 4-6 2 2V7h-5l2 2-3 5-3-3-5 4.5L7 17z"/></svg>
-                    <span id="profile-title" class="profile-title-text">Water Elevation Profile</span>
-                    <button id="btn-profile-close" title="Close profile">
+                    <span id="profile-title" class="profile-title-text">Section &amp; Profile Analysis</span>
+                    <select id="profile-element-select" class="profile-element-dropdown" style="margin-left:auto;margin-right:8px;">
+                        <option value="path_full">📈 Full Path Longitudinal Profile</option>
+                    </select>
+                    <button id="btn-profile-close" title="Close window">
                         <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg>
                     </button>
                 </div>
@@ -361,6 +368,16 @@
                     <canvas id="profile-canvas"></canvas>
                 </div>
                 <div id="profile-resize-handle" title="Drag to resize"></div>
+            </div>
+
+            <!-- Right-Click Map Context Menu -->
+            <div id="map-context-menu" class="hidden">
+                <button class="cm-item" id="cm-section-view">📐 Section View / Schematic</button>
+                <button class="cm-item" id="cm-profile-from">📈 Profile from Node...</button>
+                <button class="cm-item" id="cm-timeseries">📊 Time Series Plot</button>
+                <div class="cm-divider"></div>
+                <button class="cm-item" id="cm-properties">⚙️ Edit Properties</button>
+                <button class="cm-item" id="cm-delete" style="color:var(--danger)">🗑️ Delete Element</button>
             </div>
 
             <!-- Time Series Plot Selection Modal -->
@@ -898,6 +915,7 @@
     <script src="network3D.js?v=19"></script>
     <script src="tools.js?v=14"></script>
     <script src="profile.js?v=14"></script>
+    <script src="nodeSchematic.js?v=1"></script>
     <script src="plot.js?v=14"></script>
     <script src="vendor/triangle/triangle-loader.js?v=14"></script>
     <script src="mesh2dProj.js?v=14"></script>

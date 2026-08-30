@@ -384,11 +384,76 @@
             const feat = Tools.featureAt(e.point);
             if (feat) {
                 Tools.select(feat.properties.id, e.originalEvent.shiftKey || e.originalEvent.ctrlKey);
+                // Graph path if multiple nodes are selected via ctrl/shift select
+                if ((e.originalEvent.shiftKey || e.originalEvent.ctrlKey) && App.selection.size >= 2 && window.ProfilePlot) {
+                    const selectedNodes = [...App.selection].filter(id => Net.getNode(id));
+                    if (selectedNodes.length >= 2) {
+                        window.ProfilePlot.openForNodes(selectedNodes);
+                    }
+                }
             } else if (!e.originalEvent.shiftKey) {
                 Tools.clearSelection();
             }
         }
     });
+
+    // ---------- Right-Click Context Menu ----------
+    const contextMenuEl = document.getElementById('map-context-menu');
+    let contextTargetId = null;
+
+    function hideContextMenu() {
+        if (contextMenuEl) contextMenuEl.classList.add('hidden');
+        contextTargetId = null;
+    }
+
+    if (map) {
+        map.on('contextmenu', (e) => {
+            const feat = Tools.featureAt(e.point);
+            if (!feat) { hideContextMenu(); return; }
+            e.originalEvent.preventDefault();
+
+            contextTargetId = feat.properties.id;
+            Tools.select(contextTargetId, false);
+
+            if (contextMenuEl) {
+                contextMenuEl.style.left = e.point.x + 'px';
+                contextMenuEl.style.top = e.point.y + 'px';
+                contextMenuEl.classList.remove('hidden');
+            }
+        });
+
+        map.on('click', () => hideContextMenu());
+    }
+
+    if (contextMenuEl) {
+        document.getElementById('cm-section-view')?.addEventListener('click', () => {
+            if (contextTargetId && window.ProfilePlot) window.ProfilePlot.openForElement(contextTargetId);
+            hideContextMenu();
+        });
+        document.getElementById('cm-profile-from')?.addEventListener('click', () => {
+            if (contextTargetId && window.ProfilePlot) window.ProfilePlot.openForNodes([contextTargetId]);
+            hideContextMenu();
+        });
+        document.getElementById('cm-timeseries')?.addEventListener('click', () => {
+            if (contextTargetId && window.TimeSeriesPlot) window.TimeSeriesPlot.onMapElementSelected(contextTargetId);
+            hideContextMenu();
+        });
+        document.getElementById('cm-properties')?.addEventListener('click', () => {
+            if (contextTargetId) {
+                Tools.select(contextTargetId, false);
+                if (window.renderPropsPanel) window.renderPropsPanel();
+            }
+            hideContextMenu();
+        });
+        document.getElementById('cm-delete')?.addEventListener('click', () => {
+            if (contextTargetId) {
+                Net.deleteElements([contextTargetId]);
+                Tools.clearSelection(false);
+                Tools.notifySelection();
+            }
+            hideContextMenu();
+        });
+    }
 
     map.on('dblclick', (e) => {
         if (Tools.active === 'subcatchment') {
@@ -427,8 +492,9 @@
                 map.getCanvas().style.cursor = newId ? 'pointer' : '';
             }
             
-            // Show status / result popup on hover
-            if (feat && (window.ResultStyling || Net.getNode(newId) || Net.getLink(newId))) {
+            // Show status / result popup on hover (if enabled in Map Settings)
+            const hoverAllowed = (typeof App === 'undefined') || (App.hoverStatsVisible !== false);
+            if (hoverAllowed && feat && (window.ResultStyling || Net.getNode(newId) || Net.getLink(newId))) {
                 const slider = document.getElementById('time-slider');
                 const step = slider ? parseInt(slider.value) : 0;
                 

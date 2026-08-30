@@ -430,6 +430,14 @@
         });
     }
 
+    const btnToggleHoverStats = document.getElementById('btn-toggle-hoverstats');
+    if (btnToggleHoverStats) {
+        btnToggleHoverStats.addEventListener('click', () => {
+            const active = btnToggleHoverStats.classList.toggle('toggled');
+            if (window.App) window.App.hoverStatsVisible = active;
+        });
+    }
+
     const btnSampleAllDem = document.getElementById('btn-sample-all-dem');
     if (btnSampleAllDem) {
         btnSampleAllDem.addEventListener('click', () => {
@@ -1003,6 +1011,13 @@
             });
         }
 
+        const btnSectionView = document.getElementById('prop-section-view');
+        if (btnSectionView) {
+            btnSectionView.addEventListener('click', () => {
+                if (window.NodeSchematic) window.NodeSchematic.open(el.id);
+            });
+        }
+
         const propId = document.getElementById('prop-id');
         if (type === 'MESH2D') {
             propId.readOnly = true;
@@ -1197,6 +1212,10 @@
             // Sync profile plot to current time step
             if (window.ProfilePlot && typeof window.ProfilePlot.update === 'function') {
                 window.ProfilePlot.update(step);
+            }
+            // Sync node schematic section view to current time step
+            if (window.NodeSchematic && typeof window.NodeSchematic.update === 'function') {
+                window.NodeSchematic.update(step);
             }
             // Sync Street View overlay animation
             if (window.StreetViewOverlay && typeof window.StreetViewOverlay.scheduleRedraw === 'function') {
