@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://api.mapbox.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://maps.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.mapbox.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://api.mapbox.com https://portal.opentopography.org https://epsg.io https://*.tile.openstreetmap.org https:; worker-src 'self' blob:; object-src 'none';">
+    <script src="coi-serviceworker.js"></script>
     <script>
         if (window.location.hostname === 'docs.swmm6.is-local.org' && (window.location.pathname === '/' || window.location.pathname === '')) {
             window.location.replace('/docs/');
@@ -20,7 +21,7 @@
     <!-- Local Stylesheet -->
     <link rel="stylesheet" href="styles.css?v=4">
     <!-- Warm the HTTP cache for the simulation engine binary (fetched by simWorker.js) -->
-    <link rel="preload" href="swmm6wasm.wasm" as="fetch" type="application/wasm" crossorigin="anonymous">
+    <link rel="preload" href="swmm6wasm.wasm?v=dev" as="fetch" type="application/wasm" crossorigin="anonymous">
 </head>
 <body>
     <div id="app-grid">
@@ -751,7 +752,7 @@
     <script>
         if (typeof CONFIG !== 'undefined' && CONFIG.GOOGLE_MAPS_API_KEY) {
             const script = document.createElement('script');
-            script.src = `https://maps.googleapis.com/maps/api/js?key=${CONFIG.GOOGLE_MAPS_API_KEY}`;
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${CONFIG.GOOGLE_MAPS_API_KEY}&loading=async`;
             document.head.appendChild(script);
         } else {
             console.warn("config.js is missing or missing GOOGLE_MAPS_API_KEY.");
