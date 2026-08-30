@@ -24,21 +24,162 @@
         }
     };
 
-    const map = new mapboxgl.Map({
-        container: 'map',
-        style: MAP_STYLES.streets,
-        center: DEFAULT_CENTER,
-        zoom: DEFAULT_ZOOM,
-        pitch: 0,
-        bearing: 0,
-        antialias: true,
-        boxZoom: false
-    });
+    function getGraphicsCapabilityStatus() {
+        let webgl1 = false;
+        let webgl2 = false;
+        let webgpu = false;
+
+        try {
+            const canvas = document.createElement('canvas');
+            webgl1 = !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')));
+        } catch (e) { }
+
+        try {
+            const canvas = document.createElement('canvas');
+            webgl2 = !!(window.WebGL2RenderingContext && canvas.getContext('webgl2'));
+        } catch (e) { }
+
+        if (typeof navigator !== 'undefined' && navigator.gpu) {
+            webgpu = true;
+        }
+
+        return { webgl1, webgl2, webgpu };
+    }
+
+    function showWebGLErrorBanner(details) {
+        const container = document.getElementById('map') || document.getElementById('map-container');
+        if (!container) return;
+
+        let errBanner = document.getElementById('webgl-error-banner');
+        if (!errBanner) {
+            errBanner = document.createElement('div');
+            errBanner.id = 'webgl-error-banner';
+            errBanner.className = 'webgl-error-overlay';
+            container.appendChild(errBanner);
+        }
+
+        const caps = getGraphicsCapabilityStatus();
+
+        errBanner.innerHTML = `
+            <div class="webgl-error-card">
+                <div class="webgl-error-header">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <h3>WebGL Hardware Acceleration Required</h3>
+                </div>
+                <p class="webgl-error-msg">
+                    The 3D/2D interactive map could not render because WebGL context creation failed or hardware acceleration is disabled in your browser.
+                </p>
+                <div class="webgl-status-grid">
+                    <div class="webgl-status-item">
+                        <span class="webgl-status-label">WebGL 2.0</span>
+                        <span class="webgl-badge ${caps.webgl2 ? 'webgl-badge-on' : 'webgl-badge-off'}">${caps.webgl2 ? 'Available' : 'Disabled'}</span>
+                    </div>
+                    <div class="webgl-status-item">
+                        <span class="webgl-status-label">WebGL 1.0</span>
+                        <span class="webgl-badge ${caps.webgl1 ? 'webgl-badge-on' : 'webgl-badge-off'}">${caps.webgl1 ? 'Available' : 'Disabled'}</span>
+                    </div>
+                    <div class="webgl-status-item">
+                        <span class="webgl-status-label">WebGPU</span>
+                        <span class="webgl-badge ${caps.webgpu ? 'webgl-badge-on' : 'webgl-badge-off'}">${caps.webgpu ? 'Supported' : 'Unavailable'}</span>
+                    </div>
+                </div>
+                ${details ? `<div class="webgl-error-details"><code>${details}</code></div>` : ''}
+                <div class="webgl-instructions">
+                    <h4>How to enable WebGL / Hardware Acceleration:</h4>
+                    <ul>
+                        <li><b>Google Chrome / Microsoft Edge</b>: Open <code>Settings &rarr; System</code>, turn <b>ON</b> <em>"Use graphics acceleration when available"</em> (or <em>"Use hardware acceleration when available"</em>), then restart your browser. Check status at <code>chrome://gpu</code> or <a href="https://get.webgl.org/" target="_blank" rel="noopener">get.webgl.org</a>.</li>
+                        <li><b>Brave Browser</b>: Click the Brave Shields icon in the address bar and set <em>Fingerprinting Protection</em> to Standard (not Strict), or allow WebGL for this site.</li>
+                        <li><b>Mozilla Firefox</b>: Open <code>about:config</code>, search for <code>webgl.disabled</code>, and set to <code>false</code>. Verify hardware acceleration is enabled in Settings &rarr; Performance.</li>
+                        <li><b>Apple Safari</b>: Open <code>Safari Settings &rarr; Advanced</code> and ensure WebGL is enabled.</li>
+                    </ul>
+                </div>
+                <div class="webgl-actions">
+                    <button onclick="location.reload()" class="tb-btn tb-btn-run">Retry Loading Map</button>
+                </div>
+            </div>
+        `;
+    }
+
+    function createDummyMap() {
+        const dummyHandlers = {};
+        const dummyMap = {
+            _isDummy: true,
+            on: (evt, fn) => {
+                if (!dummyHandlers[evt]) dummyHandlers[evt] = [];
+                dummyHandlers[evt].push(fn);
+                if (evt === 'load' || evt === 'style.load') {
+                    setTimeout(() => { try { fn({ target: dummyMap }); } catch (e) { } }, 10);
+                }
+                return dummyMap;
+            },
+            off: () => dummyMap,
+            once: () => dummyMap,
+            addControl: () => dummyMap,
+            removeControl: () => dummyMap,
+            addSource: () => dummyMap,
+            removeSource: () => dummyMap,
+            getSource: () => null,
+            addLayer: () => dummyMap,
+            removeLayer: () => dummyMap,
+            getLayer: () => null,
+            setLayoutProperty: () => dummyMap,
+            setPaintProperty: () => dummyMap,
+            setFeatureState: () => dummyMap,
+            doubleClickZoom: { enable: () => { }, disable: () => { } },
+            dragPan: { enable: () => { }, disable: () => { } },
+            getCenter: () => ({ lng: DEFAULT_CENTER[0], lat: DEFAULT_CENTER[1] }),
+            getZoom: () => DEFAULT_ZOOM,
+            getPitch: () => 0,
+            getBearing: () => 0,
+            getBounds: () => ({ getWest: () => -180, getEast: () => 180, getSouth: () => -90, getNorth: () => 90 }),
+            fitBounds: () => dummyMap,
+            flyTo: () => dummyMap,
+            easeTo: () => dummyMap,
+            jumpTo: () => dummyMap,
+            resize: () => dummyMap,
+            setStyle: () => dummyMap,
+            setTerrain: () => dummyMap,
+            setFog: () => dummyMap,
+            getCanvas: () => document.createElement('canvas'),
+            getCanvasContainer: () => document.getElementById('map') || document.body,
+            project: () => ({ x: 0, y: 0 }),
+            unproject: () => ({ lng: DEFAULT_CENTER[0], lat: DEFAULT_CENTER[1] }),
+            queryRenderedFeatures: () => [],
+            isStyleLoaded: () => true
+        };
+        return dummyMap;
+    }
+
+    let map;
+    try {
+        if (typeof mapboxgl === 'undefined') {
+            throw new Error('Mapbox GL JS library failed to load.');
+        }
+        if (!mapboxgl.supported || !mapboxgl.supported({ failIfMajorPerformanceCaveat: false })) {
+            console.warn('Mapbox GL JS supported() returned false. Hardware acceleration or WebGL is disabled.');
+        }
+        map = new mapboxgl.Map({
+            container: 'map',
+            style: MAP_STYLES.streets,
+            center: DEFAULT_CENTER,
+            zoom: DEFAULT_ZOOM,
+            pitch: 0,
+            bearing: 0,
+            antialias: true,
+            boxZoom: false
+        });
+
+        map.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), 'bottom-right');
+        map.addControl(new mapboxgl.ScaleControl({ maxWidth: 120 }), 'bottom-left');
+    } catch (err) {
+        console.error('Failed to initialize Mapbox GL map:', err);
+        showWebGLErrorBanner(err.message || err.toString());
+        map = createDummyMap();
+    }
 
     window.map = map; // for street_view_overlay.js and other modules
-
-    map.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), 'bottom-right');
-    map.addControl(new mapboxgl.ScaleControl({ maxWidth: 120 }), 'bottom-left');
 
     // ---------- App-wide state ----------
     window.App = {

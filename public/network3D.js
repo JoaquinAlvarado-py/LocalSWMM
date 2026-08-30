@@ -269,9 +269,11 @@
 
     if (typeof window !== 'undefined') {
         window.Network3D = API;
-        window.map.on('style.load', function () {
-            if (ACTIVE.on) { ensureSourceAndLayers(); refresh(); }
-        });
+        if (window.map && typeof window.map.on === 'function') {
+            window.map.on('style.load', function () {
+                if (ACTIVE.on) { ensureSourceAndLayers(); refresh(); }
+            });
+        }
 
         const toggleBtn = document.getElementById('btn-toggle-3d-network');
         if (toggleBtn) {
