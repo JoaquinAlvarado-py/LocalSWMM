@@ -14,7 +14,7 @@
             event.respondWith(
                 fetch(event.request)
                     .then(response => {
-                        if (response.status === 0) {
+                        if (response.status === 0 || response.type === 'opaque') {
                             return response;
                         }
                         const newHeaders = new Headers(response.headers);

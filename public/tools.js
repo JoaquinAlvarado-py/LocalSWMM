@@ -23,12 +23,20 @@
         outlet: 'OUTLET'
     };
     
-    // Popup for displaying simulation results on hover
-    const resultPopup = new mapboxgl.Popup({
-        closeButton: false,
-        closeOnClick: false,
-        className: 'results-popup'
-    });
+    // Popup for displaying simulation results on hover (lazily initialized)
+    let _resultPopup = null;
+    function getResultPopup() {
+        if (!_resultPopup && typeof mapboxgl !== 'undefined' && mapboxgl.Popup) {
+            try {
+                _resultPopup = new mapboxgl.Popup({
+                    closeButton: false,
+                    closeOnClick: false,
+                    className: 'results-popup'
+                });
+            } catch (e) { }
+        }
+        return _resultPopup;
+    }
 
     const INTERACTIVE_LAYERS = [
         'swmm-nodes-layer', 'swmm-links-hit', 'swmm-links-layer',
@@ -53,7 +61,8 @@
         lastHoveredLngLat: null,
         
         updateHoverPopup(step) {
-            if (!resultPopup.isOpen() || !this.lastHoveredFeat || !this.lastHoveredLngLat) return;
+            const popup = getResultPopup();
+            if (!popup || !popup.isOpen() || !this.lastHoveredFeat || !this.lastHoveredLngLat) return;
             const feat = this.lastHoveredFeat;
             const elId = feat.properties.id;
             if (!elId) return;
@@ -156,10 +165,13 @@
                 hasData = true;
             }
 
-            if (hasData) {
-                resultPopup.setHTML(html);
-            } else {
-                resultPopup.remove();
+            const popup = getResultPopup();
+            if (popup) {
+                if (hasData) {
+                    popup.setHTML(html);
+                } else {
+                    popup.remove();
+                }
             }
         },
 
@@ -500,19 +512,22 @@
                 
                 Tools.lastHoveredFeat = feat;
                 Tools.lastHoveredLngLat = e.lngLat;
-                resultPopup.setLngLat(e.lngLat).addTo(map);
+                const popup = getResultPopup();
+                if (popup) popup.setLngLat(e.lngLat).addTo(map);
                 Tools.updateHoverPopup(step);
             } else {
                 Tools.lastHoveredFeat = null;
                 Tools.lastHoveredLngLat = null;
-                resultPopup.remove();
+                const popup = getResultPopup();
+                if (popup) popup.remove();
             }
         } else if (hovered) {
             window.setElementState(hovered, { hovered: false });
             hovered = null;
             Tools.lastHoveredFeat = null;
             Tools.lastHoveredLngLat = null;
-            resultPopup.remove();
+            const popup = getResultPopup();
+            if (popup) popup.remove();
         }
     });
 

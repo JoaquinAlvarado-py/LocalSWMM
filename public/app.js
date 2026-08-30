@@ -7,9 +7,9 @@
     const DEFAULT_CENTER = [-71.254, -29.908]; // La Serena, Chile
     const DEFAULT_ZOOM = 15.2;
 
-    if (typeof CONFIG !== 'undefined') {
+    if (typeof mapboxgl !== 'undefined' && typeof CONFIG !== 'undefined') {
         mapboxgl.accessToken = CONFIG.MAPBOX_ACCESS_TOKEN;
-    } else {
+    } else if (typeof CONFIG === 'undefined') {
         console.error('config.js missing! Mapbox features may fail.');
     }
 
