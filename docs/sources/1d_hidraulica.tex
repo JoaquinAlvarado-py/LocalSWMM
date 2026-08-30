@@ -1,0 +1,1520 @@
+\documentclass[11pt,a4paper]{article}
+
+% =============================================================================
+% Paquetes
+% =============================================================================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-minimal]{babel}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{geometry}
+\geometry{margin=2.6cm}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usepackage{float}
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  urlcolor=blue!60!black,
+  citecolor=blue!60!black,
+  pdftitle={El proceso de cálculo hidráulico 1D del motor LocalSWMM}
+}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{siunitx}
+
+% =============================================================================
+% Entornos y macros
+% =============================================================================
+\newtheorem{definition}{Definición}[section]
+\newtheorem{remark}{Observación}[section]
+
+\newcommand{\st}{\mathrm{s}}
+\newcommand{\ft}{\mathrm{ft}}
+\newcommand{\cfs}{\mathrm{ft^3/s}}
+\newcommand{\sfft}{\mathrm{ft^2}}
+\newcommand{\R}{\mathbb{R}}
+\renewcommand{\arraystretch}{1.25}
+
+% Abreviatura para rutas del motor
+\newcommand{\src}[1]{\texttt{src/engine/#1}}
+
+\title{\textbf{El Proceso de Cálculo Hidráulico 1D}\\[0.6em]
+\large del proyecto LocalSWMM (motor HydroCouple OpenSWMM)}
+\author{Documento de Referencia Técnica}
+\date{Agosto 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Este documento entrega una descripción completa, a nivel de ecuaciones, del
+proceso de cálculo hidráulico unidimensional (1D) que utiliza la aplicación web
+LocalSWMM. Todos los cálculos hidráulicos los ejecuta el motor HydroCouple
+\textbf{OpenSWMM}, compilado a WebAssembly y que se ejecuta dentro del
+navegador. El motor resuelve las ecuaciones de de~Saint-Venant sobre una red de
+nodos y enlaces. Se dispone de cuatro formulaciones de tránsito (routing):
+\emph{escurrimiento permanente} (flujo permanente), \emph{onda cinemática},
+\emph{onda dinámica} (la opción por defecto) y un esquema explícito de
+\emph{volúmenes finitos}. El documento explica el modelo conceptual, las
+ecuaciones de gobierno, los esquemas de diferencias finitas, el procedimiento
+de solución iterativa, los algoritmos de continuidad en los nodos y de
+escurrimiento en carga (surcharge), el cálculo de las estructuras hidráulicas
+no-conducto, las funciones de geometría de sección transversal, las
+condiciones de borde, el paso de tiempo adaptativo y el balance de masa.
+Toda ecuación está transcrita del código fuente del motor (ver la lista de
+archivos en las Referencias) y referenciada a los Manuales de Referencia del
+motor cuando corresponde.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% =============================================================================
+% 1. INTRODUCCIÓN
+% =============================================================================
+\section{Introducción}
+
+\subsection{Alcance}
+
+Este documento cubre los cálculos hidráulicos (tránsito de caudales)
+\emph{unidimensionales} del proyecto LocalSWMM. LocalSWMM es una aplicación web
+basada en navegador para el modelamiento de redes de aguas lluvias y aguas
+servidas; incorpora el motor HydroCouple OpenSWMM (C$++$) compilado a
+WebAssembly. El componente hidráulico 1D resuelve el escurrimiento
+unidimensional, no permanente y gradualmente variado a través de una red de
+\emph{nodos} (cámaras de unión, estanques de almacenamiento, divisores de
+flujo, emisarios) y \emph{enlaces} (conductos, bombas, orificios, vertederos,
+descargas). El módulo de escurrimiento superficial 2D y su acoplamiento 1D--2D
+quedan fuera del alcance, salvo donde interactúan con el solver 1D (por
+ejemplo, a través de los aportes laterales y del acoplamiento por área de
+encharcamiento).
+
+El motor es un \emph{modelo de simulación distribuida de tiempo discreto}:
+avanza un vector de estado a lo largo de una secuencia de pasos de tiempo,
+\begin{equation}
+  \boldsymbol{X}_{t} = f\!\left(\boldsymbol{X}_{t-1}, \boldsymbol{I}_{t}, \boldsymbol{P}\right),
+  \qquad
+  \boldsymbol{Y}_{t} = g\!\left(\boldsymbol{X}_{t}, \boldsymbol{P}\right),
+\end{equation}
+donde $\boldsymbol{X}$ es el vector de estado, $\boldsymbol{I}$ las entradas
+externas, $\boldsymbol{P}$ los parámetros fijos e $\boldsymbol{Y}$ las salidas.
+
+\subsection{Glosario de terminología (español de Chile)}
+
+A lo largo de este documento se usa la terminología técnica empleada en la
+práctica hidrosanitaria chilena. La Tabla~\ref{tab:glosario} entrega la
+equivalencia entre los términos del motor (en inglés) y su traducción local.
+
+\begin{longtable}{>{\raggedright}p{6.2cm}>{\raggedright\arraybackslash}p{9.2cm}}
+\toprule
+\textbf{Término del motor} & \textbf{Español de Chile} \\
+\midrule
+\endhead
+stormwater & aguas lluvias \\
+wastewater / sewage & aguas servidas \\
+sewer system & alcantarillado \\
+sewer main (collector) & colector \\
+culvert & alcantarilla de paso \\
+manhole / junction chamber & cámara de inspección \\
+junction node & cámara de unión \\
+outfall & emisario / punto de descarga \\
+storage unit & estanque de almacenamiento (piscina de laminación / estanque de retención) \\
+pump & bomba \\
+pump station & cámara de bombeo / estación de bombeo \\
+wet well & cámara húmeda \\
+weir & vertedero \\
+orifice & orificio \\
+outlet (link) & descarga regulada / salida con curva de gasto \\
+flap gate & compuerta de retención \\
+link / conduit & vínculo / enlace; conducto / tubería \\
+invert elevation & cota de batea \\
+crown & clave \\
+rim & brocal \\
+flow depth & tirante \\
+water surface width & espejo de agua / ancho superficial \\
+hydraulic radius & radio hidráulico \\
+hydraulic head & carga hidráulica / cota piezométrica \\
+friction slope & pendiente de fricción / pendiente motriz \\
+minor losses & pérdidas locales / pérdidas singulares \\
+backwater & remanso \\
+surcharge (state) & escurrimiento en carga \\
+flowing full & a sección llena \\
+overflow & rebalse \\
+flooding & anegamiento / inundación \\
+ponding & encharcamiento \\
+runoff & escorrentía superficial \\
+groundwater table & napa freática \\
+infiltration & infiltración \\
+exfiltration & exfiltración \\
+street inlet / catch basin & sumidero \\
+rain gage & pluviómetro \\
+catchment / subcatchment & cuenca / subcuenca \\
+time step & paso de tiempo \\
+flow rate & caudal \\
+hydrograph & hidrograma \\
+time series & serie de tiempo \\
+control rules & reglas de control \\
+steady flow & escurrimiento permanente \\
+kinematic wave & onda cinemática \\
+dynamic wave & onda dinámica \\
+\bottomrule
+\caption{Glosario de terminología técnica en español de Chile.}
+\label{tab:glosario}
+\end{longtable}
+
+\subsection{El modelo conceptual de nodos y enlaces}
+
+La porción de conducción de un sistema de drenaje es una red de nodos y
+enlaces. Los \textbf{nodos} son puntos que representan:
+\begin{itemize}[nosep]
+  \item \textbf{Cámaras de unión} --- puntos donde se unen los enlaces, con
+        cota de batea, altura hasta el brocal, profundidad opcional de
+        escurrimiento en carga (presión) y área opcional de encharcamiento.
+  \item \textbf{Emisarios (puntos de descarga)} --- nodos de borde terminales
+        con una condición de nivel de agua prescrita (libre, normal, fija, de
+        marea o serie de tiempo) y compuerta de retención opcional.
+  \item \textbf{Estanques de almacenamiento} --- nodos con una relación
+        superficie--versus--tirante y volumen de almacenamiento real; nunca se
+        presurizan.
+  \item \textbf{Divisores de flujo} --- nodos que dividen el ingreso entre un
+        enlace de continuación y un enlace de desvío (de corte, de rebalse,
+        tabular o de vertedero; activos bajo onda cinemática, tratados como
+        cámaras de unión bajo onda dinámica).
+\end{itemize}
+
+Los \textbf{enlaces} conectan nodos. Los tipos de enlace son:
+\begin{itemize}[nosep]
+  \item \textbf{Conductos} --- tuberías y canales abiertos de sección
+        transversal arbitraria, descritos por la ecuación de Manning y un
+        conjunto de tablas de geometría de sección transversal.
+  \item \textbf{Bombas} --- gobernadas por curvas características (cinco tipos
+        de curva o un modelo de bomba ideal) con histéresis de arranque/parada
+        según el tirante.
+  \item \textbf{Orificios} --- aberturas de fondo o laterales con
+        comportamiento de descarga tipo vertedero/orificio.
+  \item \textbf{Vertederos} --- transversales, laterales, de escotadura en V o
+        trapezoidales, con transición opcional a escurrimiento por orificio
+        bajo sumersión.
+  \item \textbf{Descargas (outlets)} --- curvas de gasto en función de la
+        carga o del tirante (tabulares o funcionales).
+\end{itemize}
+
+\subsection{Variables de estado y unidades internas}
+
+En el tránsito de caudales las variables de estado fundamentales son
+exactamente tres (Tabla~\ref{tab:statevars}):
+
+\begin{table}[H]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Símbolo} & \textbf{Descripción} \\
+\midrule
+$H$  & Carga hidráulica del agua en un nodo \\
+$Q$  & Caudal en un enlace \\
+$A$  & Área hidráulica en un enlace (inferida de $Q$ y de la geometría) \\
+\bottomrule
+\end{tabular}
+\caption{Las tres variables de estado fundamentales del tránsito de caudales.}
+\label{tab:statevars}
+\end{table}
+
+Todas las demás magnitudes se derivan de estas tres variables, de las entradas
+externas y de los parámetros fijos. Internamente el motor realiza todos los
+cálculos en \textbf{pies} (longitud), \textbf{segundos} (tiempo), \textbf{cfs}
+(caudal), \textbf{ft$^2$} (área) y \textbf{ft$^3$} (volumen). Los valores de
+entrada del proyecto en unidades SI (métricas) o US se convierten a estas
+unidades internas al momento de la lectura; los factores de conversión son
+\begin{align}
+  \mathrm{Ucf}[\mathrm{LENGTH}] &=
+    \begin{cases} 1.0 & \text{(US)} \\ 0.3048 & \text{(SI)} \end{cases}, \\
+  \mathrm{Ucf}[\mathrm{VOLUME}] &=
+    \begin{cases} 1.0 & \text{(US)} \\ 0.02832 & \text{(SI)} \end{cases},
+\end{align}
+(obsérvese que el factor SI de volumen es el valor \emph{truncado} del motor
+legado, no $0.3048^3$, conservado deliberadamente para mantener la paridad de
+punto flotante con el motor SWMM legado). La conversión de caudal usa
+$\mathrm{Qcf} = \{1.0,\ 448.831,\ 0.64632,\ 0.02832,\ 28.317,\ 2.4466\}$ para
+cfs/gpm/MGD/cms/LPS/MLD.
+
+\subsection{Las cuatro formulaciones de tránsito}
+
+El motor selecciona el método de tránsito de caudales con la opción
+\texttt{FLOW\_ROUTING}. La Tabla~\ref{tab:routing} resume los cuatro métodos.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}l p{4.6cm} p{5.4cm}@{}}
+\toprule
+\textbf{Método} & \textbf{Ecuaciones de gobierno} & \textbf{Características} \\
+\midrule
+Permanente & continuidad + tirante normal de Manning & pasante, sin almacenamiento/remanso \\
+Onda cinemática & continuidad + curva de gasto de escurrimiento uniforme & sin remanso, inversión ni presión \\
+Onda dinámica (defecto) & St.\ Venant completo & remanso, pérdidas, inversión, presión \\
+Volúmenes finitos (explícito) & St.\ Venant, Godunov/HLLC & flujo transcrítico, seco/húmedo nativo \\
+\bottomrule
+\end{tabular}
+\caption{Las cuatro formulaciones de tránsito 1D del motor.}
+\label{tab:routing}
+\end{table}
+
+La onda dinámica es la opción por defecto y aquí se trata con mayor profundidad.
+Cada método de tránsito se invoca desde un orquestador común \texttt{Router}.
+
+% =============================================================================
+% 2. COMPONENTES DEL MODELO HIDRÁULICO
+% =============================================================================
+\section{Componentes del modelo hidráulico}
+
+\subsection{Datos de los nodos}
+
+Cada nodo lleva propiedades geométricas estáticas y estado dinámico
+(\texttt{NodeData.hpp}):
+\begin{itemize}[nosep]
+  \item $z_{\mathrm{inv}}$ --- cota de batea (ft).
+  \item $d_{\mathrm{full}}$ --- profundidad total (tirante hasta el brocal /
+        borde superior del estanque).
+  \item $d_{\mathrm{sur}}$ --- profundidad máxima admisible de escurrimiento
+        en carga sobre la profundidad total; el límite de anegamiento es
+        $z_{\mathrm{inv}} + d_{\mathrm{full}} + d_{\mathrm{sur}}$.
+  \item $A_{\mathrm{pond}}$ --- área de encharcamiento usada cuando el nodo se
+        anega sobre el brocal y el encharcamiento está habilitado.
+  \item $z_{\mathrm{crown}}$ --- cota de la clave del conducto más alto
+        conectado; el umbral de entrada en carga es $y_{\mathrm{crown}} =
+        z_{\mathrm{crown}} - z_{\mathrm{inv}}$.
+  \item $\mathrm{deg}$ --- número de enlaces conectados; si es negativo, el
+        nodo es un nodo terminal aguas arriba.
+  \item $V_{\mathrm{full}}$ --- volumen a profundidad total.
+\end{itemize}
+
+Estado dinámico (actualizado en cada paso de tránsito):
+\begin{itemize}[nosep]
+  \item $d$ --- tirante de agua sobre la batea (ft);
+  \item $H = z_{\mathrm{inv}} + d$ --- carga hidráulica (ft);
+  \item $V$ --- volumen almacenado (ft$^3$);
+  \item $Q_{\mathrm{lat}}$ --- aporte lateral total (ft$^3$/s);
+  \item $Q_{\mathrm{in}}$, $Q_{\mathrm{out}}$ --- ingreso y salida totales;
+  \item $Q_{\mathrm{ovfl}}$ --- tasa de rebalse/anegamiento;
+  \item $Q_{\mathrm{loss}}$ --- tasa de pérdidas por evaporación +
+        filtración/exfiltración;
+  \item $\Delta Q_{\mathrm{net}}^{t-1}$ --- ingreso neto $Q_{\mathrm{in}} -
+        Q_{\mathrm{out}}$ del paso anterior (usado para el promediado
+        trapezoidal);
+  \item valores del paso anterior $d^{t-1}$, $V^{t-1}$, $Q_{\mathrm{lat}}^{t-1}$.
+\end{itemize}
+
+\subsubsection{Funciones de área superficial y volumen de los nodos}
+
+Las funciones de geometría de nodo están implementadas en
+\src{hydraulics/Node.cpp}.
+
+\textbf{Volumen de cámara de unión / emisario / divisor}: con
+$\mathrm{MIN\_SURFAREA} = 12.566\ \sfft$ ($\approx 4\pi$, el área de una
+cámara de inspección de 4 pies),
+\begin{equation}
+  V(d) = V_{\mathrm{full}}\,\frac{d}{d_{\mathrm{full}}},
+\end{equation}
+donde $V_{\mathrm{full}} = \mathrm{MIN\_SURFAREA}\cdot d_{\mathrm{full}}$
+salvo que se haya redefinido.
+
+\textbf{Volumen del estanque de almacenamiento}:
+\begin{itemize}[nosep]
+  \item Tabular: $V = \mathrm{table}(d\cdot \mathrm{Ucf}[L])/\mathrm{Ucf}[V]$
+        con interpolación de tabla;
+  \item Las formas geométricas (cilíndrica, cónica, paraboloide, piramidal)
+        usan la relación cuadrática de área superficial
+        $A(d) = c + a\,d + b\,d^{2}$, integrada al polinomio cúbico
+        \begin{equation}
+          V(d) = d\left(c + d\!\left(\tfrac{a}{2} + d\,\tfrac{b}{3}\right)\right);
+        \end{equation}
+  \item Almacenamiento funcional: ley de potencia $A(d) = c + a\,d^{b}$
+        integrada analíticamente.
+\end{itemize}
+
+\textbf{Área superficial} $A_{\mathrm{surf}}(d)$: los nodos no-estanque
+retornan 0 (el piso de área mínima se aplica más adelante en la actualización
+de nodo de la onda dinámica); los estanques retornan el valor de la tabla
+(extrapolando linealmente) o la forma analítica $A(d) = c + a\,d + b\,d^{2}$ /
+$A(d) = c + a\,d^{b}$.
+
+\textbf{Área de encharcamiento}:
+\begin{equation}
+  A_{\mathrm{pond}}(d) =
+  \begin{cases}
+    A_{\mathrm{surf}}(d) & d \le d_{\mathrm{full}} \text{ o } A_{\mathrm{pond}} = 0,\\
+    A_{\mathrm{pond}} & d > d_{\mathrm{full}} \text{ (anegado)}.
+  \end{cases}
+\end{equation}
+
+\textbf{Tirante a partir del volumen} (la inversa de la función de volumen,
+usada por la actualización de estanque de la onda cinemática y por los
+reportes): los nodos cámara de unión usan $d = V/\mathrm{MIN\_SURFAREA}$; los
+estanques invierten las relaciones tabular/geométrica/funcional, usando
+Newton--Raphson con fallback de bisección cuando no existe forma cerrada.
+
+\textbf{Caudal máximo de salida} (usado por la reunión de ingreso de enlace de
+la onda cinemática y del escurrimiento permanente):
+\begin{equation}
+  Q_{\max} = Q_{\mathrm{in}} + \frac{V_{\mathrm{old}}}{dt},
+  \qquad Q_{\mathrm{in}} = \min\!\left(Q_{\mathrm{in}}, Q_{\max}\right).
+\end{equation}
+
+\subsection{Datos de los enlaces}
+
+Cada enlace lleva propiedades estáticas y estado dinámico
+(\texttt{LinkData.hpp}). Para los conductos, los parámetros de capacidad de
+conducción por enlace (por barril) son (\texttt{Link.cpp},
+\texttt{computeConveyance}):
+\begin{align}
+  \beta &= \frac{\mathrm{PHI}\,\sqrt{|S_0|}}{n}, \qquad \mathrm{PHI} = 1.486
+    \quad\text{(factor US de Manning)}, \\
+  \mathrm{rough\_factor} &= g\left(\frac{n}{\mathrm{PHI}}\right)^{2},\\
+  Q_{\mathrm{full}} &= S_{\mathrm{full}}\cdot\beta,
+  \qquad Q_{\max} = S_{\max}\cdot\beta,
+\end{align}
+donde $n$ es la rugosidad de Manning, $S_0$ la pendiente del conducto,
+$S(a) = A\,R^{2/3}$ el \emph{factor de sección} (ver Sección~\ref{sec:xsect}),
+$S_{\mathrm{full}} = S(A_{\mathrm{full}})$ y $S_{\max} = \max_a S(a)$.
+
+Estado dinámico por enlace: $Q$ (caudal actual, $+$ = nodo1$\to$nodo2), $d$
+(tirante medio), $V$ (volumen), $\mathrm{Fr}$ (número de Froude),
+$\mathrm{flow\_class}$ (DRY, UP\_DRY, DN\_DRY, SUBCRITICAL, SUPERCRITICAL,
+UP\_CRITICAL, DN\_CRITICAL) y valores del paso anterior.
+
+\subsection{Pendiente y longitud del conducto}
+
+Para un conducto que conecta los nodos $i$ y $j$ con elevaciones de extremo
+$z_1, z_2$, las cotas de batea de los extremos del conducto son $Z_1 =
+z_{\mathrm{inv},1} + z_1$, $Z_2 = z_{\mathrm{inv},2} + z_2$. La pendiente del
+conducto es
+\begin{equation}
+  S_0 = \frac{\Delta y}{\Delta x},
+  \qquad \Delta y = Z_1 - Z_2, \quad
+  \Delta x = \sqrt{L^{2} - \Delta y^{2}},
+\end{equation}
+con un desnivel mínimo impuesto de $\lvert \Delta y \rvert \ge 0.001\ \ft$
+(sobrescribible).
+
+\subsection{Alargamiento de conductos (estabilidad de Courant)}
+
+Si se entrega un \texttt{LENGTHENING\_STEP} positivo, los conductos cortos se
+alargan artificialmente para que se cumpla la condición de Courant para el paso
+de tiempo entregado por el usuario (\texttt{Routing.cpp:135--195}):
+\begin{equation}
+  t_{\mathrm{step}} = \min(\mathrm{routing\_step},\ \mathrm{lengthening\_step}),
+  \qquad
+  v_{\mathrm{full}} = \frac{\mathrm{PHI}}{n}\,\frac{S_{\mathrm{full}}}
+    {\sqrt{|S_0|}\,A_{\mathrm{full}}},
+\end{equation}
+\begin{equation}
+  \mathrm{ratio} = \frac{\left(\sqrt{g\,y_{\mathrm{full}}} + v_{\mathrm{full}}\right)
+    t_{\mathrm{step}}}{L},
+  \qquad
+  L' = \max(L,\ \mathrm{ratio}\cdot L),
+\end{equation}
+En canales abiertos, $y_{\mathrm{full}}$ se reemplaza por el tirante hidráulico
+$A_{\mathrm{full}}/W_{\max}$. Si $L' > L$, la pendiente y la rugosidad se
+ajustan para preservar igual pérdida de carga a cualquier caudal,
+\begin{equation}
+  S_0' = \frac{|S_0|}{L'/L}, \qquad
+  n' = \frac{n}{\sqrt{L'/L}},
+\end{equation}
+y $\beta$, $\mathrm{rough\_factor}$, $Q_{\mathrm{full}}$, $Q_{\max}$ se
+recalculan a partir de los valores ajustados. La longitud alargada $L'$
+(\texttt{mod\_length}) se usa en la ecuación de momentum; la longitud cruda $L$
+se usa para la contabilidad de volúmenes.
+
+% =============================================================================
+% 3. ORQUESTACIÓN DE LA SIMULACIÓN
+% =============================================================================
+\section{Orquestación de la simulación}
+
+\subsection{El ciclo de avance temporal global}
+
+El motor es una API de paso único. Cada llamada a \texttt{SWMMEngine::step()}
+ejecuta exactamente un paso de tránsito (o un paso solo de escorrentía cuando
+el tránsito está deshabilitado). La secuencia dentro de un paso es
+(\texttt{SWMMEngine.cpp:941}):
+\begin{enumerate}[nosep]
+  \item Calcular el paso de tránsito $dt_{\mathrm{next}}$. Si la opción de paso
+        variable está habilitada, el paso limitado por Courant es
+        \[
+          dt_{\mathrm{cfl}} = \texttt{router.getAdaptiveStep}(
+            \texttt{routing\_step},\ \texttt{variable\_step}),
+        \]
+        luego $dt_{\mathrm{next}} = \min(\texttt{routing\_step},\ dt_{\mathrm{cfl}})$
+        acotado a la duración restante de la simulación.
+  \item Guardar el estado hidráulico anterior (\texttt{ctx.save\_state()}).
+  \item Reiniciar los acumuladores de balance de masa del paso.
+  \item Ejecutar la cadena:
+        \begin{enumerate}[nosep]
+          \item \texttt{stepRunoff($dt$)} --- hidrología (siempre);
+          \item si el tránsito está habilitado: \texttt{step\-Routing($dt$)}
+                (hidráulica + calidad), \texttt{update\-Statistics($dt$)},
+                \texttt{update\-Routing\-Mass\-Balance($dt$)};
+          \item \texttt{compute\-Final\-Storage()}.
+        \end{enumerate}
+  \item Avanzar el reloj de la simulación y publicar las instantáneas de
+        salida.
+\end{enumerate}
+
+\subsection{Relojes de escorrentía y de tránsito}
+
+La hidrología y la hidráulica corren en relojes \emph{independientes}:
+\begin{itemize}[nosep]
+  \item El \textbf{reloj de escorrentía} avanza al paso húmedo (300\,s por
+        defecto) o al paso seco (3600\,s por defecto), acortado para alinear
+        con los límites de los pluviómetros. \texttt{stepRunoff} ejecuta
+        múltiples subpasos de escorrentía dentro de un paso de tránsito
+        ($\text{mientras } t_{\mathrm{runoff}} < t_{\mathrm{routing}} + dt$).
+  \item El \textbf{reloj de tránsito} avanza en $dt$ (el paso de tránsito) en
+        cada llamada a \texttt{step()}.
+\end{itemize}
+Después de los subpasos de escorrentía, el aporte lateral de tiempo húmedo
+entregado a los nodos se obtiene por \emph{interpolación lineal} entre las
+evaluaciones de escorrentía que lo enmarcan: con $f = (t_{\mathrm{elapsed}} -
+t_{\mathrm{runoff,old}}) / (t_{\mathrm{runoff,new}} - t_{\mathrm{runoff,old}})$,
+\begin{equation}
+  Q_{\mathrm{runoff}} = (1-f)\,Q_{\mathrm{runoff}}^{\mathrm{old}} +
+  f\,Q_{\mathrm{runoff}}^{\mathrm{new}},
+\end{equation}
+más los aportes por escurrimiento superficial recibido (runon) y por napa
+freática. Estos se distribuyen en \texttt{nodes.runoff\_inflow} /
+\texttt{nodes.gw\_inflow}.
+
+\subsection{Aportes laterales}
+
+En cada paso de tránsito, los aportes laterales se ensamblan a partir de los
+búferes de fuente descompuestos en el orden legado
+(\texttt{assembleLateralInflows}, \texttt{SWMMEngine.cpp:5691}):
+\begin{equation}
+  Q_{\mathrm{lat}} = Q_{\mathrm{ext}} + Q_{\mathrm{dwf}} +
+  Q_{\mathrm{wet}} + Q_{\mathrm{gw}} + Q_{\mathrm{rdii}} +
+  Q_{\mathrm{iface}} + Q_{\mathrm{user}} + Q_{\mathrm{coupling}},
+\end{equation}
+donde los términos son, respectivamente: series de tiempo externas/ingresos,
+caudal de tiempo seco (DWF), ingreso de tiempo húmedo (escorrentía), ingreso de
+napa freática, RDII (infiltración/entrada por lluvia), ingreso por archivo de
+interfaz, ingreso forzado por el usuario e ingreso por acoplamiento 1D--2D.
+
+\subsection{El paso de tránsito}
+
+\texttt{Router::step(ctx, dt, evap\_rate, non\_conduit\_fn)}
+(\texttt{Routing.cpp:308}) ejecuta, en orden:
+\begin{enumerate}[nosep]
+  \item \textbf{initNodeFlows} --- inicializa el ingreso de cada nodo desde el
+        aporte lateral y la salida desde las pérdidas (evaporación del estanque
+        y exfiltración de Green--Ampt, acotadas conjuntamente por el volumen
+        almacenado); fija el rebalse a partir del exceso de volumen almacenado.
+  \item \textbf{computeConduitLosses} --- tasas de pérdida de los conductos por
+        evaporación (secciones abiertas) y filtración. Para DYNWAVE esto se
+        recalcula en su lugar en cada iteración de Picard dentro del solver.
+  \item \textbf{setAllOutfallDepths} --- fija los niveles de agua de borde de
+        los emisarios (Sección~\ref{sec:outfall}).
+  \item \textbf{Despacho del solver} --- KINWAVE, DYNWAVE, FV o STEADY.
+  \item \textbf{computeDividerFlows} --- aplica la lógica de divisores de
+        flujo.
+  \item \textbf{updateLinkStates} --- recalcula las cargas de los nodos
+        $H = z_{\mathrm{inv}} + d$.
+\end{enumerate}
+
+Dentro del solver de onda dinámica, la función de retorno de no-conducto
+calcula los caudales de bombas/orificios/vertederos/descargas dentro de la
+iteración de Picard, en orden de índice de enlace, con distribución inmediata
+en los acumuladores de ingreso/salida de los nodos.
+
+% =============================================================================
+% 4. GEOMETRÍA DE LA SECCIÓN TRANSVERSAL
+% =============================================================================
+\section{Geometría de la sección transversal}
+\label{sec:xsect}
+
+\subsection{Las cuatro relaciones geométricas}
+
+Para un conducto, el área hidráulica $A$, el espejo de agua (ancho
+superficial) $W$, el perímetro mojado $P_w$ y el radio hidráulico $R = A/P_w$
+son funciones del tirante $y$. El motor precalcula, para cada forma, las cuatro
+relaciones fundamentales (\texttt{XSectKernels.hpp},
+\texttt{xsect\_tables.hpp}):
+\begin{align}
+  A &= A(y), \qquad W = W(y), \qquad R = R(y), \\
+  S &= S(A) = A\,R^{2/3} \quad \text{(factor de sección, ``forma de
+  capacidad de conducción''),}
+\end{align}
+junto con sus inversas $y = y(A)$, $A = A(S)$ y la derivada $dS/dA$. Existen
+expresiones cerradas para las formas estándar (circular, circular llena,
+rectangular, trapezoidal, triangular, parabólica, potencia, huevo, herradura,
+gótica, canasta, etc.); las formas irregulares y personalizadas usan tablas
+(transectas) con interpolación lineal, y la inversa $A(S)$ se resuelve por
+iteración de Newton o inversión de tabla.
+
+\subsection{Manning y el factor de sección}
+
+La ecuación de Manning en forma US es
+\begin{equation}
+  Q = \frac{1.486}{n}\,A\,R^{2/3}\,\sqrt{S_f}
+  = \beta\,\Psi(A)\,\sqrt{S_f/S_0},
+  \qquad \Psi(A) = A\,R^{2/3},
+\end{equation}
+donde $S_f$ es la pendiente de fricción, $\beta = (1.486/n)\sqrt{S_0}$ y
+$\Psi(A)$ es el factor de sección. Para muchas formas cerradas el factor de
+sección presenta un máximo bajo la profundidad total, de modo que el caudal
+máximo ocurre a un área menor que la de sección llena.
+
+% =============================================================================
+% 5. TRÁNSITO DE ESCURRIMIENTO PERMANENTE
+% =============================================================================
+\section{Tránsito de escurrimiento permanente}
+
+Bajo escurrimiento permanente (\texttt{executeSteadyFlow},
+\texttt{Routing.cpp:637}), los enlaces se procesan en orden topológicamente
+ordenado. Para cada conducto:
+\begin{enumerate}[nosep]
+  \item Se reúne el ingreso del nodo aguas arriba $Q_{\mathrm{in}}$ (limitado
+        por el caudal máximo de salida).
+  \item El caudal por barril es $q = Q_{\mathrm{in}}/\mathrm{barrels}$ menos la
+        tasa de pérdida del conducto, acotado a cero.
+  \item Si $q \ge Q_{\mathrm{full}}$: $q = Q_{\mathrm{full}}$ y
+        $A = A_{\mathrm{full}}$; en caso contrario, el área de tirante normal
+        se obtiene del factor de sección inverso,
+        \begin{equation}
+          s = \frac{q}{\beta}, \qquad A = A(s),
+        \end{equation}
+        y el tirante de $y = y(A)$.
+  \item El escurrimiento es uniforme a lo largo del conducto ($Q_{\mathrm{out}}
+        = q\cdot\mathrm{barrels}$, $A_1 = A_2 = A$); el volumen del enlace es
+        $V = A\,L\,\mathrm{barrels}$.
+\end{enumerate}
+Los enlaces no-conducto simplemente dejan pasar el ingreso del nodo aguas
+arriba. El escurrimiento permanente converge en una sola pasada.
+
+% =============================================================================
+% 6. ONDA CINEMÁTICA
+% =============================================================================
+\section{Tránsito por onda cinemática}
+
+\subsection{Ecuaciones de gobierno}
+
+El modelo de onda cinemática combina la ecuación de continuidad con la curva
+de gasto de escurrimiento uniforme, eliminando los términos de inercia,
+gradiente de presión y (parcialmente) convectivos de la ecuación de momentum de
+St.\ Venant. No puede representar remanso, inversión del flujo ni
+presurización, y requiere una red dirigida acíclica. Partiendo de las
+ecuaciones de St.\ Venant y fijando la pendiente de fondo igual a la pendiente
+de fricción, $S_0 = S_f$, el par de gobierno es:
+\begin{equation}
+  \frac{\partial A}{\partial t} + \frac{\partial Q}{\partial x} = 0
+  \qquad\text{(continuidad),}
+\end{equation}
+\begin{equation}
+  Q = \beta\,\Psi(A), \qquad \Psi(A) = A\,R^{2/3},
+  \qquad \beta = \frac{1.486}{n}\sqrt{S_0}
+  \qquad\text{(curva de gasto).}
+\end{equation}
+
+\subsection{Esquema de diferencias finitas}
+
+Un esquema de diferencias finitas implícito de Wendroff ponderado discretiza la
+ecuación de continuidad entre los extremos aguas arriba (1) y aguas abajo (2):
+\begin{equation}
+  \frac{(1-\theta)(A_1^{t+1}-A_1^{t}) +
+        \theta\,(A_2^{t+1}-A_2^{t})}{\Delta t}
+  \;+\;
+  \frac{(1-\varphi)(Q_2^{t}-Q_1^{t}) +
+        \varphi\,(Q_2^{t+1}-Q_1^{t+1})}{L}
+  = 0,
+\end{equation}
+con $\theta = \varphi = 0.6$. Como cada cámara de unión tiene a lo más un
+conducto de salida, procesar los enlaces en orden topológico deja solo a
+$A_2^{t+1}$ y $Q_2^{t+1}$ como incógnitas; $Q_1^{t+1}$ se conoce desde el
+ingreso del nodo aguas arriba y $A_1^{t+1}$ desde el factor de sección inverso
+en $Q_1^{t+1}/\beta$. Sustituyendo la curva de gasto se obtiene la única
+ecuación no lineal
+\begin{equation}
+  f\!\left(A_2^{t+1}\right) = \beta\,\Psi\!\left(A_2^{t+1}\right) +
+  C_1\,A_2^{t+1} + C_2 = 0,
+\end{equation}
+con (en la implementación normalizada del motor,
+\texttt{KinematicWave.cpp:solveConduit})
+\begin{align}
+  C_1 &= \frac{L\,\theta}{\Delta t\,\varphi},\\
+  C_2 &= \frac{L}{\Delta t\,\varphi}
+        \Big[(1-\theta)(A_1^{t+1} - A_1^t) - \theta\,A_2^t\Big]
+        + \frac{1-\varphi}{\varphi}(Q_2^t - Q_1^t) - Q_1^{t+1}.
+\end{align}
+
+\subsection{Búsqueda de la raíz}
+
+La ecuación $f(A_2^{t+1}) = 0$ se resuelve con una iteración de Newton--Raphson
+enmarcada (máximo 40 iteraciones). Como el factor de sección puede tener dos
+raíces (máximo en $A_{\max}$ bajo sección llena), el marco se preselecciona:
+el marco inicial es $[A_{\max}, A_{\mathrm{full}}]$; si ambos límites producen
+el mismo signo se reinicia a $[0, A_{\max}]$. Si ambos límites dan $f$ negativo
+el conducto está a sección llena ($Q = Q_{\mathrm{full}}$); si ambos dan $f$
+positivo el caudal es cero.
+
+\subsection{Estanques bajo onda cinemática}
+
+Los estanques de almacenamiento pueden tener cualquier número de enlaces de
+salida. Su balance de masa se integra con la regla trapezoidal,
+\begin{equation}
+  V^{t+1} = V^{t} + \tfrac{1}{2}\left(Q_{\mathrm{in}}^{t} + Q_{\mathrm{in}}^{t+1}
+  - Q_{\mathrm{out}}^{t} - Q_{\mathrm{out}}^{t+1}\right)\Delta t,
+\end{equation}
+resuelto por aproximaciones sucesivas ($\omega = 0.55$, tolerancia de
+convergencia 0.005 ft) porque tanto $Q_{\mathrm{out}}$ como $V$ dependen de la
+carga. La carga del estanque se actualiza una vez más después de que se
+conocen todos los caudales de los enlaces (\texttt{Routing.cpp:345--389}).
+
+% =============================================================================
+% 7. ONDA DINÁMICA: ECUACIONES DE GOBIERNO
+% =============================================================================
+\section{Onda dinámica: ecuaciones de gobierno}
+
+\subsection{Las ecuaciones de St.\ Venant}
+
+El modelo de onda dinámica resuelve las ecuaciones unidimensionales completas
+de de~Saint-Venant (continuidad y momentum):
+\begin{equation}
+  \underbrace{\frac{\partial A}{\partial t}}_{\text{almacenamiento}} +
+  \underbrace{\frac{\partial Q}{\partial x}}_{\text{flujo convectivo}}
+  = 0,
+  \label{eq:sv-cont}
+\end{equation}
+\begin{equation}
+  \underbrace{\frac{\partial Q}{\partial t}}_{\text{aceleración local}} +
+  \underbrace{\frac{\partial}{\partial x}\!\left(\frac{Q^{2}}{A}\right)}_{\text{aceleración convectiva}}
+  + \underbrace{gA\,\frac{\partial H}{\partial x}}_{\text{gradiente de presión}}
+  + \underbrace{gA\,S_f}_{\text{fricción}}
+  = 0,
+  \label{eq:sv-mom}
+\end{equation}
+donde $A$ es el área hidráulica, $Q$ el caudal, $H = Z + y$ la carga hidráulica
+($Z$ cota de batea del conducto, $y$ tirante), $g$ la gravedad y $S_f$ la
+pendiente de fricción. La pendiente de fricción sigue a Manning:
+\begin{equation}
+  S_f = \left(\frac{n}{1.486}\right)^{2}
+  \frac{Q\,\lvert U \rvert}{A\,R^{4/3}},
+  \qquad U = \frac{Q}{A}.
+\end{equation}
+
+\subsection{Ecuación de momentum en diferencias finitas}
+
+El motor usa una forma implícita (Euler hacia atrás) en diferencias finitas.
+Con diferencias espaciales sobre la longitud del conducto $L$ y diferencias
+temporales sobre $\Delta t$, la actualización de caudal en cada conducto es
+\begin{equation}
+  Q^{t+\Delta t}
+  = \frac{Q^{t} + \Delta Q_{\text{inercia}} + \Delta Q_{\text{presión}}
+        + \Delta Q_{\text{pérdida}}}
+         {1 + \Delta Q_{\text{fricción}}},
+  \label{eq:mom-update}
+\end{equation}
+donde todas las magnitudes geométricas se evalúan en el nuevo tiempo
+$t + \Delta t$. Los cuatro términos son:
+\begin{align}
+  \Delta Q_{\text{inercia}}
+    &= 2\bar{U}\left(\bar{A}^{t+\Delta t} - \bar{A}^{t}\right)
+       + \bar{U}^{2}\,\frac{A_2 - A_1}{L}\,\Delta t, \label{eq:mom-inertia}\\
+  \Delta Q_{\text{presión}}
+    &= -g\bar{A}\,\frac{H_2 - H_1}{L}\,\Delta t, \label{eq:mom-pressure}\\
+  \Delta Q_{\text{fricción}}
+    &= g\left(\frac{n}{1.486}\right)^{2}
+       \frac{\lvert \bar{U} \rvert}{\bar{R}^{4/3}}\,\Delta t, \label{eq:mom-friction}\\
+  \Delta Q_{\text{pérdida}}
+    &= \text{pérdidas locales (menores) y términos de evaporación/filtración}.
+\end{align}
+
+\subsection{Continuidad en los nodos}
+
+La conservación de volumen en cada ensamble de nodo (el nodo más la mitad de
+cada enlace conectado) requiere
+\begin{equation}
+  \frac{\partial V}{\partial t}
+  = A_{S}\,\frac{\partial H}{\partial t} = \sum Q,
+\end{equation}
+con $A_S = A_{SN} + \sum A_{SL}$ el área superficial del ensamble (el área
+superficial propia del nodo más las áreas superficiales de medio enlace que
+aporta cada conducto). En forma de diferencias finitas:
+\begin{equation}
+  H^{t+\Delta t} = H^{t} +
+  \frac{\tfrac{\Delta t}{2}\left(\sum Q^{t} + \sum Q^{t+\Delta t}\right)}
+       {\left(A_{SN} + \sum A_{SL}\right)^{t+\Delta t}},
+\end{equation}
+es decir, una actualización trapezoidal de la carga usando el \emph{promedio}
+de los caudales netos en $t$ y $t+\Delta t$.
+
+% =============================================================================
+% 8. ALGORITMO DE SOLUCIÓN DE LA ONDA DINÁMICA
+% =============================================================================
+\section{Algoritmo de solución de la onda dinámica}
+
+\subsection{Resumen: la iteración de Picard (aproximaciones sucesivas)}
+
+Las ecuaciones~\eqref{eq:mom-update} y la continuidad de nodo se resuelven
+implícitamente sobre cada paso de tiempo mediante \emph{iteración funcional}
+(iteración de Picard / aproximaciones sucesivas). Los pasos, que coinciden con
+el \texttt{DWSolver::execute} del motor (\texttt{DynamicWave.cpp:1026}), son:
+
+\begin{enumerate}[nosep]
+  \item \textbf{initNodeStates} --- reinicia los acumuladores por nodo: ingreso
+        = 0, salida = pérdidas $+$ aporte lateral negativo, ingreso $+$ aporte
+        lateral positivo; área superficial desde la geometría de
+        almacenamiento/encharcamiento; convergido = 0, $\sum dQ/dH = 0$.
+  \item \textbf{computeLinkGeometry} --- calcula en lote los tirantes de
+        extremo $y_1, y_2$, el tirante medio $\bar y$, los espejos de agua, las
+        áreas y los radios hidráulicos de todos los conductos desde las cargas
+        actuales de los nodos; clasifica el régimen de escurrimiento de cada
+        conducto; aplica las correcciones de ranura de Preissmann donde hay
+        escurrimiento en carga.
+  \item \textbf{Núcleos de momentum} --- resuelve la ecuación de momentum
+        implícita para cada conducto (Sección~\ref{sec:momentum-kernel}),
+        registra los nuevos caudales y los distribuye en los acumuladores de
+        ingreso/salida de los nodos, acumulando $\sum dQ/dH$ y las
+        contribuciones de área superficial.
+  \item \textbf{Estructuras no-conducto} --- calcula los caudales de
+        bombas/\allowbreak orificios/\allowbreak vertederos/\allowbreak
+        descargas (Sección~\ref{sec:structures}).
+  \item \textbf{Niveles de emisario} --- vuelve a fijar los niveles de borde de
+        los emisarios desde los caudales actuales.
+  \item \textbf{Actualización de tirante en los nodos} --- resuelve la ecuación
+        de continuidad para la carga de cada nodo
+        (Sección~\ref{sec:node-continuity}); cuenta los nodos no convergidos.
+  \item Si algún nodo cambió más que la tolerancia de carga y no se ha alcanzado
+        el límite de intentos, marca como \emph{omitidos (bypassed)} los
+        enlaces cuyos dos nodos extremos convergieron (sus caudales se
+        mantienen), e itera.
+\end{enumerate}
+
+Subrelajación: después de la primera iteración, todo caudal y carga
+actualizados se relajan con $\omega = 0.5$,
+\begin{equation}
+  x^{k+1} = (1-\omega)\,x^{k} + \omega\,x^{k+1}_{\mathrm{crudo}},
+  \qquad \omega = 0.5,
+\end{equation}
+y un cambio de signo en el caudal se fuerza a pasar por un valor pequeño no
+nulo ($q = \pm 0.001$).
+
+\subsection{Convergencia}
+
+Un nodo está convergido cuando tanto el residual de Picard crudo como el
+movimiento aceptado (posiblemente mezclado por Anderson) están dentro de la
+tolerancia de carga $\varepsilon_H = 0.005\ \ft$ (por defecto). El paso de
+tránsito converge cuando ningún nodo no-emisario queda sin converger. El número
+máximo de intentos es 8 por defecto (\texttt{MAX\_TRIALS}); un paso que
+converge en su último intento permitido aún se cuenta como convergido.
+
+\subsection{Clasificación del escurrimiento}
+
+Durante el cálculo de la geometría, cada conducto se clasifica en una de siete
+clases de escurrimiento (DRY, UP\_DRY, DN\_DRY, SUBCRITICAL, SUPERCRITICAL,
+UP\_CRITICAL, DN\_CRITICAL) en base a los tirantes de extremo y a la carga
+relativa a las cotas de batea de los extremos, usando el tirante normal $y_n$
+(desde el factor de sección inverso en $Q/\beta$) y el tirante crítico $y_c$
+(Sección~\ref{sec:outfall}). La clase determina:
+\begin{itemize}[nosep]
+  \item los ajustes de área superficial para extremos secos/críticos
+        (Tabla~\ref{tab:surfadj}),
+  \item el tirante usado en el extremo crítico (reemplazado por
+        $\min(y_n, y_c)$),
+  \item el límite de caudal normal basado en la fricción.
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lll}
+\toprule
+\textbf{Condición} & \textbf{Criterio} & \textbf{Ajuste} \\
+\midrule
+Seco aguas arriba & $y_1 = 0$; $Z_1 > E_1$ & $A_{SL1} = 0$ si $H_2 \le Z_1$, si no ajuste crítico \\
+Seco aguas abajo & $y_2 = 0$; $Z_2 > E_2$ & $A_{SL2} = 0$ si $H_1 \le Z_2$, si no ajuste crítico \\
+Crítico aguas arriba & $Q < 0$; $Z_1 > E_1$; $H_1 - Z_1 < y_*$ & $y_1 = y_*$; $A_{SL1} = 0$ \\
+Crítico aguas abajo & $Q > 0$; $Z_2 > E_2$; $H_2 - Z_2 < y_*$ & $y_2 = y_*$; $A_{SL2} = 0$ \\
+\bottomrule
+\end{tabular}
+\caption{Ajustes de área superficial y de tirante para extremos de conducto
+secos/críticos ($y_* = \min(y_n, y_c)$; $E$ = batea del nodo, $Z$ = batea del
+conducto).}
+\label{tab:surfadj}
+\end{table}
+
+\subsection{Contribuciones de área superficial}
+
+Para un conducto subcrítico, las áreas de superficie libre aportadas a sus dos
+nodos extremos son
+\begin{equation}
+  A_{SL1} = \frac{W_1 + \bar{W}}{2}\,\frac{L}{2},
+  \qquad
+  A_{SL2} = \frac{\bar{W} + W_2}{2}\,\frac{L}{2}\,
+  \mathrm{fasnh},
+\end{equation}
+donde $W_1, W_2, \bar W$ son los espejos de agua en $y_1, y_2, \bar y$, y
+$\mathrm{fasnh}$ es un factor entre el tirante normal y el crítico para un
+extremo aguas abajo casi crítico. Para extremos secos/críticos el área
+superficial de medio enlace se ajusta según la Tabla~\ref{tab:surfadj}; un
+conducto completamente seco aporta $A_{SL1} = A_{SL2} =
+\mathrm{FUDGE}\cdot L/2$. Un conducto cerrado cuyo tirante medio supera el
+corte de clave ($y/y_{\mathrm{full}} \ge 0.96$ bajo EXTRAN) usa un ancho
+acotado en la clave en el cálculo del área superficial, entregando la pequeña
+contribución no nula que mantiene acotado el denominador de Picard del nodo.
+
+% =============================================================================
+% 9. EL NÚCLEO DE MOMENTUM DEL ENLACE
+% =============================================================================
+\section{El núcleo de momentum del enlace}
+\label{sec:momentum-kernel}
+
+Cada conducto se resuelve con uno de los núcleos de momentum de
+\texttt{DynamicWave.cpp} (\texttt{process\-Manning\-Link},
+\texttt{process\-Dry\-Link}, \texttt{process\-Force\-Main\-Link}), despachado
+por categoría de momentum. Esta sección transcribe el núcleo de Manning
+(superficie libre y conducto cerrado), que es el principal.
+
+\subsection{Velocidad, número de Froude y amortiguación inercial}
+
+Con $\bar A$ el área media y $q_{\mathrm{last}}$ el caudal por barril de la
+iteración anterior,
+\begin{equation}
+  v = \frac{q_{\mathrm{last}}}{\bar A}, \qquad
+  \lvert v \rvert \le V_{\max} = 50\ \ft/\st
+  \quad\text{(tope de velocidad).}
+\end{equation}
+Para un conducto sin escurrimiento en carga, el número de Froude usa el tirante
+hidráulico $\bar A/\bar W$:
+\begin{equation}
+  \mathrm{Fr} = \frac{\lvert v \rvert}{\sqrt{g\,\bar A / \bar W}}
+  \quad\text{(0 para un conducto cerrado a menos de FUDGE de sección llena).}
+\end{equation}
+El factor de amortiguación inercial sigue el enfoque de \emph{inercia parcial
+local} (mezcla lineal sobre $0.5 \le \mathrm{Fr} \le 1$):
+\begin{equation}
+  \sigma =
+  \begin{cases}
+    1 & \mathrm{Fr} \le 0.5,\\
+    2\,(1 - \mathrm{Fr}) & 0.5 < \mathrm{Fr} < 1,\\
+    0 & \mathrm{Fr} \ge 1,
+  \end{cases}
+  \qquad\text{es decir}\quad
+  \sigma = \mathrm{clamp}\!\big(2(1-\mathrm{Fr}),\ 0,\ 1\big).
+\end{equation}
+La opción \texttt{INERTIAL\_DAMPING} sobrescribe esto: NONE fuerza $\sigma = 1$,
+FULL fuerza $\sigma = 0$ (sin términos inerciales en absoluto); un conducto
+cerrado con escurrimiento en carga siempre tiene $\sigma = 0$.
+
+\subsection{Ponderación aguas arriba}
+
+Los términos de presión y fricción usan área y radio hidráulico promedio
+\emph{ponderados aguas arriba}, reflejando que el escurrimiento supercrítico
+solo se ve influido por las condiciones aguas arriba. Con el factor de
+ponderación
+\begin{equation}
+  \rho = \begin{cases} \sigma & q_{\mathrm{last}} > 0 \text{ y } H_1 \ge H_2
+    \text{ (y no a sección llena),}\\ 1 & \text{en caso contrario,}\end{cases}
+\end{equation}
+\begin{equation}
+  \bar A' = A_1 + \rho\left(\bar A - A_1\right),
+  \qquad
+  \bar R' = R_1 + \rho\left(\bar R - R_1\right).
+\end{equation}
+
+\subsection{Los seis términos de momentum}
+
+El motor evalúa la ecuación de momentum como las seis contribuciones
+$dq_1 \ldots dq_6$ (por barril):
+\begin{align}
+  dq_1 &= \Delta t \cdot \mathrm{rough\_factor} \cdot
+        \frac{\lvert v \rvert}{\bar R'^{\,4/3}}, \label{eq:dq1}\\
+  dq_2 &= \Delta t\, g\, \bar A'\, \frac{H_2 - H_1}{L}, \label{eq:dq2}\\
+  dq_3 &= 2\,v\,\sigma\left(\bar A^{t+\Delta t} - \bar A^{t}\right), \label{eq:dq3}\\
+  dq_4 &= \Delta t\, v^{2}\, \sigma\,\frac{A_2 - A_1}{L}, \label{eq:dq4}\\
+  dq_5 &= \frac{\Delta t}{2L}
+          \left[ K_{\mathrm{in}}\frac{\lvert q \rvert}{A_1} +
+                K_{\mathrm{out}}\frac{\lvert q \rvert}{A_2} +
+                K_{\mathrm{avg}}\frac{\lvert q \rvert}{\bar A} \right], \label{eq:dq5}\\
+  dq_6 &= \frac{2.5\,\Delta t\, v}{L}\left(Q_{\mathrm{evap}} +
+          Q_{\mathrm{filt}}\right), \label{eq:dq6}
+\end{align}
+donde $\mathrm{rough\_factor} = g(n/1.486)^2$, los coeficientes de pérdida
+local $K_{\mathrm{in}}, K_{\mathrm{out}}, K_{\mathrm{avg}}$ son los
+coeficientes de pérdida menor de entrada, salida y promedio (ponderado por
+pérdidas) del usuario, y $Q_{\mathrm{evap}} + Q_{\mathrm{filt}}$ es la tasa de
+pérdida del conducto.
+
+La actualización de caudal (por barril) y su gradiente de carga son
+\begin{equation}
+  q = \frac{q_{\mathrm{old}} - dq_2 + dq_3 + dq_4 + dq_6}
+           {1 + dq_1 + dq_5},
+  \label{eq:q-update}
+\end{equation}
+\begin{equation}
+  \frac{dQ}{dH} = \frac{1}{1 + dq_1 + dq_5}\,
+  \frac{g\,\Delta t\, \bar A'}{L}\,\mathrm{barrels}.
+  \label{eq:dqdh}
+\end{equation}
+El gradiente $dQ/dH$ alimenta el solver de nodos en carga
+(Sección~\ref{sec:node-cont}).
+
+\subsection{Limitación del caudal y postproceso}
+
+Después de la actualización de momentum cruda, \texttt{applyFlowLimits}
+(\texttt{DynamicWave.cpp:2211}) aplica, en orden:
+\begin{enumerate}[nosep]
+  \item \textbf{Control de entrada de alcantarilla} (FHWA HEC-5): si hay un
+        código de alcantarilla y el conducto no está a sección llena,
+        $q \leftarrow \min(q, q_{\mathrm{inlet}})$.
+  \item \textbf{Límite de caudal normal}: para un conducto abierto/de
+        superficie libre no lleno, si se cumple la condición de pendiente
+        ($y_1 < y_2$, es decir, la pendiente de la superficie del agua es menor
+        que la pendiente de fondo) o la condición de Froude aguas arriba
+        ($\mathrm{Fr}_1 \ge 1$) (según la opción \texttt{NORMAL\_FLOW\_LIMITED}),
+        entonces
+        \begin{equation}
+          q \leftarrow \min\!\left(q,\ \beta\,A_1\,R_1^{2/3}\right),
+        \end{equation}
+        el caudal normal de Manning al tirante aguas arriba.
+  \item \textbf{Subrelajación} (iteraciones $> 0$):
+        $q = (1-\omega)q_{\mathrm{last}} + \omega\,q$ con acotación del cambio
+        de signo a $\pm 0.001$.
+  \item \textbf{Límite de caudal del usuario}: $\lvert q \rvert \le
+        q_{\mathrm{limit}}$.
+  \item \textbf{Compuertas de retención}: el flujo inverso a través de una
+        compuerta de retención se anula.
+  \item \textbf{Verificación de nodo seco}: el caudal se fuerza a
+        $\pm \mathrm{FUDGE}$ si el nodo aguas arriba (aguas abajo) está seco.
+\end{enumerate}
+Finalmente,
+\begin{equation}
+  Q^{t+\Delta t} = q\,\mathrm{barrels}, \qquad
+  d_{\mathrm{link}} = \min(\bar y, y_{\mathrm{full}}), \qquad
+  V_{\mathrm{link}} = \frac{A_1 + A_2}{2}\,L_{\mathrm{cruda}}\,\mathrm{barrels}.
+\end{equation}
+
+\subsection{Impulsiones (force mains)}
+
+Las impulsiones (sección \texttt{FORCE\_MAIN}, siempre a sección llena) usan un
+núcleo separado (\texttt{process\-Force\-Main\-Link}) con $\sigma = 0$ y
+fricción según la ecuación de Hazen--Williams o de Darcy--Weisbach,
+\begin{equation}
+  \begin{aligned}
+    dq_1 &= \Delta t\, g\, \frac{S_f}{\lvert v \rvert},\\
+    q &= \frac{q_{\mathrm{old}} - dq_2 + dq_6}{1 + dq_1 + dq_5}.
+  \end{aligned}
+\end{equation}
+
+% =============================================================================
+% 10. CONTINUIDAD EN LOS NODOS, ANEGAMIENTO Y CARGA
+% =============================================================================
+\section{Continuidad en los nodos, anegamiento y escurrimiento en carga}
+\label{sec:node-cont}
+
+\subsection{Caudal neto y cambio de volumen}
+
+En cada nodo, por iteración de Picard (\texttt{DynamicWave.cpp}, función
+\texttt{setNodeDepth}), el caudal neto y el cambio de volumen trapezoidal son:
+\begin{equation}
+  \Delta Q = Q_{\mathrm{in}} - Q_{\mathrm{out}}, \qquad
+  \Delta V = \tfrac{1}{2}\left(\Delta Q_{\mathrm{net}}^{t-1} + \Delta Q\right)
+  \Delta t,
+\end{equation}
+donde $\Delta Q_{\mathrm{net}}^{t-1}$ es el caudal neto del paso anterior
+(promediado trapezoidal / Crank--Nicolson).
+
+\subsection{Actualización de superficie libre (continuidad EXPLICITA)}
+
+Para un nodo sin escurrimiento en carga, la actualización de tirante es
+\begin{equation}
+  \Delta y = \frac{\Delta V}{A_S}, \qquad
+  y^{t+\Delta t} = y^{t} + \Delta y,
+\end{equation}
+donde el área superficial del ensamble está pisada por el área superficial
+mínima,
+\begin{equation}
+  A_S = \max\left(A_{SN} + \sum A_{SL},\ A_{\min}\right),
+  \qquad A_{\min} = 12.566\ \sfft,
+\end{equation}
+el valor por defecto (sobrescribible mediante la opción
+\texttt{MIN\_SURFAREA}). El área mínima es un dispositivo puramente
+computacional; no agrega volumen.
+
+\subsection{Actualización en carga (EXTRAN)}
+
+Un nodo está en carga cuando todos los conductos conectados están a sección
+llena o su carga supera la clave de su conducto más alto ($y > y_{\mathrm{crown}}$),
+y no es un nodo estanque ni emisario y no está encharcado. Bajo EXTRAN la
+ecuación de continuidad se convierte en $\sum Q = 0$, impuesta mediante una
+forma de perturbación (Newton/Hardy Cross). La actualización de tirante en
+carga es
+\begin{equation}
+  \Delta y = \frac{\alpha\,\Delta Q}{\mathrm{denom}}, \qquad
+  y^{t+\Delta t} = y^{t} + \Delta y,
+\end{equation}
+con la corrección de nodo terminal $\alpha = 0.6$ para nodos terminales aguas
+arriba (solo enlaces de salida, $\mathrm{deg} < 0$) y 1 en caso contrario, y una
+mezcla de proximidad a la clave para una transición suave de entrada/salida de
+la condición en carga:
+\begin{equation}
+  \mathrm{denom} = \sum \frac{dQ}{dH} +
+  \left(\frac{A_S^{\mathrm{old}}}{\Delta t} - \sum \frac{dQ}{dH}\right)
+  e^{-15\,f},
+  \qquad f = \frac{y^{t} - y_{\mathrm{crown}}}{y_{\mathrm{crown}}},
+\end{equation}
+aplicada mientras $y^{t} < 1.25\,y_{\mathrm{crown}}$. La carga se mantiene en o
+sobre la clave ($y \ge y_{\mathrm{crown}} - \mathrm{FUDGE}$). El $\sum dQ/dH$
+acumulado en cada nodo es la suma de los gradientes por enlace
+\eqref{eq:dqdh}; nótese que el motor acumula $\sum dQ/dH$ como una magnitud
+positiva con $dQ_{\mathrm{net}}/dH = -\sum dQ/dH$ (una subida de carga aumenta
+la salida neta).
+
+\subsection{Continuidad de nodo semi-implícita}
+
+La opción \texttt{NODE\_CONTINUITY} (por defecto EXPLICIT) puede seleccionar la
+formulación unificada \emph{semi-implícita}, una única expresión suave válida
+tanto para el estado de superficie libre como para el estado en carga.
+Linealizando el caudal neto alrededor de la estimación actual de carga con los
+gradientes de caudal, $\sum Q^{t+\Delta t} \approx \sum Q + \sum(dQ/dH)\,\Delta H$,
+y sustituyendo en la actualización trapezoidal de carga se obtiene
+\begin{equation}
+  \Delta y = \frac{\Delta V}
+    {A_S + \tfrac{\Delta t}{2}\sum \frac{dQ}{dH}}, \qquad
+  y^{t+\Delta t} = y^{t} + \Delta y,
+\end{equation}
+con el denominador pisado por $A_{\min}$. El término de gradiente de caudal
+amortigua la actualización (una subida de carga que aumenta la salida neta
+reduce el llenado neto), y la expresión es $C^1$-suave a través de la clave,
+que es lo que la hace compatible con la aceleración de Anderson.
+
+\subsection{Anegamiento y encharcamiento}
+
+El tirante máximo sin anegar es $y_{\max} = d_{\mathrm{full}} + d_{\mathrm{sur}}$
+(para nodos sin encharcamiento; los nodos encharcados nunca se acotan). Si el
+tirante candidato supera $y_{\max}$:
+\begin{itemize}[nosep]
+  \item \textbf{Sin encharcamiento}: la carga se acota a $y_{\max}$ y el exceso
+        se pierde como rebalse,
+        \begin{equation}
+          Q_{\mathrm{ovfl}} = \frac{\Delta V}{\Delta t}, \qquad
+          V = V_{\mathrm{full}};
+        \end{equation}
+  \item \textbf{Con encharcamiento} (con \texttt{ALLOW\_PONDING} y un área de
+        encharcamiento positiva): el nodo encharcado actúa como un estanque de
+        área constante sobre el brocal,
+        \begin{equation}
+          V = \max\left(V^{\mathrm{old}} + \Delta V,\ V_{\mathrm{full}}\right), \qquad
+          Q_{\mathrm{ovfl}} = \frac{V - \max(V^{\mathrm{old}},\ V_{\mathrm{full}})}
+            {\Delta t},
+        \end{equation}
+        y la carga puede subir libremente sobre el brocal.
+\end{itemize}
+Un nodo encharcado no puede bajar mucho bajo la profundidad total una vez
+encharcado ($y \ge d_{\mathrm{full}} - \mathrm{FUDGE}$).
+
+% =============================================================================
+% 11. MÉTODOS DE ESCURRIMIENTO EN CARGA
+% =============================================================================
+\section{Métodos de escurrimiento en carga}
+
+La opción \texttt{SURCHARGE\_METHOD} selecciona cómo se trata el escurrimiento
+presurizado en los conductos cerrados. Los tres métodos actualizan el área
+hidráulica de un conducto en carga (tirante $> y_{\mathrm{full}}$) agregando
+una ranura angosta de ancho $w_s$:
+\begin{equation}
+  A = A_{\mathrm{full}} + (y - y_{\mathrm{full}})\,w_s,
+\end{equation}
+mientras que el radio hidráulico se fija en su valor de sección llena
+$R_{\mathrm{full}}$ (la ranura aporta almacenamiento pero no fricción).
+
+\subsection{EXTRAN (por defecto)}
+
+El método de perturbación clásico de la Sección~\ref{sec:node-cont}:
+actualizaciones de nodo en carga basadas en $dQ/dH$ con un corte de clave en
+$y/y_{\mathrm{full}} = 0.96$ usado para el ancho empleado en el cálculo del
+área superficial.
+
+\subsection{Ranura de Preissmann estática}
+
+El conducto lleva una ranura ficticia angosta sobre la clave para que la
+formulación de superficie libre siga siendo válida durante toda la
+presurización. El ancho de ranura sigue la fórmula de Sj{\"o}berg (1982),
+\begin{equation}
+  \frac{w_s}{W_{\max}} = 0.5423\,
+  \exp\!\left(-\left(\frac{y}{y_{\mathrm{full}}}\right)^{2.4}\right),
+\end{equation}
+aplicada para $0.985257 \le y/y_{\mathrm{full}} \le 1.78$, fijada en
+$w_s = 0.01\,W_{\max}$ sobre ese rango y cero bajo el corte.
+
+\subsection{Ranura de Preissmann dinámica}
+
+Una extensión de OpenSWMM (Sharior, Hodges \& Vasconcelos 2023) en la que el
+área de la ranura evoluciona en el tiempo como un elemento de almacenamiento
+transitorio. El ancho superior de la ranura está gobernado por una celeridad de
+onda de presión objetivo $c_{pT}$ y por un número de Preissmann variable en el
+tiempo $P$:
+\begin{equation}
+  T_s = \frac{g\,A_{\mathrm{full}}}{c_{pT}^{2}}\,P^{2},
+  \qquad
+  P_{0} = \max\!\left(\frac{c_{pT}}{\alpha\,c_g},\ 1\right),
+  \qquad c_g = \sqrt{g\,A_{\mathrm{full}}/W_{\max}},
+\end{equation}
+con el parámetro de choque $\alpha = 3$ (por defecto). El área de ranura
+acumulada depende de la trayectoria,
+\begin{equation}
+  A_s \leftarrow \max\!\left(A_s + T_s\,\Delta h_s,\ 0\right),
+  \qquad h_s = \max(\bar y - y_{\mathrm{full}},\ 0),
+\end{equation}
+y $P$ decae exponencialmente después del inicio de la presurización y se suaviza
+espacialmente entre los nodos. Mientras una ranura está activa, el ancho
+superior es $T_s$ y el área superficial aportada a un nodo extremo en carga es
+$T_s\,L/4$. Las cargas de los nodos se actualizan en todo momento con la
+fórmula ordinaria de superficie libre; la rama de carga nunca se invoca. El
+paso de tiempo variable usa la celeridad de presión $c_p = c_{pT}/P$.
+
+% =============================================================================
+% 12. ESTRUCTURAS HIDRÁULICAS NO-CONDUCTO
+% =============================================================================
+\section{Estructuras hidráulicas no-conducto}
+\label{sec:structures}
+
+Los caudales de las estructuras no-conducto los calcula \texttt{HydStructures.cpp}
+(\texttt{StructureSolver}) dentro de la iteración de Picard de la onda
+dinámica, un enlace a la vez en orden de índice (para que dos bombas que
+comparten una cámara húmeda se vean mutuamente la extracción), con distribución
+inmediata en los acumuladores de los nodos y subrelajación a $\omega = 0.5$
+para iteraciones $> 0$ (las bombas quedan exentas).
+
+\subsection{Bombas}
+
+El control de arranque/parada de las bombas usa histéresis de tirante aplicada
+una vez por paso de tránsito:
+\begin{equation}
+  \text{detener si } d < d_{\mathrm{off}} \ (\text{regulación} > 0),
+  \qquad
+  \text{arrancar si } d > d_{\mathrm{on}} \ (\text{regulación} = 0).
+\end{equation}
+Los tipos de curva de bomba (1--5) determinan el caudal $q$ a partir de la curva
+versus el volumen de la cámara húmeda (tipo 1), el tirante (tipos 2 y 4) o la
+carga (tipos 3 y 5, donde $q$ se escala por la regulación de velocidad $s$ y la
+carga por $s^2$); una bomba ideal descarga exactamente el ingreso más el rebalse
+del nodo aguas arriba. La limitación de caudal (legado
+\texttt{getModPumpFlow}) evita bombear más de lo disponible (protección contra
+aspiración en seco) y, para bombas tipo 1 o alimentadas por estanque, acota $q$
+por $Q_{\mathrm{in}} + V_{\mathrm{old}}/\Delta t$.
+
+\subsection{Orificios}
+
+Los orificios de fondo y laterales usan un coeficiente y un tirante crítico
+definidos a partir de la altura de apertura $h_{\mathrm{open}} =
+s\,y_{\mathrm{full}}$ (regulación $s$):
+\begin{align}
+  f &= \min\!\left(\frac{\text{carga}}{h_{\mathrm{crit}}},\ 1\right),
+  \qquad h_{\mathrm{crit}} = \frac{C_d}{0.414}\,\frac{h_{\mathrm{open}}}
+    {4}\ \text{(circular)}\ \text{o}\ \frac{C_d}{0.414}\,
+    \frac{h_{\mathrm{open}}\,W_{\max}}{2(h_{\mathrm{open}} + W_{\max})}
+    \text{(rectangular)},\\
+  q &= \begin{cases}
+    C_w\,f^{3/2} & f < 1 \quad\text{(escurrimiento parcial tipo vertedero)},\\
+    C_d\,A_{\mathrm{eff}}\sqrt{2g\,H} & f \ge 1 \quad\text{(orificio lleno)},
+  \end{cases}
+\end{align}
+con $C_w = C_d\sqrt{h_{\mathrm{crit}}}\,A_{\mathrm{eff}}\sqrt{2g}$
+(coeficiente de vertedero de cresta afilada 0.414), $A_{\mathrm{eff}}$ el área
+de la sección transversal a la altura de apertura y $H$ la carga apropiada
+(carga diferencial cuando está sumergido/ahogado). El gradiente de caudal es
+\begin{equation}
+  \frac{dQ}{dH} = \frac{3}{2}\,\frac{q}{f\,h_{\mathrm{crit}}}
+  \quad\text{(régimen vertedero)}, \qquad
+  \frac{dQ}{dH} = \frac{q}{2H}
+  \quad\text{(régimen orificio)}.
+\end{equation}
+Puede aplicarse una pérdida de carga opcional de compuerta de retención ARMCO y
+la corrección de sumersión de Villemonte.
+
+\subsection{Vertederos}
+
+Los cuatro tipos de vertedero (transversal, lateral, escotadura en V,
+trapezoidal) descargan según
+\begin{equation}
+  \begin{aligned}
+    q &= C_d\,L\,h^{3/2} &&\text{(transversal)},\\
+    q &= C_d\,L^{0.83}\,h^{1.67} &&\text{(lateral, corregido)},\\
+    q &= C_d\,s_h\,h^{5/2} &&\text{(escotadura en V)},
+  \end{aligned}
+\end{equation}
+con contracciones de extremo que reducen la longitud efectiva. Cuando la línea
+de gradiente hidráulica aguas arriba alcanza la clave ($H_1 \ge
+H_{\mathrm{crown}}$) y se permite la entrada en carga, el vertedero transita a
+escurrimiento por orificio usando un coeficiente equivalente de orificio
+calculado desde el caudal del vertedero a apertura completa:
+\begin{equation}
+  C_{\mathrm{sur}} = \frac{Q_{\mathrm{weir}}(s\,y_{\mathrm{full}})}
+    {\sqrt{(s\,y_{\mathrm{full}})/2}},
+  \qquad
+  q = C_{\mathrm{sur}}\sqrt{H_{\mathrm{orif}}},
+\end{equation}
+con $H_{\mathrm{orif}}$ la carga al punto medio de la abertura (o la carga
+diferencial cuando está sumergido/ahogado). Si no se permite la entrada en
+carga, la carga se acota en la clave y se mantiene la ecuación de vertedero. La
+corrección de sumersión de Villemonte se aplica cuando la LGH aguas abajo
+supera la cresta. La contribución de área superficial del vertedero se anula
+por compatibilidad con SWMM 4.
+
+\subsection{Descargas (outlets)}
+
+Las descargas usan curvas de gasto en función de la carga o del tirante
+(tabulares o funcionales):
+\begin{equation}
+  q = C\,H^{e} \quad\text{(funcional)}, \qquad
+  q = \mathrm{table}(H) \quad\text{(tabular)},
+\end{equation}
+escaladas por la regulación. El $dQ/dH$ se deja deliberadamente en cero
+(igual que el legado), lo que evita inflar el denominador de carga de los
+nodos.
+
+% =============================================================================
+% 13. CONDICIONES DE BORDE DE EMISARIO
+% =============================================================================
+\section{Condiciones de borde de emisario}
+\label{sec:outfall}
+
+Los niveles de agua de los emisarios se fijan al inicio de cada paso de
+tránsito y nuevamente dentro de cada iteración de Picard a partir de los
+caudales actuales de los conductos. Para el conducto conectado a un emisario en
+un extremo de elevación $z$, con caudal por barril $q$, se calculan el tirante
+normal $y_n$ (desde el factor de sección inverso) y el tirante crítico $y_c$
+($y_c$ tiene formas cerradas para las formas estándar y una búsqueda numérica
+de raíz en el resto). El nivel depende del tipo de condición de borde
+(\texttt{Outfall.cpp:setOutfallDepth}):
+\begin{itemize}[nosep]
+  \item \textbf{LIBRE (FREE)}: caída libre, $d = z + \min(y_n, y_c)$.
+  \item \textbf{NORMAL}: $d = z + y_n$.
+  \item \textbf{FIJO (FIXED)}, \textbf{MAREA (TIDAL)}, \textbf{SERIE DE TIEMPO
+        (TIMESERIES)}: el nivel $s_{\mathrm{stage}}$ es constante, proviene de
+        una tabla de mareas (hora del día) o de una serie de tiempo; entonces
+        \begin{equation}
+          d = \begin{cases}
+            s_{\mathrm{stage}} - z_{\mathrm{inv}} & z + y_c + z_{\mathrm{inv}}
+              < s_{\mathrm{stage}},\\
+            \max(0,\ s_{\mathrm{stage}} - z_{\mathrm{inv}}) & z > 0 \wedge
+              s_{\mathrm{stage}} < z_{\mathrm{inv}} + z,\\
+            z + y_c & z > 0 \wedge s_{\mathrm{stage}} \ge z_{\mathrm{inv}} + z,\\
+            y_c & z = 0.
+          \end{cases}
+        \end{equation}
+\end{itemize}
+El último caso mantiene un emisario fijo de descarga libre al tirante crítico
+del conducto. Una compuerta de retención en un emisario bloquea el flujo
+inverso.
+
+% =============================================================================
+% 14. DIVISORES DE FLUJO
+% =============================================================================
+\section{Divisores de flujo}
+
+Los divisores están activos solo bajo tránsito por onda cinemática (y
+permanente); bajo onda dinámica actúan como cámaras de unión ordinarias. Dado
+el ingreso total $Q_{\mathrm{in}}$ en el nodo divisor:
+\begin{itemize}[nosep]
+  \item \textbf{De corte (cutoff)}: desvía todo el ingreso sobre un mínimo,
+        $Q_{\mathrm{div}} = \max(0, Q_{\mathrm{in}} - q_{\min})$.
+  \item \textbf{De rebalse (overflow)}: desvía el ingreso sobre la capacidad del
+        enlace de continuación.
+  \item \textbf{Tabular}: $Q_{\mathrm{div}} = Q_{\mathrm{in}}\cdot
+        f(Q_{\mathrm{in}})$ con la fracción de una tabla de gasto.
+  \item \textbf{Vertedero}: $Q_{\mathrm{div}} = C_d\,W\,d^{3/2}$ a partir de
+        una relación de vertedero sobre el tirante del nodo, acotada al ingreso.
+\end{itemize}
+El caudal desviado se escribe en el enlace de desvío; el enlace de continuación
+lleva el resto.
+
+% =============================================================================
+% 15. PASO DE TIEMPO ADAPTATIVO Y CONDICIÓN DE COURANT
+% =============================================================================
+\section{Paso de tiempo adaptativo y condición de Courant}
+
+\subsection{Condición de Courant--Friedrichs--Lewy}
+
+Como el esquema de onda dinámica actualiza caudales y cargas elemento por
+elemento (no hay acoplamiento espacial simultáneo), está sujeto a la condición
+de Courant: el paso de tiempo no debe exceder el tiempo que tarda una onda
+dinámica en atravesar el conducto más corto,
+\begin{equation}
+  \Delta t \le \frac{L}{\lvert U \rvert + c},
+  \qquad c = \sqrt{g\,\frac{A}{W}}
+  \text{ (celeridad de la onda de gravedad).}
+\end{equation}
+
+\subsection{Paso basado en el enlace}
+
+Para cada conducto (\texttt{getLinkStep}, \texttt{Dynamic\-Wave.cpp:3711})
+con caudal por barril $q = \lvert Q \rvert/\mathrm{barrels}$, área media $A$ y
+número de Froude $\mathrm{Fr}$:
+\begin{equation}
+  t = \frac{V/\mathrm{barrels}}{q}\,
+      \frac{L'}{L}\,\frac{\mathrm{Fr}}{1 + \mathrm{Fr}},
+\end{equation}
+(la expresión CFL clásica de SWMM, escalada por la razón longitud
+alargada/cruda). Bajo la ranura de Preissmann dinámica, un conducto en carga
+usa en su lugar la celeridad de presión,
+\begin{equation}
+  t = \frac{L\,(L'/L)}{\lvert v \rvert + c_p}, \qquad
+  c_p = \frac{c_{pT}}{P}.
+\end{equation}
+
+\subsection{Paso basado en el nodo}
+
+Para cada nodo no-emisario bajo la clave con tasa de cambio de tirante no nula
+$\dot y = \lvert \Delta y/\Delta t \rvert$:
+\begin{equation}
+  t = 0.25\,\frac{y_{\mathrm{crown}}}{\dot y},
+\end{equation}
+resguardando contra un cambio excesivo de carga en un solo paso.
+
+\subsection{Combinación de las restricciones}
+
+El siguiente paso de tránsito (\texttt{getRoutingStep}) es el mínimo sobre
+todos los enlaces, nodos y pares de unión virtual, cada uno escalado por el
+factor de Courant del usuario, y luego pisado y acotado:
+\begin{equation}
+  \Delta t_{\min}^{\mathrm{eff}} =
+    \max\!\left(\min_{j,i}\{t_j, t_i\}\cdot \mathrm{Cr},\
+      \max(\min(\Delta t_{\min},\ \Delta t_{\text{tránsito}}),\
+      0.001\ \st)\right),
+\end{equation}
+redondeado a milisegundos. El paso efectivo se acota luego por el
+\texttt{ROUTING\_STEP} fijo del usuario y por la duración restante de la
+simulación. El paso inicial es el paso mínimo. La primera llamada (sin caudales
+aún) también retorna el paso mínimo. El solver FV sub-pasea internamente a su
+propio límite CFL, por lo que bajo FV el paso de tránsito es solo una cadencia
+de reporte.
+
+% =============================================================================
+% 16. ESTABILIDAD, CONVERGENCIA Y BALANCE DE MASA
+% =============================================================================
+\section{Estabilidad, convergencia y balance de masa}
+
+\subsection{Indicadores de estabilidad}
+
+La inestabilidad numérica se manifiesta como oscilaciones que no se amortiguan
+en el caudal y en la superficie del agua, y en nodos que se secan repetidamente.
+Dos métricas de reporte la cuantifican:
+\begin{itemize}[nosep]
+  \item el \textbf{error de continuidad de caudal} global (abajo), y
+  \item el \textbf{índice de inestabilidad de flujo del enlace (FII)} --- el
+        conteo normalizado de las veces que el caudal de un enlace supera a sus
+        dos vecinos.
+\end{itemize}
+
+\subsection{Convergencia del ciclo de Picard}
+
+Un paso de tránsito ``no converge'' solo cuando la tolerancia de carga
+($\varepsilon_H = 0.005\ \ft$) no se cumple en algún nodo no-emisario después de
+\texttt{MAX\_TRIALS} iteraciones. La aceleración de Anderson (opcional) acelera
+la convergencia mezclando las dos salidas más recientes del operador en cada
+nodo:
+\begin{equation}
+  \alpha_k = \mathrm{clamp}\!\left(
+    \frac{r_k\,(r_k - r_{k-1})}{(r_k - r_{k-1})^{2}},\ 0,\ 1\right),
+  \qquad
+  H_{k+1} = (1-\alpha_k)\,G(H_k) + \alpha_k\,G(H_{k-1}),
+\end{equation}
+con $r_k = G(H_k) - H_k$ el residual y $G$ el operador de actualización de
+carga. Se omite en nodos donde $G$ es no suave (en carga bajo EXTRAN, ranura
+dinámica activa, cerca del corte de la ranura estática, vertedero/orificio en
+la clave, extremos de bomba, borde de encharcamiento).
+
+\subsection{Balance de masa del tránsito}
+
+El error de continuidad del tránsito (fracción del ingreso total) es
+\begin{equation}
+  \varepsilon_{\mathrm{routing}} = \frac{Q_{\mathrm{dw}} + Q_{\mathrm{wet}} +
+    Q_{\mathrm{gw}} + Q_{\mathrm{rdii}} + Q_{\mathrm{ext}} +
+    V_{\mathrm{init}} - \left(Q_{\mathrm{aneg}} + Q_{\mathrm{sal}} +
+    Q_{\mathrm{evap}} + Q_{\mathrm{filt}} + V_{\mathrm{final}}\right)}
+    {Q_{\mathrm{total\,in}}},
+\end{equation}
+donde los ingresos son de tiempo seco, tiempo húmedo, napa freática, RDII y
+externos, y las salidas son anegamiento, caudal de salida del sistema,
+evaporación, filtración y almacenamiento final. El anegamiento solo se cuenta
+cuando el volumen del nodo no excede su volumen total; la descarga de los
+emisarios cuenta como caudal de salida del sistema, y el flujo inverso en los
+emisarios cuenta como ingreso externo. Las pérdidas por evaporación/filtración
+de conductos y estanques también se cargan aquí.
+
+% =============================================================================
+% 17. OPCIONES Y VALORES POR DEFECTO
+% =============================================================================
+\section{Opciones y valores por defecto}
+
+La Tabla~\ref{tab:options} resume las opciones relacionadas con el tránsito
+(\texttt{SimulationOptions.hpp}) y sus valores por defecto.
+
+\begin{longtable}{>{\raggedright}p{4.6cm}>{\raggedright}p{2.6cm}>{\raggedright\arraybackslash}p{7.0cm}}
+\toprule
+\textbf{Opción} & \textbf{Defecto} & \textbf{Propósito} \\
+\midrule
+\endhead
+\texttt{FLOW\_ROUTING} & DYNWAVE & formulación de tránsito \\
+\texttt{ROUTING\_STEP} & 20 s & paso de tránsito fijo \\
+\texttt{MINIMUM\_STEP} & 0.5 s & piso del paso CFL \\
+\texttt{DRY\_STEP} / \texttt{WET\_STEP} & 3600 / 300 s & límites del paso de escorrentía \\
+\texttt{VARIABLE\_STEP} & 0.75 & factor de Courant (0 = paso fijo) \\
+\texttt{LENGTHENING\_STEP} & 0 & paso de alargamiento de Courant \\
+\texttt{MAX\_TRIALS} & 8 & límite de intentos de Picard \\
+\texttt{HEAD\_TOLERANCE} & 0.005 (unidades del proyecto) & tolerancia de convergencia de nodo \\
+\texttt{SURCHARGE\_METHOD} & EXTRAN & EXTRAN / SLOT / DYNAMIC\_SLOT \\
+\texttt{NODE\_CONTINUITY} & EXPLICIT & dos ramas vs.\ semi-implícita \\
+\texttt{INERTIAL\_DAMPING} & PARTIAL & política de amortiguación por Froude \\
+\texttt{NORMAL\_FLOW\_LIMITED} & BOTH & tope de caudal normal por pendiente/Froude \\
+\texttt{MIN\_SURFAREA} & 12.566 ft$^2$ & piso del área de nodo \\
+\texttt{ALLOW\_PONDING} & false & permite encharcamiento sobre el brocal \\
+\texttt{ANDERSON\_ACCEL} & false & aceleración de Anderson \\
+\texttt{SKIP\_STEADY\_STATE} & false & omite el tránsito en régimen permanente \\
+\bottomrule
+\caption{Opciones de tránsito y valores por defecto.}
+\label{tab:options}
+\end{longtable}
+
+% =============================================================================
+% 18. REFERENCIAS
+% =============================================================================
+\section{Referencias}
+
+\begin{enumerate}[nosep,label={[\arabic*]}]
+  \item Rossman, L.~A. (2017). \emph{Storm Water Management Model Reference
+        Manual Volume II -- Hydraulics}. U.S.\ EPA.
+  \item Código fuente del motor OpenSWMM:
+        \begin{itemize}[nosep,itemsep=0pt]
+          \item \src{hydraulics/Routing.cpp} \\
+                \src{hydraulics/DynamicWave.cpp} \\
+                \src{hydraulics/KinematicWave.cpp} \\
+                \src{hydraulics/HydStructures.cpp}
+          \item \src{hydraulics/Node.cpp} \\
+                \src{hydraulics/Link.cpp} \\
+                \src{hydraulics/Outfall.cpp} \\
+                \src{hydraulics/Divider.cpp}
+          \item \src{hydraulics/XSectBatch.cpp} \\
+                \src{hydraulics/XSectKernels.hpp} \\
+                \src{core/SimulationOptions.hpp} \\
+                \src{core/SWMMEngine.cpp}
+        \end{itemize}
+  \item Sharior, S., Hodges, B.~R., \& Vasconcelos, J.~G. (2023).
+        Generalized, dynamic, and transient-storage form of the Preissmann
+        slot. \emph{Journal of Hydraulic Engineering}, 149(11).
+  \item Sj{\"o}berg, A. (1982). Sewer network models dagnum and DIVISION --
+        a brief description. \emph{Swedish Water and Wastewater Works
+        Association}.
+  \item Roesner, L.~A., Nichandros, H.~M., Shubinski, R.~P., Feldman, A.~D.,
+        Abbott, J.~W., \& Delleur, J.~W. (1981). \emph{Physical model for
+        combined sewer overflows}. Proc.\ ASCE.
+  \item de~Almeida, G.~A.~M., \& Bates, P.~D. (2013). Applicability of the
+        local inertial approximation of the shallow water equations to flood
+        modeling. \emph{Water Resources Research}, 49(8).
+\end{enumerate}
+
+\end{document}
