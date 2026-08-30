@@ -1,4 +1,4 @@
-﻿/**
+/**
  * snowpack.js — Snowmelt Parameters Editor for SWMM 6
  */
 (function () {
@@ -48,6 +48,7 @@
             "<p style=\"color:var(--text-faint);font-size:12px;\">Select or add a snowpack to edit.</p></div></div></div>"
         ].join("\n");
         document.body.appendChild(modalEl);
+        if (window.initModalDrag) window.initModalDrag(modalEl, modalEl.querySelector('.ts-modal-header'));
         document.getElementById("btn-snowpack-close").onclick = function () { modalEl.classList.add("hidden"); };
         document.getElementById("btn-snowpack-add").onclick = function () { var s = addSnowpack(); renderList(); selectSnowpack(s.id); };
         document.getElementById("btn-snowpack-del").onclick = function () { var s = document.getElementById("snowpack-list").value; if (s) removeSnowpack(s); renderList(); document.getElementById("snowpack-editor-panel").innerHTML = "<p style=\"color:var(--text-faint);font-size:12px;\">Select or add a snowpack to edit.</p>"; };
