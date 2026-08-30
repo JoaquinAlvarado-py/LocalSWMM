@@ -39,9 +39,6 @@
     }
 
     // Data menu items
-    document.getElementById('btn-mesh2d-menu')?.addEventListener('click', () => {
-        if (window.Mesh2DDialog) window.Mesh2DDialog.open();
-    });
     document.getElementById('btn-curves')?.addEventListener('click', () => {
         if (window.CurveEditor) window.CurveEditor.openEditor();
     });
@@ -383,15 +380,6 @@
         if (window.applySubcatchmentsVisibility) window.applySubcatchmentsVisibility();
     });
 
-    const btnMesh2D = document.getElementById('btn-toggle-mesh2d');
-    if (btnMesh2D) {
-        btnMesh2D.addEventListener('click', () => {
-            App.mesh2DVisible = !App.mesh2DVisible;
-            btnMesh2D.classList.toggle('toggled', App.mesh2DVisible);
-            if (window.applyMesh2DVisibility) window.applyMesh2DVisibility();
-        });
-    }
-
     const btnLabels = document.getElementById('btn-toggle-labels');
     btnLabels.addEventListener('click', () => {
         App.labelsVisible = !App.labelsVisible;
@@ -534,28 +522,6 @@
                 const text = label ? label.textContent.toLowerCase() : '';
                 row.style.display = (!q || text.includes(q)) ? '' : 'none';
             });
-        });
-    }
-
-    const openMeshDialog = () => {
-        if (window.Mesh2DDialog) {
-            window.Mesh2DDialog.open();
-        } else {
-            alert('Mesh dialog module not loaded.');
-        }
-    };
-    const btnGenMesh = document.getElementById('btn-generate-mesh2d');
-    if (btnGenMesh) btnGenMesh.addEventListener('click', openMeshDialog);
-    const btnMeshToolbar = document.getElementById('btn-mesh2d-toolbar');
-    if (btnMeshToolbar) btnMeshToolbar.addEventListener('click', openMeshDialog);
-
-    const btnClearMesh = document.getElementById('btn-clear-mesh2d');
-    if (btnClearMesh) {
-        btnClearMesh.addEventListener('click', () => {
-            if (window.Mesh2DGenerator) window.Mesh2DGenerator.clearMesh();
-            if (window.Net) window.Net.clearIndexedMesh();
-            if (window.refreshNetworkData) window.refreshNetworkData();
-            if (window.showResultsWarning) window.showResultsWarning('2D Mesh cleared.');
         });
     }
 
