@@ -1,0 +1,1395 @@
+\documentclass[11pt,a4paper]{article}
+
+% =============================================================================
+% Packages
+% =============================================================================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{geometry}
+\geometry{margin=2.6cm}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usepackage{float}
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  urlcolor=blue!60!black,
+  citecolor=blue!60!black,
+  pdftitle={The 1D Hydraulic Calculation Process of the LocalSWMM Engine}
+}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{siunitx}
+
+% =============================================================================
+% Environment & macros
+% =============================================================================
+\newtheorem{definition}{Definition}[section]
+\newtheorem{remark}{Remark}[section]
+
+\newcommand{\st}{\mathrm{s}}
+\newcommand{\ft}{\mathrm{ft}}
+\newcommand{\cfs}{\mathrm{ft^3/s}}
+\newcommand{\sfft}{\mathrm{ft^2}}
+\newcommand{\R}{\mathbb{R}}
+\renewcommand{\arraystretch}{1.25}
+
+% Shorthand for the engine paths
+\newcommand{\src}[1]{\texttt{src/engine/#1}}
+
+\title{\textbf{The 1D Hydraulic Calculation Process}\\[0.6em]
+\large of the LocalSWMM project (HydroCouple OpenSWMM engine)}
+\author{Technical Reference Document}
+\date{August 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This document provides a complete, equation-level description of the
+one-dimensional (1D) hydraulic calculation process used by the LocalSWMM web
+application. All hydraulic computations are executed by the HydroCouple
+\textbf{OpenSWMM} engine, which is compiled to WebAssembly and runs inside the
+browser. The engine solves the de~Saint-Venant equations on a node--link
+network. Four routing formulations are available: \emph{steady flow},
+\emph{kinematic wave}, \emph{dynamic wave} (the default), and an explicit
+\emph{finite-volume} scheme. This document explains the conceptual model, the
+governing equations, the finite-difference schemes, the iterative solution
+procedure, the node-continuity and surcharge algorithms, the computation of
+non-conduit hydraulic structures, the cross-section geometry functions,
+boundary conditions, adaptive time stepping, and the mass-balance accounting.
+Every equation is transcribed from the engine source code (see the
+References for the file list) and cross-referenced to the engine's Reference
+Manuals where applicable.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% =============================================================================
+% 1. INTRODUCTION
+% =============================================================================
+\section{Introduction}
+
+\subsection{Scope}
+
+This document covers the \emph{one-dimensional} hydraulic (flow-routing)
+calculations of the LocalSWMM project. LocalSWMM is a browser-based web
+application for stormwater and wastewater network modeling; it embeds the
+HydroCouple OpenSWMM engine (C$++$) compiled to WebAssembly. The 1D hydraulic
+component solves unsteady, gradually varied, one-dimensional flow through a
+network of \emph{nodes} (junctions, storage units, dividers, outfalls) and
+\emph{links} (conduits, pumps, orifices, weirs, outlets). The 2D overland-flow
+module and its 1D--2D coupling are out of scope except where they interact with
+the 1D solver (e.g.\ through lateral inflows and the ponded-area coupling).
+
+The engine is a \emph{distributed discrete-time simulation model}: it advances
+a state vector over a sequence of time steps,
+\begin{equation}
+  \boldsymbol{X}_{t} = f\!\left(\boldsymbol{X}_{t-1}, \boldsymbol{I}_{t}, \boldsymbol{P}\right),
+  \qquad
+  \boldsymbol{Y}_{t} = g\!\left(\boldsymbol{X}_{t}, \boldsymbol{P}\right),
+\end{equation}
+where $\boldsymbol{X}$ is the state vector, $\boldsymbol{I}$ external inputs,
+$\boldsymbol{P}$ fixed parameters, and $\boldsymbol{Y}$ the outputs.
+
+\subsection{The node--link conceptual model}
+
+The conveyance portion of a drainage system is a network of nodes and links.
+\textbf{Nodes} are points that represent:
+\begin{itemize}[nosep]
+  \item \textbf{Junctions} --- points where links join, with invert elevation,
+        height-to-rim, optional surcharge (pressure) depth, and optional
+        ponded surface area.
+  \item \textbf{Outfalls} --- terminal boundary nodes with a prescribed stage
+        condition (free, normal, fixed, tidal, or time-series) and an optional
+        flap gate.
+  \item \textbf{Storage units} --- nodes with a surface-area--versus--depth
+        relation and real storage volume; they never pressurize.
+  \item \textbf{Flow dividers} --- nodes that split inflow between a
+        continuation link and a diversion link (cutoff, overflow, tabular, or
+        weir; active under kinematic wave, treated as junctions under dynamic
+        wave).
+\end{itemize}
+
+\textbf{Links} connect nodes. The link types are:
+\begin{itemize}[nosep]
+  \item \textbf{Conduits} --- pipes and open channels of arbitrary
+        cross-section, described by Manning's equation and a set of cross-section
+        geometry tables.
+  \item \textbf{Pumps} --- governed by pump curves (five curve types or an
+        ideal-pump model) with on/off depth hysteresis.
+  \item \textbf{Orifices} --- bottom or side openings with weir/orifice
+        discharge behavior.
+  \item \textbf{Weirs} --- transverse, side-flow, V-notch, or trapezoidal weirs
+        with an optional transition to orifice flow under submergence.
+  \item \textbf{Outlets} --- head or depth rating curves (tabular or
+        functional).
+\end{itemize}
+
+\subsection{State variables and internal units}
+
+Under flow routing the fundamental state variables are exactly three
+(Table~\ref{tab:statevars}):
+
+\begin{table}[H]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Symbol} & \textbf{Description} \\
+\midrule
+$H$  & Hydraulic head of water at a node \\
+$Q$  & Flow rate in a link \\
+$A$  & Flow area in a link (inferred from $Q$ and geometry) \\
+\bottomrule
+\end{tabular}
+\caption{The three fundamental flow-routing state variables.}
+\label{tab:statevars}
+\end{table}
+
+All other quantities are derived from these three variables, the external
+inputs, and the fixed input parameters. Internally the engine carries out all
+calculations in \textbf{feet} (length), \textbf{seconds} (time), \textbf{cfs}
+(flow), \textbf{ft$^2$} (area), and \textbf{ft$^3$} (volume). Project input
+values in SI (metric) or US units are converted to these internal units at
+parse time; the conversion factors are
+\begin{align}
+  \mathrm{Ucf}[\mathrm{LENGTH}] &=
+    \begin{cases} 1.0 & \text{(US)} \\ 0.3048 & \text{(SI)} \end{cases}, \\
+  \mathrm{Ucf}[\mathrm{VOLUME}] &=
+    \begin{cases} 1.0 & \text{(US)} \\ 0.02832 & \text{(SI)} \end{cases},
+\end{align}
+(note that the SI volume factor is the legacy \emph{truncated} value, not
+$0.3048^3$, deliberately preserved for floating-point parity with the legacy
+SWMM engine). Flow conversion uses $\mathrm{Qcf} = \{1.0,\ 448.831,\ 0.64632,\
+0.02832,\ 28.317,\ 2.4466\}$ for cfs/gpm/MGD/cms/LPS/MLD.
+
+\subsection{The four routing formulations}
+
+The engine selects the flow-routing method with the \texttt{FLOW\_ROUTING}
+option. Table~\ref{tab:routing} summarizes the four methods.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}l p{4.6cm} p{5.4cm}@{}}
+\toprule
+\textbf{Method} & \textbf{Governing equations} & \textbf{Features} \\
+\midrule
+Steady flow & continuity + Manning normal depth & pass-through, no storage/backwater \\
+Kinematic wave & continuity + uniform-flow rating & no backwater, reversal, or surcharge \\
+Dynamic wave (default) & full St.\ Venant & backwater, losses, reversal, surcharge \\
+Finite volume (explicit) & St.\ Venant, Godunov/HLLC & transcritical flow, native dry/wet \\
+\bottomrule
+\end{tabular}
+\caption{The four 1D routing formulations of the engine.}
+\label{tab:routing}
+\end{table}
+
+The dynamic wave is the default and is treated in the greatest depth here. Each
+routing method is invoked from a common \texttt{Router} orchestrator.
+
+% =============================================================================
+% 2. MODEL COMPONENTS
+% =============================================================================
+\section{Hydraulic model components}
+
+\subsection{Node data}
+
+Each node carries static geometric properties and dynamic state
+(\texttt{NodeData.hpp}):
+\begin{itemize}[nosep]
+  \item $z_{\mathrm{inv}}$ --- invert elevation (ft).
+  \item $d_{\mathrm{full}}$ --- full depth (depth to the rim / top of storage).
+  \item $d_{\mathrm{sur}}$ --- maximum allowed surcharge depth above full
+        depth; the flooding limit is $z_{\mathrm{inv}} + d_{\mathrm{full}} +
+        d_{\mathrm{sur}}$.
+  \item $A_{\mathrm{pond}}$ --- ponded surface area used when the node floods
+        above its rim and ponding is enabled.
+  \item $z_{\mathrm{crown}}$ --- elevation of the crown of the highest
+        connecting conduit; the surcharge threshold is $y_{\mathrm{crown}} =
+        z_{\mathrm{crown}} - z_{\mathrm{inv}}$.
+  \item $\mathrm{deg}$ --- number of connecting links; if negative the node is
+        an upstream terminal node.
+  \item $V_{\mathrm{full}}$ --- volume at full depth.
+\end{itemize}
+
+Dynamic state (updated each routing step):
+\begin{itemize}[nosep]
+  \item $d$ --- water depth above the invert (ft);
+  \item $H = z_{\mathrm{inv}} + d$ --- hydraulic head (ft);
+  \item $V$ --- stored volume (ft$^3$);
+  \item $Q_{\mathrm{lat}}$ --- total lateral inflow (ft$^3$/s);
+  \item $Q_{\mathrm{in}}$, $Q_{\mathrm{out}}$ --- total inflow and outflow;
+  \item $Q_{\mathrm{ovfl}}$ --- overflow/flooding rate;
+  \item $Q_{\mathrm{loss}}$ --- evaporation + seepage/exfiltration loss rate;
+  \item $\Delta Q_{\mathrm{net}}^{t-1}$ --- net inflow $Q_{\mathrm{in}} -
+        Q_{\mathrm{out}}$ of the previous step (used for trapezoidal
+        averaging);
+  \item previous-step values $d^{t-1}$, $V^{t-1}$, $Q_{\mathrm{lat}}^{t-1}$.
+\end{itemize}
+
+\subsubsection{Node surface area and volume functions}
+
+The node geometry functions are implemented in \src{hydraulics/Node.cpp}.
+
+\textbf{Junction/outfall/divider volume}: with $\mathrm{MIN\_SURFAREA} =
+12.566\ \sfft$ ($\approx 4\pi$, the area of a 4-ft manhole),
+\begin{equation}
+  V(d) = V_{\mathrm{full}}\,\frac{d}{d_{\mathrm{full}}},
+\end{equation}
+where $V_{\mathrm{full}} = \mathrm{MIN\_SURFAREA}\cdot d_{\mathrm{full}}$
+unless overridden.
+
+\textbf{Storage volume}:
+\begin{itemize}[nosep]
+  \item Tabular: $V = \mathrm{table}(d\cdot \mathrm{Ucf}[L])/\mathrm{Ucf}[V]$
+        with table interpolation;
+  \item Geometric shapes (cylindrical, conical, paraboloid, pyramidal) use the
+        quadratic surface-area relation $A(d) = c + a\,d + b\,d^{2}$, integrated
+        to the cubic
+        \begin{equation}
+          V(d) = d\left(c + d\!\left(\tfrac{a}{2} + d\,\tfrac{b}{3}\right)\right);
+        \end{equation}
+  \item Functional storage: power law $A(d) = c + a\,d^{b}$ integrated
+        analytically.
+\end{itemize}
+
+\textbf{Surface area} $A_{\mathrm{surf}}(d)$: non-storage nodes return 0 (the
+minimum-area floor is applied later in the dynamic-wave node update); storage
+nodes return the table value (extrapolating linearly) or the analytic
+$A(d) = c + a\,d + b\,d^{2}$ / $A(d) = c + a\,d^{b}$.
+
+\textbf{Ponded area}:
+\begin{equation}
+  A_{\mathrm{pond}}(d) =
+  \begin{cases}
+    A_{\mathrm{surf}}(d) & d \le d_{\mathrm{full}} \text{ or } A_{\mathrm{pond}} = 0,\\
+    A_{\mathrm{pond}} & d > d_{\mathrm{full}} \text{ (flooded)}.
+  \end{cases}
+\end{equation}
+
+\textbf{Depth from volume} (the inverse of the volume function, used by the
+kinematic-wave storage update and by reporting): junction nodes use
+$d = V/\mathrm{MIN\_SURFAREA}$; storage nodes invert the tabular/geometric/
+functional relations, using Newton--Raphson with bisection fallback where no
+closed form exists.
+
+\textbf{Maximum outflow} (used by the kinematic-wave and steady-flow link
+inflow gathering):
+\begin{equation}
+  Q_{\max} = Q_{\mathrm{in}} + \frac{V_{\mathrm{old}}}{dt},
+  \qquad Q_{\mathrm{in}} = \min\!\left(Q_{\mathrm{in}}, Q_{\max}\right).
+\end{equation}
+
+\subsection{Link data}
+
+Each link carries static properties and dynamic state (\texttt{LinkData.hpp}).
+For conduits the per-link (per-barrel) conveyance parameters are
+(\texttt{Link.cpp}, \texttt{computeConveyance}):
+\begin{align}
+  \beta &= \frac{\mathrm{PHI}\,\sqrt{|S_0|}}{n}, \qquad \mathrm{PHI} = 1.486
+    \quad\text{(Manning US factor)}, \\
+  \mathrm{rough\_factor} &= g\left(\frac{n}{\mathrm{PHI}}\right)^{2},\\
+  Q_{\mathrm{full}} &= S_{\mathrm{full}}\cdot\beta,
+  \qquad Q_{\max} = S_{\max}\cdot\beta,
+\end{align}
+where $n$ is the Manning roughness, $S_0$ the conduit slope, $S(a) = A\,R^{2/3}$
+the \emph{section factor} (see Section~\ref{sec:xsect}), $S_{\mathrm{full}} =
+S(A_{\mathrm{full}})$ and $S_{\max} = \max_a S(a)$.
+
+Dynamic state per link: $Q$ (current flow, $+$ = node1$\to$node2), $d$
+(midpoint depth), $V$ (volume), $\mathrm{Fr}$ (Froude number), $\mathrm{flow\_class}$
+(DRY, UP\_DRY, DN\_DRY, SUBCRITICAL, SUPERCRITICAL, UP\_CRITICAL, DN\_CRITICAL),
+and previous-step values.
+
+\subsection{Conduit slope and length}
+
+For a conduit connecting node $i$ and node $j$ with end offsets $z_1, z_2$,
+the end invert elevations of the conduit are $Z_1 = z_{\mathrm{inv},1} +
+z_1$, $Z_2 = z_{\mathrm{inv},2} + z_2$. The conduit slope is
+\begin{equation}
+  S_0 = \frac{\Delta y}{\Delta x},
+  \qquad \Delta y = Z_1 - Z_2, \quad
+  \Delta x = \sqrt{L^{2} - \Delta y^{2}},
+\end{equation}
+with a minimum imposed drop of $\lvert \Delta y \rvert \ge 0.001\ \ft$
+(overrideable).
+
+\subsection{Conduit lengthening (Courant stability)}
+
+If a positive \texttt{LENGTHENING\_STEP} is supplied, short conduits are
+artificially lengthened so that the Courant condition for the user-supplied
+time step is met (\texttt{Routing.cpp:135--195}):
+\begin{equation}
+  t_{\mathrm{step}} = \min(\mathrm{routing\_step},\ \mathrm{lengthening\_step}),
+  \qquad
+  v_{\mathrm{full}} = \frac{\mathrm{PHI}}{n}\,\frac{S_{\mathrm{full}}}
+    {\sqrt{|S_0|}\,A_{\mathrm{full}}},
+\end{equation}
+\begin{equation}
+  \mathrm{ratio} = \frac{\left(\sqrt{g\,y_{\mathrm{full}}} + v_{\mathrm{full}}\right)
+    t_{\mathrm{step}}}{L},
+  \qquad
+  L' = \max(L,\ \mathrm{ratio}\cdot L),
+\end{equation}
+For open channels $y_{\mathrm{full}}$ is replaced by the hydraulic depth
+$A_{\mathrm{full}}/W_{\max}$. If $L' > L$, the slope and roughness are adjusted
+to preserve equal head loss at any flow,
+\begin{equation}
+  S_0' = \frac{|S_0|}{L'/L}, \qquad
+  n' = \frac{n}{\sqrt{L'/L}},
+\end{equation}
+and $\beta$, $\mathrm{rough\_factor}$, $Q_{\mathrm{full}}$, $Q_{\max}$ are
+recomputed from the adjusted values. The lengthened length $L'$
+(\texttt{mod\_length}) is used in the momentum equation; the raw length $L$ is
+used for volume accounting.
+
+% =============================================================================
+% 3. SIMULATION ORCHESTRATION
+% =============================================================================
+\section{Simulation orchestration}
+
+\subsection{The overall time-stepping loop}
+
+The engine is a single-step API. Each call to \texttt{SWMMEngine::step()}
+executes exactly one routing step (or one runoff-only step when routing is
+disabled). The sequence within a step is (\texttt{SWMMEngine.cpp:941}):
+\begin{enumerate}[nosep]
+  \item Compute the routing time step $dt_{\mathrm{next}}$. If the variable-step
+        option is enabled, the Courant-limited step is
+        \[
+          dt_{\mathrm{cfl}} = \texttt{router.getAdaptiveStep}(
+            \texttt{routing\_step},\ \texttt{variable\_step}),
+        \]
+        then $dt_{\mathrm{next}} = \min(\texttt{routing\_step},\ dt_{\mathrm{cfl}})$
+        clamped to the remaining simulation duration.
+  \item Save the old hydraulic state (\texttt{ctx.save\_state()}).
+  \item Reset the per-step mass-balance accumulators.
+  \item Run the pipeline:
+        \begin{enumerate}[nosep]
+          \item \texttt{stepRunoff($dt$)} --- hydrology (always);
+          \item if routing is enabled: \texttt{stepRouting($dt$)} (hydraulics +
+                quality), \texttt{updateStatistics($dt$)},
+                \texttt{updateRoutingMassBalance($dt$)};
+          \item \texttt{computeFinalStorage()}.
+        \end{enumerate}
+  \item Advance the simulation clock and post output snapshots.
+\end{enumerate}
+
+\subsection{Runoff and routing clocks}
+
+The hydrology and hydraulics run on \emph{independent} clocks:
+\begin{itemize}[nosep]
+  \item The \textbf{runoff clock} advances at the wet step (300\,s default) or
+        dry step (3600\,s default), shortened to align with rain-gage
+        boundaries. \texttt{stepRunoff} runs multiple runoff sub-steps within
+        one routing step ($\text{while } t_{\mathrm{runoff}} <
+        t_{\mathrm{routing}} + dt$).
+  \item The \textbf{routing clock} advances by $dt$ (the routing step) each
+        \texttt{step()} call.
+\end{itemize}
+After the runoff sub-steps, the wet-weather lateral inflow delivered to nodes
+is obtained by \emph{linear interpolation} between the bracketing runoff
+evaluations: with $f = (t_{\mathrm{elapsed}} - t_{\mathrm{runoff,old}}) /
+(t_{\mathrm{runoff,new}} - t_{\mathrm{runoff,old}})$,
+\begin{equation}
+  Q_{\mathrm{runoff}} = (1-f)\,Q_{\mathrm{runoff}}^{\mathrm{old}} +
+  f\,Q_{\mathrm{runoff}}^{\mathrm{new}},
+\end{equation}
+plus runon and groundwater contributions. These are scattered into
+\texttt{nodes.runoff\_inflow} / \texttt{nodes.gw\_inflow}.
+
+\subsection{Lateral inflows}
+
+Every routing step, the lateral inflows are assembled from decomposed source
+buffers in legacy order (\texttt{assembleLateralInflows},
+\texttt{SWMMEngine.cpp:5691}):
+\begin{equation}
+  Q_{\mathrm{lat}} = Q_{\mathrm{ext}} + Q_{\mathrm{dwf}} +
+  Q_{\mathrm{wet}} + Q_{\mathrm{gw}} + Q_{\mathrm{rdii}} +
+  Q_{\mathrm{iface}} + Q_{\mathrm{user}} + Q_{\mathrm{coupling}},
+\end{equation}
+where the terms are external/inflow time series, dry-weather flow,
+wet-weather (runoff) inflow, groundwater inflow, RDII, interface-file
+inflow, user-forced inflow, and 1D--2D coupling inflow respectively.
+
+\subsection{The routing step}
+
+\texttt{Router::step(ctx, dt, evap\_rate, non\_conduit\_fn)}
+(\texttt{Routing.cpp:308}) performs, in order:
+\begin{enumerate}[nosep]
+  \item \textbf{initNodeFlows} --- initialize each node's inflow from lateral
+        flow and outflow from losses (storage evaporation and Green--Ampt
+        exfiltration, jointly capped against the stored volume); set overflow
+        from excess stored volume.
+  \item \textbf{computeConduitLosses} --- conduit evaporation (open sections)
+        and seepage loss rates. For DYNWAVE this is instead recomputed per
+        Picard iteration inside the solver.
+  \item \textbf{setAllOutfallDepths} --- set the outfall boundary stages
+        (Section~\ref{sec:outfall}).
+  \item \textbf{Solver dispatch} --- KINWAVE, DYNWAVE, FV, or STEADY.
+  \item \textbf{computeDividerFlows} --- apply flow-divider logic.
+  \item \textbf{updateLinkStates} --- recompute node heads $H = z_{\mathrm{inv}}
+        + d$.
+\end{enumerate}
+
+Inside the dynamic-wave solver, the non-conduit callback computes
+pump/orifice/weir/outlet flows inside the Picard iteration, in link-index
+order, with immediate scatter into the node inflow/outflow accumulators.
+
+% =============================================================================
+% 4. CROSS-SECTION GEOMETRY
+% =============================================================================
+\section{Cross-section geometry}
+\label{sec:xsect}
+
+\subsection{The four geometric relations}
+
+For a conduit, the flow area $A$, top width $W$, wetted perimeter $P_w$, and
+hydraulic radius $R = A/P_w$ are functions of the flow depth $y$. The engine
+pre-computes, for each shape, the four fundamental relations
+(\texttt{XSectKernels.hpp}, \texttt{xsect\_tables.hpp}):
+\begin{align}
+  A &= A(y), \qquad W = W(y), \qquad R = R(y), \\
+  S &= S(A) = A\,R^{2/3} \quad \text{(section factor, ``conveyance shape''),}
+\end{align}
+together with their inverses $y = y(A)$, $A = A(S)$, and the derivative
+$dS/dA$. Closed-form expressions exist for the standard shapes (circular,
+filled circular, rectangular, trapezoidal, triangular, parabolic, power,
+eggs, horseshoe, gothic, basket-handle, etc.); irregular and custom shapes use
+tabulated (transect) tables with linear interpolation, and the inverse
+$A(S)$ is solved by Newton iteration or table inversion.
+
+\subsection{Manning and the section factor}
+
+Manning's equation in US customary form is
+\begin{equation}
+  Q = \frac{1.486}{n}\,A\,R^{2/3}\,\sqrt{S_f}
+  = \beta\,\Psi(A)\,\sqrt{S_f/S_0},
+  \qquad \Psi(A) = A\,R^{2/3},
+\end{equation}
+where $S_f$ is the friction slope, $\beta = (1.486/n)\sqrt{S_0}$, and
+$\Psi(A)$ is the section factor. For many closed shapes the section factor
+peaks below full depth, so the maximum discharge occurs at a less-than-full
+area.
+
+% =============================================================================
+% 5. STEADY FLOW ROUTING
+% =============================================================================
+\section{Steady flow routing}
+
+Under steady flow (\texttt{executeSteadyFlow}, \texttt{Routing.cpp:637}), links
+are processed in topologically sorted order. For each conduit:
+\begin{enumerate}[nosep]
+  \item The upstream node's inflow $Q_{\mathrm{in}}$ is gathered (limited by
+        the maximum outflow).
+  \item The per-barrel flow is $q = Q_{\mathrm{in}}/\mathrm{barrels}$ minus
+        the conduit loss rate, clamped at zero.
+  \item If $q \ge Q_{\mathrm{full}}$: $q = Q_{\mathrm{full}}$ and
+        $A = A_{\mathrm{full}}$; otherwise the normal-depth area is found from
+        the inverse section factor,
+        \begin{equation}
+          s = \frac{q}{\beta}, \qquad A = A(s),
+        \end{equation}
+        and the depth from $y = y(A)$.
+  \item The flow is uniform along the conduit ($Q_{\mathrm{out}} =
+        q\cdot\mathrm{barrels}$, $A_1 = A_2 = A$); the link volume is
+        $V = A\,L\,\mathrm{barrels}$.
+\end{enumerate}
+Non-conduit links simply pass the upstream node's inflow through unchanged.
+Steady flow converges in one pass.
+
+% =============================================================================
+% 6. KINEMATIC WAVE
+% =============================================================================
+\section{Kinematic wave routing}
+
+\subsection{Governing equations}
+
+The kinematic wave model combines the continuity equation with the uniform-flow
+rating curve, dropping the inertia, pressure-gradient, and (partially)
+convective terms of the St.\ Venant momentum equation. It cannot represent
+backwater, flow reversal, or pressurization, and requires a directed acyclic
+network. Starting from the St.\ Venant equations and setting the bed slope
+equal to the friction slope, $S_0 = S_f$, the governing pair is:
+\begin{equation}
+  \frac{\partial A}{\partial t} + \frac{\partial Q}{\partial x} = 0
+  \qquad\text{(continuity),}
+\end{equation}
+\begin{equation}
+  Q = \beta\,\Psi(A), \qquad \Psi(A) = A\,R^{2/3},
+  \qquad \beta = \frac{1.486}{n}\sqrt{S_0}
+  \qquad\text{(rating curve).}
+\end{equation}
+
+\subsection{Finite-difference scheme}
+
+A weighted Wendroff implicit finite-difference scheme discretizes the
+continuity equation between the upstream (1) and downstream (2) ends:
+\begin{equation}
+  \frac{(1-\theta)(A_1^{t+1}-A_1^{t}) +
+        \theta\,(A_2^{t+1}-A_2^{t})}{\Delta t}
+  \;+\;
+  \frac{(1-\varphi)(Q_2^{t}-Q_1^{t}) +
+        \varphi\,(Q_2^{t+1}-Q_1^{t+1})}{L}
+  = 0,
+\end{equation}
+with $\theta = \varphi = 0.6$. Because each junction has at most one outlet
+conduit, processing links in topological order leaves only $A_2^{t+1}$ and
+$Q_2^{t+1}$ as unknowns; $Q_1^{t+1}$ is known from the upstream node's inflow
+and $A_1^{t+1}$ from the inverse section factor at $Q_1^{t+1}/\beta$.
+Substituting the rating curve yields the single nonlinear equation
+\begin{equation}
+  f\!\left(A_2^{t+1}\right) = \beta\,\Psi\!\left(A_2^{t+1}\right) +
+  C_1\,A_2^{t+1} + C_2 = 0,
+\end{equation}
+with (in the engine's normalized implementation,
+\texttt{KinematicWave.cpp:solveConduit})
+\begin{align}
+  C_1 &= \frac{L\,\theta}{\Delta t\,\varphi},\\
+  C_2 &= \frac{L}{\Delta t\,\varphi}
+        \Big[(1-\theta)(A_1^{t+1} - A_1^t) - \theta\,A_2^t\Big]
+        + \frac{1-\varphi}{\varphi}(Q_2^t - Q_1^t) - Q_1^{t+1}.
+\end{align}
+
+\subsection{Root finding}
+
+Equation $f(A_2^{t+1}) = 0$ is solved by a bracketed Newton--Raphson iteration
+(maximum 40 iterations). Because the section factor can have two roots
+(peak at $A_{\max}$ below full), the bracket is pre-screened: the initial
+bracket is $[A_{\max}, A_{\mathrm{full}}]$; if both bounds produce the same
+sign it is reset to $[0, A_{\max}]$. If both bounds give negative $f$ the
+conduit is full ($Q = Q_{\mathrm{full}}$); if both give positive $f$ the flow
+is zero.
+
+\subsection{Storage nodes under kinematic wave}
+
+Storage nodes may have any number of outlet links. Their mass balance is
+integrated with the trapezoidal rule,
+\begin{equation}
+  V^{t+1} = V^{t} + \tfrac{1}{2}\left(Q_{\mathrm{in}}^{t} + Q_{\mathrm{in}}^{t+1}
+  - Q_{\mathrm{out}}^{t} - Q_{\mathrm{out}}^{t+1}\right)\Delta t,
+\end{equation}
+solved by successive approximation ($\omega = 0.55$, convergence tolerance
+0.005 ft) because both $Q_{\mathrm{out}}$ and $V$ depend on the head. The
+storage head is then updated once more after all link flows are known
+(\texttt{Routing.cpp:345--389}).
+
+% =============================================================================
+% 7. DYNAMIC WAVE: GOVERNING EQUATIONS
+% =============================================================================
+\section{Dynamic wave routing: governing equations}
+
+\subsection{The St.\ Venant equations}
+
+The dynamic wave model solves the full one-dimensional de~Saint-Venant
+equations (continuity and momentum):
+\begin{equation}
+  \underbrace{\frac{\partial A}{\partial t}}_{\text{storage}} +
+  \underbrace{\frac{\partial Q}{\partial x}}_{\text{convective flux}}
+  = 0,
+  \label{eq:sv-cont}
+\end{equation}
+\begin{equation}
+  \underbrace{\frac{\partial Q}{\partial t}}_{\text{local acceleration}} +
+  \underbrace{\frac{\partial}{\partial x}\!\left(\frac{Q^{2}}{A}\right)}_{\text{convective acceleration}}
+  + \underbrace{gA\,\frac{\partial H}{\partial x}}_{\text{pressure gradient}}
+  + \underbrace{gA\,S_f}_{\text{friction}}
+  = 0,
+  \label{eq:sv-mom}
+\end{equation}
+where $A$ is the flow area, $Q$ the discharge, $H = Z + y$ the hydraulic head
+($Z$ conduit invert, $y$ depth), $g$ gravity, and $S_f$ the friction slope.
+The friction slope follows Manning:
+\begin{equation}
+  S_f = \left(\frac{n}{1.486}\right)^{2}
+  \frac{Q\,\lvert U \rvert}{A\,R^{4/3}},
+  \qquad U = \frac{Q}{A}.
+\end{equation}
+
+\subsection{Finite-difference momentum equation}
+
+The engine uses an implicit (backwards Euler) finite-difference form. With
+spatial differences over the conduit length $L$ and temporal differences over
+$\Delta t$, the flow update at each conduit is
+\begin{equation}
+  Q^{t+\Delta t}
+  = \frac{Q^{t} + \Delta Q_{\mathrm{inertia}} + \Delta Q_{\mathrm{pressure}}
+        + \Delta Q_{\mathrm{loss}}}
+         {1 + \Delta Q_{\mathrm{friction}}},
+  \label{eq:mom-update}
+\end{equation}
+where all geometric quantities are evaluated at the new time $t + \Delta t$.
+The four terms are:
+\begin{align}
+  \Delta Q_{\mathrm{inertia}}
+    &= 2\bar{U}\left(\bar{A}^{t+\Delta t} - \bar{A}^{t}\right)
+       + \bar{U}^{2}\,\frac{A_2 - A_1}{L}\,\Delta t, \label{eq:mom-inertia}\\
+  \Delta Q_{\mathrm{pressure}}
+    &= -g\bar{A}\,\frac{H_2 - H_1}{L}\,\Delta t, \label{eq:mom-pressure}\\
+  \Delta Q_{\mathrm{friction}}
+    &= g\left(\frac{n}{1.486}\right)^{2}
+       \frac{\lvert \bar{U} \rvert}{\bar{R}^{4/3}}\,\Delta t, \label{eq:mom-friction}\\
+  \Delta Q_{\mathrm{loss}}
+    &= \text{local (minor) losses and evap/seepage terms}.
+\end{align}
+
+\subsection{Node continuity}
+
+Conservation of volume at each node assembly (the node plus half of each
+connected link) requires
+\begin{equation}
+  \frac{\partial V}{\partial t}
+  = A_{S}\,\frac{\partial H}{\partial t} = \sum Q,
+\end{equation}
+with $A_S = A_{SN} + \sum A_{SL}$ the assembly surface area (the node's own
+storage surface area plus the half-link surface areas contributed by each
+conduit). In finite-difference form:
+\begin{equation}
+  H^{t+\Delta t} = H^{t} +
+  \frac{\tfrac{\Delta t}{2}\left(\sum Q^{t} + \sum Q^{t+\Delta t}\right)}
+       {\left(A_{SN} + \sum A_{SL}\right)^{t+\Delta t}},
+\end{equation}
+i.e.\ a trapezoidal update of the head using the \emph{average} of the net
+flows at $t$ and $t+\Delta t$.
+
+% =============================================================================
+% 8. THE DYNAMIC WAVE SOLUTION ALGORITHM
+% =============================================================================
+\section{The dynamic wave solution algorithm}
+
+\subsection{Overview: the Picard (successive-approximation) iteration}
+
+Equations~\eqref{eq:mom-update} and the node continuity are solved implicitly
+over each time step by \emph{functional iteration} (Picard iteration /
+successive approximations). The steps, matching the engine's
+\texttt{DWSolver::execute} (\texttt{DynamicWave.cpp:1026}), are:
+
+\begin{enumerate}[nosep]
+  \item \textbf{initNodeStates} --- reset per-node accumulators: inflow = 0,
+        outflow = losses $+$ negative lateral flow, inflow $+$ positive lateral
+        flow; surface area from the storage/ponding geometry; converged = 0,
+        $\sum dQ/dH = 0$.
+  \item \textbf{computeLinkGeometry} --- batch-compute the end depths
+        $y_1, y_2$, midpoint depth $\bar y$, top widths, areas, and hydraulic
+        radii of all conduits from the current node heads; classify each
+        conduit's flow regime; apply Preissmann-slot overrides where
+        surcharged.
+  \item \textbf{Momentum kernels} --- solve the implicit momentum equation for
+        each conduit (Section~\ref{sec:momentum-kernel}), commit the new
+        flows, and scatter them to the node inflow/outflow accumulators,
+        accumulating $\sum dQ/dH$ and the surface-area contributions.
+  \item \textbf{Non-conduit structures} --- compute pump/orifice/weir/outlet
+        flows (Section~\ref{sec:structures}).
+  \item \textbf{Outfall depths} --- re-set outfall boundary stages from the
+        current flows.
+  \item \textbf{Node depth update} --- solve the continuity equation for each
+        node head (Section~\ref{sec:node-continuity}); tally the unconverged
+        nodes.
+  \item If any node changed by more than the head tolerance and the trial limit
+        has not been reached, mark links whose both end nodes converged as
+        \emph{bypassed} (their flows are held), and iterate.
+\end{enumerate}
+
+Under-relaxation: after the first iteration every updated flow and head is
+relaxed with $\omega = 0.5$,
+\begin{equation}
+  x^{k+1} = (1-\omega)\,x^{k} + \omega\,x^{k+1}_{\mathrm{raw}},
+  \qquad \omega = 0.5,
+\end{equation}
+and a sign change in flow is forced through a small nonzero value
+($q = \pm 0.001$).
+
+\subsection{Convergence}
+
+A node is converged when both the raw Picard residual and the accepted (possibly
+Anderson-mixed) movement are within the head tolerance $\varepsilon_H = 0.005\
+\ft$ (default). The routing step converges when no non-outfall node is
+unconverged. The maximum number of trials is 8 by default
+(\texttt{MAX\_TRIALS}); a step that converges on its last allowed trial is still
+counted as converged.
+
+\subsection{Flow classification}
+
+During geometry computation each conduit is classified into one of seven flow
+classes (DRY, UP\_DRY, DN\_DRY, SUBCRITICAL, SUPERCRITICAL, UP\_CRITICAL,
+DN\_CRITICAL) based on the end depths and the head relative to the end invert
+elevations, using the normal depth $y_n$ (from the inverse section factor at
+$Q/\beta$) and critical depth $y_c$ (Section~\ref{sec:outfall}). The class
+drives:
+\begin{itemize}[nosep]
+  \item the surface-area adjustments for dry/critical ends (Table~\ref{tab:surfadj}),
+  \item the depth used at the critical end (replaced by $\min(y_n, y_c)$),
+  \item the friction-based normal-flow limit.
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lll}
+\toprule
+\textbf{Condition} & \textbf{Criteria} & \textbf{Adjustment} \\
+\midrule
+Upstream dry & $y_1 = 0$; $Z_1 > E_1$ & $A_{SL1} = 0$ if $H_2 \le Z_1$, else critical adjustment \\
+Downstream dry & $y_2 = 0$; $Z_2 > E_2$ & $A_{SL2} = 0$ if $H_1 \le Z_2$, else critical adjustment \\
+Upstream critical & $Q < 0$; $Z_1 > E_1$; $H_1 - Z_1 < y_*$ & $y_1 = y_*$; $A_{SL1} = 0$ \\
+Downstream critical & $Q > 0$; $Z_2 > E_2$; $H_2 - Z_2 < y_*$ & $y_2 = y_*$; $A_{SL2} = 0$ \\
+\bottomrule
+\end{tabular}
+\caption{Surface-area and depth adjustments for dry/critical conduit ends
+($y_* = \min(y_n, y_c)$; $E$ = node invert, $Z$ = conduit invert).}
+\label{tab:surfadj}
+\end{table}
+
+\subsection{Surface-area contributions}
+
+For a subcritical conduit, the free-surface areas contributed to its two end
+nodes are
+\begin{equation}
+  A_{SL1} = \frac{W_1 + \bar{W}}{2}\,\frac{L}{2},
+  \qquad
+  A_{SL2} = \frac{\bar{W} + W_2}{2}\,\frac{L}{2}\,
+  \mathrm{fasnh},
+\end{equation}
+where $W_1, W_2, \bar W$ are the top widths at $y_1, y_2, \bar y$, and
+$\mathrm{fasnh}$ is a factor between normal and critical depth for a nearly
+critical downstream end. For dry/critical ends the half-link surface area is
+adjusted per Table~\ref{tab:surfadj}; a completely dry conduit contributes
+$A_{SL1} = A_{SL2} = \mathrm{FUDGE}\cdot L/2$. A closed conduit whose midpoint
+depth exceeds the crown cutoff ($y/y_{\mathrm{full}} \ge 0.96$ under EXTRAN)
+uses a width capped at the crown in the surface-area computation, providing the
+small nonzero contribution that keeps the node Picard denominator bounded.
+
+% =============================================================================
+% 9. THE MOMENTUM KERNEL
+% =============================================================================
+\section{The link momentum kernel}
+\label{sec:momentum-kernel}
+
+Each conduit is solved by one of the momentum kernels in
+\texttt{DynamicWave.cpp} (\texttt{process\-Manning\-Link},
+\texttt{process\-Dry\-Link}, \texttt{process\-Force\-Main\-Link}), dispatched
+by momentum category. This section transcribes the Manning (free-surface and
+closed-conduit) kernel, which is the main one.
+
+\subsection{Velocity, Froude number, and inertial damping}
+
+With $\bar A$ the midpoint area and $q_{\mathrm{last}}$ the per-barrel flow
+from the previous iteration,
+\begin{equation}
+  v = \frac{q_{\mathrm{last}}}{\bar A}, \qquad
+  \lvert v \rvert \le V_{\max} = 50\ \ft/\st
+  \quad\text{(velocity cap).}
+\end{equation}
+For a non-surcharged conduit the Froude number uses the hydraulic depth
+$\bar A/\bar W$:
+\begin{equation}
+  \mathrm{Fr} = \frac{\lvert v \rvert}{\sqrt{g\,\bar A / \bar W}}
+  \quad\text{(0 for a closed conduit within FUDGE of full).}
+\end{equation}
+The inertial-damping factor follows the \emph{local partial inertia} approach
+(linear blend over $0.5 \le \mathrm{Fr} \le 1$):
+\begin{equation}
+  \sigma =
+  \begin{cases}
+    1 & \mathrm{Fr} \le 0.5,\\
+    2\,(1 - \mathrm{Fr}) & 0.5 < \mathrm{Fr} < 1,\\
+    0 & \mathrm{Fr} \ge 1,
+  \end{cases}
+  \qquad\text{i.e.}\quad
+  \sigma = \mathrm{clamp}\!\big(2(1-\mathrm{Fr}),\ 0,\ 1\big).
+\end{equation}
+The \texttt{INERTIAL\_DAMPING} option overrides this: NONE forces $\sigma = 1$,
+FULL forces $\sigma = 0$ (no inertial terms at all); a closed conduit that is
+surcharged always has $\sigma = 0$.
+
+\subsection{Upstream weighting}
+
+The pressure and friction terms use \emph{upstream-weighted} average area and
+hydraulic radius, reflecting that supercritical flow is influenced only by
+upstream conditions. With the weighting factor
+\begin{equation}
+  \rho = \begin{cases} \sigma & q_{\mathrm{last}} > 0 \text{ and } H_1 \ge H_2
+    \text{ (and not full),}\\ 1 & \text{otherwise,}\end{cases}
+\end{equation}
+\begin{equation}
+  \bar A' = A_1 + \rho\left(\bar A - A_1\right),
+  \qquad
+  \bar R' = R_1 + \rho\left(\bar R - R_1\right).
+\end{equation}
+
+\subsection{The six momentum terms}
+
+The engine evaluates the momentum equation as the six contributions
+$dq_1 \ldots dq_6$ (per barrel):
+\begin{align}
+  dq_1 &= \Delta t \cdot \mathrm{rough\_factor} \cdot
+        \frac{\lvert v \rvert}{\bar R'^{\,4/3}}, \label{eq:dq1}\\
+  dq_2 &= \Delta t\, g\, \bar A'\, \frac{H_2 - H_1}{L}, \label{eq:dq2}\\
+  dq_3 &= 2\,v\,\sigma\left(\bar A^{t+\Delta t} - \bar A^{t}\right), \label{eq:dq3}\\
+  dq_4 &= \Delta t\, v^{2}\, \sigma\,\frac{A_2 - A_1}{L}, \label{eq:dq4}\\
+  dq_5 &= \frac{\Delta t}{2L}
+          \left[ K_{\mathrm{in}}\frac{\lvert q \rvert}{A_1} +
+                K_{\mathrm{out}}\frac{\lvert q \rvert}{A_2} +
+                K_{\mathrm{avg}}\frac{\lvert q \rvert}{\bar A} \right], \label{eq:dq5}\\
+  dq_6 &= \frac{2.5\,\Delta t\, v}{L}\left(Q_{\mathrm{evap}} +
+          Q_{\mathrm{seep}}\right), \label{eq:dq6}
+\end{align}
+where $\mathrm{rough\_factor} = g(n/1.486)^2$, the local-loss coefficients
+$K_{\mathrm{in}}, K_{\mathrm{out}}, K_{\mathrm{avg}}$ are the user's inlet,
+outlet, and average (loss-weighted) minor-loss coefficients, and
+$Q_{\mathrm{evap}} + Q_{\mathrm{seep}}$ is the per-conduit loss rate.
+
+The flow update (per barrel) and its head gradient are
+\begin{equation}
+  q = \frac{q_{\mathrm{old}} - dq_2 + dq_3 + dq_4 + dq_6}
+           {1 + dq_1 + dq_5},
+  \label{eq:q-update}
+\end{equation}
+\begin{equation}
+  \frac{dQ}{dH} = \frac{1}{1 + dq_1 + dq_5}\,
+  \frac{g\,\Delta t\, \bar A'}{L}\,\mathrm{barrels}.
+  \label{eq:dqdh}
+\end{equation}
+The $dQ/dH$ gradient feeds the node surcharge solver (Section~\ref{sec:node-cont}).
+
+\subsection{Flow limiting and post-processing}
+
+After the raw momentum update, \texttt{applyFlowLimits}
+(\texttt{DynamicWave.cpp:2211}) applies, in order:
+\begin{enumerate}[nosep]
+  \item \textbf{Culvert inlet control} (FHWA HEC-5): if a culvert code is
+        present and the conduit is not full, $q \leftarrow \min(q, q_{\mathrm{inlet}})$.
+  \item \textbf{Normal-flow limit}: for an open/free-surface conduit not full,
+        if the slope condition ($y_1 < y_2$, i.e.\ the water-surface slope is
+        smaller than the bed slope) or the upstream-Froude condition
+        ($\mathrm{Fr}_1 \ge 1$) holds (per the \texttt{NORMAL\_FLOW\_LIMITED}
+        option), then
+        \begin{equation}
+          q \leftarrow \min\!\left(q,\ \beta\,A_1\,R_1^{2/3}\right),
+        \end{equation}
+        the Manning normal flow at the upstream depth.
+  \item \textbf{Under-relaxation} (iterations $> 0$):
+        $q = (1-\omega)q_{\mathrm{last}} + \omega\,q$ with a sign-change clamp
+        to $\pm 0.001$.
+  \item \textbf{User flow limit}: $\lvert q \rvert \le q_{\mathrm{limit}}$.
+  \item \textbf{Flap gates}: reverse flow through a flap gate is zeroed.
+  \item \textbf{Dry-node check}: flow is forced to $\pm \mathrm{FUDGE}$ if the
+        upstream (downstream) node is dry.
+\end{enumerate}
+Finally,
+\begin{equation}
+  Q^{t+\Delta t} = q\,\mathrm{barrels}, \qquad
+  d_{\mathrm{link}} = \min(\bar y, y_{\mathrm{full}}), \qquad
+  V_{\mathrm{link}} = \frac{A_1 + A_2}{2}\,L_{\mathrm{raw}}\,\mathrm{barrels}.
+\end{equation}
+
+\subsection{Force mains}
+
+Force mains (a \texttt{FORCE\_MAIN} cross-section, always full) use a separate
+kernel (\texttt{process\-Force\-Main\-Link}) with $\sigma = 0$ and friction
+from either the Hazen--Williams or Darcy--Weisbach equation,
+\begin{equation}
+  \begin{aligned}
+    dq_1 &= \Delta t\, g\, \frac{S_f}{\lvert v \rvert},\\
+    q &= \frac{q_{\mathrm{old}} - dq_2 + dq_6}{1 + dq_1 + dq_5}.
+  \end{aligned}
+\end{equation}
+
+% =============================================================================
+% 10. NODE CONTINUITY AND SURCHARGE
+% =============================================================================
+\section{Node continuity, flooding, and surcharge}
+\label{sec:node-cont}
+
+\subsection{Net flow and volume change}
+
+At each node, per Picard iteration (\texttt{DynamicWave.cpp}, function
+\texttt{setNodeDepth}), the net flow and trapezoidal volume change are:
+\begin{equation}
+  \Delta Q = Q_{\mathrm{in}} - Q_{\mathrm{out}}, \qquad
+  \Delta V = \tfrac{1}{2}\left(\Delta Q_{\mathrm{net}}^{t-1} + \Delta Q\right)
+  \Delta t,
+\end{equation}
+where $\Delta Q_{\mathrm{net}}^{t-1}$ is the net flow of the previous step
+(trapezoidal/Crank--Nicolson averaging).
+
+\subsection{Free-surface update (EXPLICIT continuity)}
+
+For a node that is not surcharged, the depth update is
+\begin{equation}
+  \Delta y = \frac{\Delta V}{A_S}, \qquad
+  y^{t+\Delta t} = y^{t} + \Delta y,
+\end{equation}
+where the assembly surface area is floored by the minimum surface area,
+\begin{equation}
+  A_S = \max\left(A_{SN} + \sum A_{SL},\ A_{\min}\right),
+  \qquad A_{\min} = 12.566\ \sfft,
+\end{equation}
+the default (overrideable via the \texttt{MIN\_SURFAREA} option).
+The minimum area is a purely computational device; it does not add volume.
+
+\subsection{Surcharge (EXTRAN) update}
+
+A node is surcharged when all conduits connected to it are full or its head
+exceeds the crown of its highest conduit ($y > y_{\mathrm{crown}}$), and it is
+not a storage or outfall node and is not ponding. Under EXTRAN the continuity
+equation becomes $\sum Q = 0$, enforced through a perturbation (Newton/Hardy
+Cross) form. The surcharged depth update is
+\begin{equation}
+  \Delta y = \frac{\alpha\,\Delta Q}{\mathrm{denom}}, \qquad
+  y^{t+\Delta t} = y^{t} + \Delta y,
+\end{equation}
+with the terminal-node correction $\alpha = 0.6$ for upstream terminal nodes
+(only outflow links, $\mathrm{deg} < 0$) and 1 otherwise, and a crown-proximity
+blend for a smooth transition into/out of surcharge:
+\begin{equation}
+  \mathrm{denom} = \sum \frac{dQ}{dH} +
+  \left(\frac{A_S^{\mathrm{old}}}{\Delta t} - \sum \frac{dQ}{dH}\right)
+  e^{-15\,f},
+  \qquad f = \frac{y^{t} - y_{\mathrm{crown}}}{y_{\mathrm{crown}}},
+\end{equation}
+applied while $y^{t} < 1.25\,y_{\mathrm{crown}}$. The head is kept at or above
+the crown ($y \ge y_{\mathrm{crown}} - \mathrm{FUDGE}$). The $\sum dQ/dH$
+accumulated at each node is the sum of the per-link gradients
+\eqref{eq:dqdh}; note the engine accumulates $\sum dQ/dH$ as a positive
+magnitude with $dQ_{\mathrm{net}}/dH = -\sum dQ/dH$ (a head rise increases net
+outflow).
+
+\subsection{Semi-implicit node continuity}
+
+The \texttt{NODE\_CONTINUITY} option (default EXPLICIT) can select the unified
+\emph{semi-implicit} formulation, a single smooth expression valid for both
+free-surface and surcharged states. Linearizing the net flow about the current
+head estimate with the flow gradients, $\sum Q^{t+\Delta t} \approx \sum Q +
+\sum(dQ/dH)\,\Delta H$, and substituting into the trapezoidal head update
+yields
+\begin{equation}
+  \Delta y = \frac{\Delta V}
+    {A_S + \tfrac{\Delta t}{2}\sum \frac{dQ}{dH}}, \qquad
+  y^{t+\Delta t} = y^{t} + \Delta y,
+\end{equation}
+with the denominator floored by $A_{\min}$. The flow-gradient term damps the
+update (a head rise that increases net outflow reduces the net fill), and the
+expression is $C^1$-smooth through the crown, which is what makes it compatible
+with Anderson acceleration.
+
+\subsection{Flooding and ponding}
+
+The maximum non-flooded depth is $y_{\max} = d_{\mathrm{full}} + d_{\mathrm{sur}}$
+(for non-ponding nodes; ponding nodes are never capped). If the candidate depth
+exceeds $y_{\max}$:
+\begin{itemize}[nosep]
+  \item \textbf{Non-ponding}: the head is capped at $y_{\max}$ and the excess is
+        lost as overflow,
+        \begin{equation}
+          Q_{\mathrm{ovfl}} = \frac{\Delta V}{\Delta t}, \qquad
+          V = V_{\mathrm{full}};
+        \end{equation}
+  \item \textbf{Ponding} (with \texttt{ALLOW\_PONDING} and a positive ponded
+        area): the ponded node acts as a constant-area storage node above the
+        rim,
+        \begin{equation}
+          V = \max\left(V^{\mathrm{old}} + \Delta V,\ V_{\mathrm{full}}\right), \qquad
+          Q_{\mathrm{ovfl}} = \frac{V - \max(V^{\mathrm{old}},\ V_{\mathrm{full}})}
+            {\Delta t},
+        \end{equation}
+        and the head is free to rise above the rim.
+\end{itemize}
+A ponded node is not allowed to drop much below full depth once ponded
+($y \ge d_{\mathrm{full}} - \mathrm{FUDGE}$).
+
+% =============================================================================
+% 11. SURCHARGE METHODS
+% =============================================================================
+\section{Surcharge methods}
+
+The \texttt{SURCHARGE\_METHOD} option selects how pressurized flow in closed
+conduits is treated. All three methods update the flow area of a surcharged
+conduit (depth $> y_{\mathrm{full}}$) by adding a narrow slot of width $w_s$:
+\begin{equation}
+  A = A_{\mathrm{full}} + (y - y_{\mathrm{full}})\,w_s,
+\end{equation}
+while the hydraulic radius is clamped to its full value $R_{\mathrm{full}}$
+(the slot contributes storage but not friction).
+
+\subsection{EXTRAN (default)}
+
+The classical perturbation method of Section~\ref{sec:node-cont}:
+$dQ/dH$-based surcharged node updates with a crown cutoff at
+$y/y_{\mathrm{full}} = 0.96$ used for the width used in the surface-area
+computation.
+
+\subsection{Static Preissmann slot}
+
+The conduit carries a fictitious narrow slot above the crown so the free-surface
+formulation remains valid throughout pressurization. The slot width follows the
+Sj{\"o}berg (1982) formula,
+\begin{equation}
+  \frac{w_s}{W_{\max}} = 0.5423\,
+  \exp\!\left(-\left(\frac{y}{y_{\mathrm{full}}}\right)^{2.4}\right),
+\end{equation}
+applied for $0.985257 \le y/y_{\mathrm{full}} \le 1.78$, clamped at
+$w_s = 0.01\,W_{\max}$ above that, and zero below the cutoff.
+
+\subsection{Dynamic Preissmann slot}
+
+An OpenSWMM extension (Sharior, Hodges \& Vasconcelos 2023) in which the slot
+area evolves in time as an element of transient storage. The slot top width is
+driven by a target pressure-wave celerity $c_{pT}$ and a time-varying
+Preissmann number $P$:
+\begin{equation}
+  T_s = \frac{g\,A_{\mathrm{full}}}{c_{pT}^{2}}\,P^{2},
+  \qquad
+  P_{0} = \max\!\left(\frac{c_{pT}}{\alpha\,c_g},\ 1\right),
+  \qquad c_g = \sqrt{g\,A_{\mathrm{full}}/W_{\max}},
+\end{equation}
+with the shock parameter $\alpha = 3$ (default). The accumulated slot area is
+path-dependent,
+\begin{equation}
+  A_s \leftarrow \max\!\left(A_s + T_s\,\Delta h_s,\ 0\right),
+  \qquad h_s = \max(\bar y - y_{\mathrm{full}},\ 0),
+\end{equation}
+and $P$ decays exponentially after pressurization onset and is spatially
+smoothed across nodes. While a slot is active, the top width is $T_s$ and the
+surface area contributed to a surcharged end node is $T_s\,L/4$. Nodal heads
+are updated with the ordinary free-surface formula at all times; the
+surcharge branch is never invoked. The variable time step uses the pressure
+celerity $c_p = c_{pT}/P$.
+
+% =============================================================================
+% 12. NON-CONDUIT STRUCTURES
+% =============================================================================
+\section{Non-conduit hydraulic structures}
+\label{sec:structures}
+
+The non-conduit structure flows are computed by \texttt{HydStructures.cpp}
+(\texttt{StructureSolver}) inside the dynamic-wave Picard iteration, one link
+at a time in link-index order (so that two pumps sharing a wet well see each
+other's draw), with immediate scatter into the node accumulators and
+under-relaxation at $\omega = 0.5$ for iterations $> 0$ (pumps exempt).
+
+\subsection{Pumps}
+
+Pump on/off control uses depth hysteresis applied once per routing step:
+\begin{equation}
+  \text{shut off if } d < d_{\mathrm{off}} \ (\text{setting} > 0),
+  \qquad
+  \text{start if } d > d_{\mathrm{on}} \ (\text{setting} = 0).
+\end{equation}
+The pump curve types (1--5) determine the discharge $q$ from the curve versus
+wet-well volume (type 1), depth (types 2 and 4), or head (types 3 and 5, where
+$q$ is scaled by the speed setting $s$ and the head by $s^2$); an ideal pump
+discharges exactly the upstream node's inflow plus overflow. Flow limiting
+(legacy \texttt{getModPumpFlow}) prevents pumping more than is available
+(dry-draw protection) and, for type-1 pumps or storage-fed pumps, caps $q$ by
+$Q_{\mathrm{in}} + V_{\mathrm{old}}/\Delta t$.
+
+\subsection{Orifices}
+
+Bottom and side orifices use a coefficient and a critical depth set up from the
+opening height $h_{\mathrm{open}} = s\,y_{\mathrm{full}}$ (setting $s$):
+\begin{align}
+  f &= \min\!\left(\frac{\text{head}}{h_{\mathrm{crit}}},\ 1\right),
+  \qquad h_{\mathrm{crit}} = \frac{C_d}{0.414}\,\frac{h_{\mathrm{open}}}
+    {4}\ \text{(circular)}\ \text{or}\ \frac{C_d}{0.414}\,
+    \frac{h_{\mathrm{open}}\,W_{\max}}{2(h_{\mathrm{open}} + W_{\max})}
+    \text{(rectangular)},\\
+  q &= \begin{cases}
+    C_w\,f^{3/2} & f < 1 \quad\text{(weir-like partial flow)},\\
+    C_d\,A_{\mathrm{eff}}\sqrt{2g\,H} & f \ge 1 \quad\text{(full orifice)},
+  \end{cases}
+\end{align}
+with $C_w = C_d\sqrt{h_{\mathrm{crit}}}\,A_{\mathrm{eff}}\sqrt{2g}$ (sharp-
+crested weir coefficient 0.414), $A_{\mathrm{eff}}$ the cross-section area at
+the opening height, and $H$ the appropriate head (differential head when
+submerged). The flow gradient is
+\begin{equation}
+  \frac{dQ}{dH} = \frac{3}{2}\,\frac{q}{f\,h_{\mathrm{crit}}}
+  \quad\text{(weir regime)}, \qquad
+  \frac{dQ}{dH} = \frac{q}{2H}
+  \quad\text{(orifice regime)}.
+\end{equation}
+An optional ARMCO flap-gate head loss and the Villemonte submergence correction
+may be applied.
+
+\subsection{Weirs}
+
+The four weir types (transverse, side-flow, V-notch, trapezoidal) discharge
+according to
+\begin{equation}
+  \begin{aligned}
+    q &= C_d\,L\,h^{3/2} &&\text{(transverse)},\\
+    q &= C_d\,L^{0.83}\,h^{1.67} &&\text{(side-flow, corrected)},\\
+    q &= C_d\,s_h\,h^{5/2} &&\text{(V-notch)},
+  \end{aligned}
+\end{equation}
+with end contractions reducing the effective length. When the upstream
+hydraulic grade line reaches the crown ($H_1 \ge H_{\mathrm{crown}}$) and
+surcharging is allowed, the weir transitions to orifice flow using an
+equivalent-orifice coefficient computed from the weir discharge at full
+opening:
+\begin{equation}
+  C_{\mathrm{sur}} = \frac{Q_{\mathrm{weir}}(s\,y_{\mathrm{full}})}
+    {\sqrt{(s\,y_{\mathrm{full}})/2}},
+  \qquad
+  q = C_{\mathrm{sur}}\sqrt{H_{\mathrm{orif}}},
+\end{equation}
+with $H_{\mathrm{orif}}$ the head to the mid-point of the opening (or the
+differential head when submerged). If surcharging is not allowed, the head is
+capped at the crown and the weir equation is kept. Villemonte submergence
+correction applies when the downstream HGL exceeds the crest. The weir's
+surface-area contribution is zeroed for SWMM-4 compatibility.
+
+\subsection{Outlets}
+
+Outlets use head- or depth-based rating curves (tabular or functional):
+\begin{equation}
+  q = C\,H^{e} \quad\text{(functional)}, \qquad
+  q = \mathrm{table}(H) \quad\text{(tabular)},
+\end{equation}
+scaled by the setting. The $dQ/dH$ is deliberately left zero (matching
+legacy), which keeps the node surcharge denominator from being inflated.
+
+% =============================================================================
+% 13. OUTFALL BOUNDARY CONDITIONS
+% =============================================================================
+\section{Outfall boundary conditions}
+\label{sec:outfall}
+
+Outfall stages are set at the start of each routing step and again inside each
+Picard iteration from the current conduit flows. For the conduit connected to
+an outfall at end offset $z$, with per-barrel flow $q$, the normal depth
+$y_n$ (from the inverse section factor) and critical depth $y_c$ are computed
+($y_c$ has closed forms for standard shapes and a numerical root find
+otherwise). The stage depends on the boundary-condition type
+(\texttt{Outfall.cpp:setOutfallDepth}):
+\begin{itemize}[nosep]
+  \item \textbf{FREE}: free overfall, $d = z + \min(y_n, y_c)$.
+  \item \textbf{NORMAL}: $d = z + y_n$.
+  \item \textbf{FIXED}, \textbf{TIDAL}, \textbf{TIMESERIES}: the stage
+        $s_{\mathrm{stage}}$ is constant, from a tidal table (hour of day), or
+        from a time series; then
+        \begin{equation}
+          d = \begin{cases}
+            s_{\mathrm{stage}} - z_{\mathrm{inv}} & z + y_c + z_{\mathrm{inv}}
+              < s_{\mathrm{stage}},\\
+            \max(0,\ s_{\mathrm{stage}} - z_{\mathrm{inv}}) & z > 0 \wedge
+              s_{\mathrm{stage}} < z_{\mathrm{inv}} + z,\\
+            z + y_c & z > 0 \wedge s_{\mathrm{stage}} \ge z_{\mathrm{inv}} + z,\\
+            y_c & z = 0.
+          \end{cases}
+        \end{equation}
+\end{itemize}
+The last case keeps a free-discharging fixed outfall at the conduit critical
+depth. A flap gate at an outfall blocks reverse flow.
+
+% =============================================================================
+% 14. FLOW DIVIDERS
+% =============================================================================
+\section{Flow dividers}
+
+Dividers are active only under kinematic-wave (and steady) routing; under
+dynamic wave they act as ordinary junctions. Given the total inflow
+$Q_{\mathrm{in}}$ at the divider node:
+\begin{itemize}[nosep]
+  \item \textbf{Cutoff}: diverts all inflow above a minimum,
+        $Q_{\mathrm{div}} = \max(0, Q_{\mathrm{in}} - q_{\min})$.
+  \item \textbf{Overflow}: diverts the inflow above the capacity of the
+        continuation link.
+  \item \textbf{Tabular}: $Q_{\mathrm{div}} = Q_{\mathrm{in}}\cdot
+        f(Q_{\mathrm{in}})$ with the fraction from a rating table.
+  \item \textbf{Weir}: $Q_{\mathrm{div}} = C_d\,W\,d^{3/2}$ from a weir relation
+        on the node depth, capped at the inflow.
+\end{itemize}
+The diverted flow is written to the diversion link; the continuation link
+carries the remainder.
+
+% =============================================================================
+% 15. ADAPTIVE TIME STEPPING
+% =============================================================================
+\section{Adaptive time stepping and the Courant condition}
+
+\subsection{Courant--Friedrichs--Lewy condition}
+
+Because the dynamic-wave scheme updates flows and heads element by element
+(there is no simultaneous spatial coupling), it is subject to the Courant
+condition: the time step must not exceed the time for a dynamic wave to
+traverse the shortest conduit,
+\begin{equation}
+  \Delta t \le \frac{L}{\lvert U \rvert + c},
+  \qquad c = \sqrt{g\,\frac{A}{W}}
+  \text{ (gravity-wave celerity).}
+\end{equation}
+
+\subsection{Link-based step}
+
+For each conduit (\texttt{getLinkStep}, \texttt{DynamicWave.cpp:3711}) with
+per-barrel flow $q = \lvert Q \rvert/\mathrm{barrels}$, midpoint area $A$, and
+Froude number $\mathrm{Fr}$:
+\begin{equation}
+  t = \frac{V/\mathrm{barrels}}{q}\,
+      \frac{L'}{L}\,\frac{\mathrm{Fr}}{1 + \mathrm{Fr}},
+\end{equation}
+(the classic SWMM CFL expression, scaled by the lengthened/raw length ratio).
+Under the dynamic Preissmann slot a surcharged conduit instead uses the
+pressure celerity,
+\begin{equation}
+  t = \frac{L\,(L'/L)}{\lvert v \rvert + c_p}, \qquad
+  c_p = \frac{c_{pT}}{P}.
+\end{equation}
+
+\subsection{Node-based step}
+
+For each non-outfall node below the crown with a nonzero depth-change rate
+$\dot y = \lvert \Delta y/\Delta t \rvert$:
+\begin{equation}
+  t = 0.25\,\frac{y_{\mathrm{crown}}}{\dot y},
+\end{equation}
+guarding against excessive head change in one step.
+
+\subsection{Combining the constraints}
+
+The next routing step (\texttt{getRoutingStep}) is the minimum over all links,
+nodes, and virtual-junction pairs, each scaled by the user's Courant factor,
+then floored and clamped:
+\begin{equation}
+  \Delta t_{\min}^{\mathrm{eff}} =
+    \max\!\left(\min_{j,i}\{t_j, t_i\}\cdot \mathrm{Cr},\
+      \max(\min(\Delta t_{\min},\ \Delta t_{\mathrm{routing}}),\
+      0.001\ \st)\right),
+\end{equation}
+rounded to milliseconds. The effective step is then capped by the user's fixed
+\texttt{ROUTING\_STEP} and the remaining simulation duration. The initial step
+is the minimum step. The first call (no flows yet) also returns the minimum
+step. The FV solver substeps internally at its own CFL limit, so the routing
+step under FV is only a reporting cadence.
+
+% =============================================================================
+% 16. STABILITY, CONVERGENCE, MASS BALANCE
+% =============================================================================
+\section{Stability, convergence, and mass balance}
+
+\subsection{Stability indicators}
+
+Numerical instability appears as non-damping oscillations in flow and water
+surface, and nodes that repeatedly dry up. Two report metrics quantify it:
+\begin{itemize}[nosep]
+  \item the overall \textbf{flow continuity error} (below), and
+  \item the \textbf{link Flow Instability Index (FII)} --- the normalized count
+        of times a link's flow exceeds both its neighbors.
+\end{itemize}
+
+\subsection{Convergence of the Picard loop}
+
+A routing step ``does not converge'' only when the head tolerance
+($\varepsilon_H = 0.005\ \ft$) is not met at some non-outfall node after
+\texttt{MAX\_TRIALS} iterations. Anderson acceleration (optional) speeds
+convergence by blending the two most recent operator outputs at each node:
+\begin{equation}
+  \alpha_k = \mathrm{clamp}\!\left(
+    \frac{r_k\,(r_k - r_{k-1})}{(r_k - r_{k-1})^{2}},\ 0,\ 1\right),
+  \qquad
+  H_{k+1} = (1-\alpha_k)\,G(H_k) + \alpha_k\,G(H_{k-1}),
+\end{equation}
+with $r_k = G(H_k) - H_k$ the residual and $G$ the head-update operator. It is
+skipped at nodes where $G$ is non-smooth (EXTRAN-surcharged, dynamic-slot
+active, near the static-slot cutoff, weir/orifice at crown, pump ends, ponding
+boundary).
+
+\subsection{Routing mass balance}
+
+The routing continuity error (fraction of total inflow) is
+\begin{equation}
+  \varepsilon_{\mathrm{routing}} = \frac{Q_{\mathrm{dw}} + Q_{\mathrm{wet}} +
+    Q_{\mathrm{gw}} + Q_{\mathrm{rdii}} + Q_{\mathrm{ext}} +
+    V_{\mathrm{init}} - \left(Q_{\mathrm{flood}} + Q_{\mathrm{out}} +
+    Q_{\mathrm{evap}} + Q_{\mathrm{seep}} + V_{\mathrm{final}}\right)}
+    {Q_{\mathrm{total\,in}}},
+\end{equation}
+where the inflows are dry-weather, wet-weather, groundwater, RDII, and external,
+and the outflows are flooding, system outflow, evaporation, seepage, and final
+storage. Flooding is counted only when the node volume does not exceed its full
+volume; outfall discharge counts as system outflow, and outfall backflow counts
+as external inflow. Conduit and storage-node evap/seep losses are charged here
+as well.
+
+% =============================================================================
+% 17. OPTIONS
+% =============================================================================
+\section{Options and defaults}
+
+Table~\ref{tab:options} summarizes the routing-related options
+(\texttt{SimulationOptions.hpp}) and their defaults.
+
+\begin{longtable}{lll}
+\toprule
+\textbf{Option} & \textbf{Default} & \textbf{Purpose} \\
+\midrule
+\endhead
+\texttt{FLOW\_ROUTING} & DYNWAVE & routing formulation \\
+\texttt{ROUTING\_STEP} & 20 s & fixed routing step \\
+\texttt{MINIMUM\_STEP} & 0.5 s & floor for the CFL step \\
+\texttt{DRY\_STEP} / \texttt{WET\_STEP} & 3600 / 300 s & runoff step bounds \\
+\texttt{VARIABLE\_STEP} & 0.75 & Courant factor (0 = fixed step) \\
+\texttt{LENGTHENING\_STEP} & 0 & Courant lengthening step \\
+\texttt{MAX\_TRIALS} & 8 & Picard trial limit \\
+\texttt{HEAD\_TOLERANCE} & 0.005 (project units) & node convergence tolerance \\
+\texttt{SURCHARGE\_METHOD} & EXTRAN & EXTRAN / SLOT / DYNAMIC\_SLOT \\
+\texttt{NODE\_CONTINUITY} & EXPLICIT & two-branch vs semi-implicit \\
+\texttt{INERTIAL\_DAMPING} & PARTIAL & Froude damping policy \\
+\texttt{NORMAL\_FLOW\_LIMITED} & BOTH & slope/Froude normal-flow cap \\
+\texttt{MIN\_SURFAREA} & 12.566 ft$^2$ & nodal area floor \\
+\texttt{ALLOW\_PONDING} & false & allow ponding above the rim \\
+\texttt{ANDERSON\_ACCEL} & false & Anderson acceleration \\
+\texttt{SKIP\_STEADY\_STATE} & false & skip steady routing \\
+\bottomrule
+\caption{Routing-related options and defaults.}
+\label{tab:options}
+\end{longtable}
+
+% =============================================================================
+% 18. REFERENCES
+% =============================================================================
+\section{References}
+
+\begin{enumerate}[nosep,label={[\arabic*]}]
+  \item Rossman, L.~A. (2017). \emph{Storm Water Management Model Reference
+        Manual Volume II -- Hydraulics}. U.S.\ EPA.
+  \item OpenSWMM engine source:
+        \begin{itemize}[nosep,itemsep=0pt]
+          \item \src{hydraulics/Routing.cpp} \\
+                \src{hydraulics/DynamicWave.cpp} \\
+                \src{hydraulics/KinematicWave.cpp} \\
+                \src{hydraulics/HydStructures.cpp}
+          \item \src{hydraulics/Node.cpp} \\
+                \src{hydraulics/Link.cpp} \\
+                \src{hydraulics/Outfall.cpp} \\
+                \src{hydraulics/Divider.cpp}
+          \item \src{hydraulics/XSectBatch.cpp} \\
+                \src{hydraulics/XSectKernels.hpp} \\
+                \src{core/SimulationOptions.hpp} \\
+                \src{core/SWMMEngine.cpp}
+        \end{itemize}
+  \item Sharior, S., Hodges, B.~R., \& Vasconcelos, J.~G. (2023).
+        Generalized, dynamic, and transient-storage form of the Preissmann
+        slot. \emph{Journal of Hydraulic Engineering}, 149(11).
+  \item Sj{\"o}berg, A. (1982). Sewer network models dagnum and DIVISION --
+        a brief description. \emph{Swedish Water and Wastewater Works
+        Association}.
+  \item Roesner, L.~A., Nichandros, H.~M., Shubinski, R.~P., Feldman, A.~D.,
+        Abbott, J.~W., \& Delleur, J.~W. (1981). \emph{Physical model for
+        combined sewer overflows}. Proc.\ ASCE.
+  \item de~Almeida, G.~A.~M., \& Bates, P.~D. (2013). Applicability of the
+        local inertial approximation of the shallow water equations to flood
+        modeling. \emph{Water Resources Research}, 49(8).
+\end{enumerate}
+
+\end{document}
