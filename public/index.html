@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://api.mapbox.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://maps.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.mapbox.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://api.mapbox.com https://portal.opentopography.org https://epsg.io https://*.tile.openstreetmap.org https:; worker-src 'self' blob:; object-src 'none';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://api.mapbox.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://maps.googleapis.com https://*.googleapis.com https://*.gstatic.com https://maps.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.mapbox.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://api.mapbox.com https://portal.opentopography.org https://epsg.io https://*.tile.openstreetmap.org https://maps.googleapis.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https:; worker-src 'self' blob:; object-src 'none';">
     <script src="coi-serviceworker.js"></script>
     <script>
         if (window.location.hostname === 'docs.swmm6.is-local.org' && (window.location.pathname === '/' || window.location.pathname === '')) {
@@ -566,80 +566,250 @@
 
     <!-- Options Modal -->
     <div id="options-modal" class="modal-overlay hidden">
-        <div class="modal-box" style="max-width: 500px;">
-            <h2>Simulation Options</h2>
-            <div class="settings-group">
-                <span class="settings-label">Flow Routing</span>
-                <select id="opt-flow-routing" class="tb-select">
-                    <option value="">Kinematic Wave (Default)</option>
-                    <option value="KINWAVE">Kinematic Wave</option>
-                    <option value="DYNWAVE">Dynamic Wave</option>
-                    <option value="STEADY">Steady</option>
-                    <option value="FV">Finite Volume (FV)</option>
-                </select>
-                <small id="fv-perf-note" style="display:none;margin-top:4px;color:#b45309;">FV is 1.5–6× slower than dynamic wave (engine's own benchmark range). Use it when mass conservation through filling/emptying transitions matters.</small>
-            </div>
-            <details id="opt-fv-advanced" style="margin-top:12px;">
-              <summary style="cursor:pointer;font-weight:600;color:#334155;">Advanced FV Options</summary>
-              <div style="padding:8px 0;">
-                <div class="settings-label">Mesh</div>
-                <div class="settings-group"><span class="settings-label">FV_CELL_LENGTH (m/ft)</span><input type="number" id="opt-fv-cell-length" class="tb-input" step="any" placeholder="0 (auto)"></div>
-                <div class="settings-group"><span class="settings-label">FV_MIN_CELLS</span><input type="number" id="opt-fv-min-cells" class="tb-input" step="1" placeholder="4"></div>
-                <div class="settings-label" style="margin-top:8px;">Scheme</div>
-                <div class="settings-group"><span class="settings-label">FV_CFL</span><input type="number" id="opt-fv-cfl" class="tb-input" step="any" placeholder="0.5"></div>
-                <div class="settings-group"><span class="settings-label">FV_RIEMANN</span><select id="opt-fv-riemann" class="tb-select"><option value="">HLLC (Default)</option><option value="HLL">HLL</option></select></div>
-                <div class="settings-group"><span class="settings-label">FV_ORDER</span><select id="opt-fv-order" class="tb-select"><option value="">1 (Default)</option><option value="2">2 (MUSCL-Hancock)</option></select></div>
-                <div class="settings-group"><span class="settings-label">FV_LIMITER</span><select id="opt-fv-limiter" class="tb-select"><option value="">MINMOD (Default)</option><option value="VANLEER">VANLEER</option><option value="SUPERBEE">SUPERBEE</option></select></div>
-                <div class="settings-group"><span class="settings-label">FV_SCALAR_SCHEME</span><select id="opt-fv-scalar-scheme" class="tb-select"><option value="">MUSCL (Default)</option><option value="UPWIND">UPWIND</option><option value="QUICKEST_ULTIMATE">QUICKEST_ULTIMATE</option></select></div>
-                <div class="settings-group"><span class="settings-label">FV_TIME_INTEGRATION</span><select id="opt-fv-time-integration" class="tb-select"><option value="">EULER (Default)</option><option value="RK2">RK2</option></select></div>
-                <div class="settings-group"><span class="settings-label">FV_SLOT_CELERITY (m/s or ft/s)</span><input type="number" id="opt-fv-slot-celerity" class="tb-input" step="any" placeholder="100"></div>
-                <div class="settings-label" style="margin-top:8px;">Coupling</div>
-                <div class="settings-group"><span class="settings-label">FV_NODE_COUPLING</span><select id="opt-fv-node-coupling" class="tb-select"><option value="">SEMI_IMPLICIT (Default)</option><option value="EXPLICIT">EXPLICIT</option></select></div>
-                <div class="settings-group"><span class="settings-label">FV_NODE_DT</span><select id="opt-fv-node-dt" class="tb-select"><option value="">STABILITY (Default)</option><option value="NONE">NONE</option></select></div>
-                <div class="settings-group"><span class="settings-label">FV_NODE_PICARD (sweeps)</span><input type="number" id="opt-fv-node-picard" class="tb-input" step="1" placeholder="1"></div>
-                <div class="settings-group"><span class="settings-label">FV_STRUCTURE_COUPLING</span><select id="opt-fv-structure-coupling" class="tb-select"><option value="">SUBSTEP (Default)</option><option value="ROUTING_STEP">ROUTING_STEP</option></select></div>
-                <div class="settings-label" style="margin-top:8px;">Execution</div>
-                <div class="settings-group"><span class="settings-label">FV_BACKEND</span><select id="opt-fv-backend" class="tb-select"><option value="">AUTO (Default)</option><option value="CPU">CPU</option></select></div>
-                <div class="settings-group"><span class="settings-label">FV_COMPACTION</span><select id="opt-fv-compaction" class="tb-select"><option value="">YES (Default)</option><option value="NO">NO</option></select></div>
-                <div class="settings-label" style="margin-top:8px;">Transport</div>
-                <div class="settings-group"><span class="settings-label">FV_DISPERSION (m²/s or ft²/s)</span><input type="number" id="opt-fv-dispersion" class="tb-input" step="any" placeholder="0 (disabled)"></div>
-              </div>
-            </details>
-            <div class="settings-group">
-                <span class="settings-label">Node Continuity</span>
-                <select id="opt-node-continuity" class="tb-select">
-                    <option value="">Legacy (Default)</option>
-                    <option value="SEMI_IMPLICIT">Semi-Implicit (Enhanced)</option>
-                </select>
-                <small style="display:block;margin-top:4px;color:#64748b;">Single-equation formulation that removes the legacy two-branch discontinuity.</small>
-            </div>
-            <div class="settings-group" style="margin-top:12px;">
-                <span class="settings-label">Anderson Acceleration</span>
-                <select id="opt-anderson-accel" class="tb-select">
-                    <option value="">No (Default)</option>
-                    <option value="YES">Yes</option>
-                </select>
-                <small style="display:block;margin-top:4px;color:#64748b;">Cuts Picard iteration counts by 25-50% on stiff surcharge transitions.</small>
+        <div class="modal-box">
+            <div class="options-modal-header">
+                <h2>
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6-3.6z"/></svg>
+                    Simulation Options
+                </h2>
+                <div class="opt-tabs">
+                    <button type="button" class="opt-tab-btn active" id="opt-tab-btn-gen" data-tab="gen">General &amp; Hydraulics</button>
+                    <button type="button" class="opt-tab-btn" id="opt-tab-btn-fv" data-tab="fv">Advanced FV Options</button>
+                </div>
             </div>
             
-            <h3 style="margin-top:20px; font-size:14px; font-weight:600; color:#334155; border-bottom:1px solid #e2e8f0; padding-bottom:4px;">Physics-Based RDII Abstraction Recovery</h3>
-            <div style="display: flex; gap: 10px; margin-top:12px;">
-                <div style="flex: 1;">
-                    <span class="settings-label">k0</span>
-                    <input type="number" id="opt-rdii-k0" class="tb-input" placeholder="e.g. 0.01" step="any" style="width:100%; padding: 4px;">
+            <div class="options-modal-body">
+                <!-- Tab 1: General & Hydraulics -->
+                <div id="opt-tab-gen" class="opt-tab-content">
+                    <!-- General & Engine Parallelism Card -->
+                    <div class="opt-card">
+                        <div class="opt-card-title">General &amp; Parallel Engine Settings</div>
+                        <div class="opt-grid-2">
+                            <div class="opt-field">
+                                <label for="opt-flow-routing">Flow Routing</label>
+                                <select id="opt-flow-routing" class="tb-select">
+                                    <option value="">Kinematic Wave (Default)</option>
+                                    <option value="KINWAVE">Kinematic Wave</option>
+                                    <option value="DYNWAVE">Dynamic Wave</option>
+                                    <option value="STEADY">Steady</option>
+                                    <option value="FV">Finite Volume (FV)</option>
+                                </select>
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-threads">Parallel Threads (OpenMP)</label>
+                                <select id="opt-threads" class="tb-select">
+                                    <option value="">Default (1 Thread)</option>
+                                    <option value="1">1 Thread (Sequential)</option>
+                                    <option value="2">2 Threads</option>
+                                    <option value="4">4 Threads (Recommended)</option>
+                                    <option value="8">8 Threads</option>
+                                    <option value="16">16 Threads</option>
+                                </select>
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-surcharge-method">Surcharge Method</label>
+                                <select id="opt-surcharge-method" class="tb-select">
+                                    <option value="">EXTRAN (Legacy Default)</option>
+                                    <option value="SLOT">SLOT (Preissmann Slot)</option>
+                                    <option value="DYNAMIC_SLOT">DYNAMIC_SLOT (Dynamic Preissmann)</option>
+                                </select>
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-infiltration">Infiltration Model</label>
+                                <select id="opt-infiltration" class="tb-select">
+                                    <option value="">HORTON (Default)</option>
+                                    <option value="GREEN_AMPT">GREEN_AMPT</option>
+                                    <option value="CURVE_NUMBER">CURVE_NUMBER</option>
+                                    <option value="MODIFIED_HORTON">MODIFIED_HORTON</option>
+                                    <option value="MODIFIED_GREEN_AMPT">MODIFIED_GREEN_AMPT</option>
+                                </select>
+                            </div>
+                            <div class="opt-field full-width" id="fv-perf-note" style="display:none;margin-top:2px;">
+                                <span class="opt-hint" style="color:#b45309;">FV (Finite Volume) is 1.5–6× slower than Dynamic Wave. Recommended when mass conservation during filling/emptying transitions is required.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Advanced Hydraulic Solver Formulations Card -->
+                    <div class="opt-card">
+                        <div class="opt-card-title">Hydraulic Solver Formulations</div>
+                        <div class="opt-grid-2">
+                            <div class="opt-field">
+                                <label for="opt-node-continuity">Node Continuity</label>
+                                <select id="opt-node-continuity" class="tb-select">
+                                    <option value="">Legacy (Default)</option>
+                                    <option value="SEMI_IMPLICIT">Semi-Implicit (Enhanced)</option>
+                                </select>
+                                <span class="opt-hint">Removes legacy two-branch node discontinuities.</span>
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-anderson-accel">Anderson Acceleration</label>
+                                <select id="opt-anderson-accel" class="tb-select">
+                                    <option value="">No (Default)</option>
+                                    <option value="YES">Yes</option>
+                                </select>
+                                <span class="opt-hint">Cuts Picard iterations by 25-50% on surcharge.</span>
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-inertial-damping">Inertial Damping</label>
+                                <select id="opt-inertial-damping" class="tb-select">
+                                    <option value="">PARTIAL (Default)</option>
+                                    <option value="NONE">NONE</option>
+                                    <option value="FULL">FULL</option>
+                                </select>
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-courant-factor">Courant Factor</label>
+                                <input type="number" id="opt-courant-factor" class="tb-input" step="0.05" min="0.1" max="1.0" placeholder="0.75">
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-routing-step">Routing Step</label>
+                                <input type="text" id="opt-routing-step" class="tb-input" placeholder="00:00:15 or 15">
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-minimum-step">Minimum Step (sec)</label>
+                                <input type="number" id="opt-minimum-step" class="tb-input" step="any" placeholder="0.5">
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div style="flex: 1;">
-                    <span class="settings-label">kT</span>
-                    <input type="number" id="opt-rdii-kt" class="tb-input" placeholder="e.g. 0.005" step="any" style="width:100%; padding: 4px;">
-                </div>
-                <div style="flex: 1;">
-                    <span class="settings-label">Tref</span>
-                    <input type="number" id="opt-rdii-tref" class="tb-input" placeholder="e.g. 20" step="any" style="width:100%; padding: 4px;">
+
+                <!-- Tab 2: Advanced FV Options -->
+                <div id="opt-tab-fv" class="opt-tab-content" style="display:none;">
+                    <div class="opt-card">
+                        <div class="opt-card-title">Finite Volume (FV) Scheme Parameters</div>
+                        
+                        <!-- Mesh -->
+                        <div class="opt-subgroup-title">Mesh Discretization</div>
+                        <div class="opt-grid-2">
+                            <div class="opt-field">
+                                <label for="opt-fv-cell-length">Cell Length (m/ft)</label>
+                                <input type="number" id="opt-fv-cell-length" class="tb-input" step="any" placeholder="0 (auto)">
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-fv-min-cells">Min Cells per Conduit</label>
+                                <input type="number" id="opt-fv-min-cells" class="tb-input" step="1" placeholder="4">
+                            </div>
+                        </div>
+
+                        <!-- Scheme -->
+                        <div class="opt-subgroup-title">Numerical Scheme</div>
+                        <div class="opt-grid-2">
+                            <div class="opt-field">
+                                <label for="opt-fv-cfl">FV CFL Limit</label>
+                                <input type="number" id="opt-fv-cfl" class="tb-input" step="any" placeholder="0.5">
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-fv-riemann">Riemann Solver</label>
+                                <select id="opt-fv-riemann" class="tb-select">
+                                    <option value="">HLLC (Default)</option>
+                                    <option value="HLL">HLL</option>
+                                </select>
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-fv-order">Spatial Order</label>
+                                <select id="opt-fv-order" class="tb-select">
+                                    <option value="">1 (Default)</option>
+                                    <option value="2">2 (MUSCL-Hancock)</option>
+                                </select>
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-fv-limiter">Limiter</label>
+                                <select id="opt-fv-limiter" class="tb-select">
+                                    <option value="">MINMOD (Default)</option>
+                                    <option value="VANLEER">VANLEER</option>
+                                    <option value="SUPERBEE">SUPERBEE</option>
+                                </select>
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-fv-scalar-scheme">Scalar Scheme</label>
+                                <select id="opt-fv-scalar-scheme" class="tb-select">
+                                    <option value="">MUSCL (Default)</option>
+                                    <option value="UPWIND">UPWIND</option>
+                                    <option value="QUICKEST_ULTIMATE">QUICKEST_ULTIMATE</option>
+                                </select>
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-fv-time-integration">Time Integration</label>
+                                <select id="opt-fv-time-integration" class="tb-select">
+                                    <option value="">EULER (Default)</option>
+                                    <option value="RK2">RK2</option>
+                                </select>
+                            </div>
+                            <div class="opt-field full-width">
+                                <label for="opt-fv-slot-celerity">Slot Celerity (m/s or ft/s)</label>
+                                <input type="number" id="opt-fv-slot-celerity" class="tb-input" step="any" placeholder="100">
+                            </div>
+                        </div>
+
+                        <!-- Coupling & Time Stepping -->
+                        <div class="opt-subgroup-title">Coupling &amp; Time Stepping</div>
+                        <div class="opt-grid-2">
+                            <div class="opt-field">
+                                <label for="opt-fv-node-coupling">Node Coupling</label>
+                                <select id="opt-fv-node-coupling" class="tb-select">
+                                    <option value="">SEMI_IMPLICIT (Default)</option>
+                                    <option value="EXPLICIT">EXPLICIT</option>
+                                </select>
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-fv-node-dt">Node Step (DT)</label>
+                                <select id="opt-fv-node-dt" class="tb-select">
+                                    <option value="">STABILITY (Default)</option>
+                                    <option value="NONE">NONE</option>
+                                </select>
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-fv-node-picard">Node Picard Sweeps</label>
+                                <input type="number" id="opt-fv-node-picard" class="tb-input" step="1" placeholder="1">
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-fv-structure-coupling">Structure Coupling</label>
+                                <select id="opt-fv-structure-coupling" class="tb-select">
+                                    <option value="">SUBSTEP (Default)</option>
+                                    <option value="ROUTING_STEP">ROUTING_STEP</option>
+                                </select>
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-fv-lts">Local Time Stepping (LTS)</label>
+                                <select id="opt-fv-lts" class="tb-select">
+                                    <option value="">YES (Default)</option>
+                                    <option value="NO">NO</option>
+                                </select>
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-fv-lts-max-tiers">Max LTS Tiers</label>
+                                <input type="number" id="opt-fv-lts-max-tiers" class="tb-input" step="1" min="1" max="8" placeholder="6">
+                            </div>
+                        </div>
+
+                        <!-- Backend & Transport -->
+                        <div class="opt-subgroup-title">Backend &amp; Transport</div>
+                        <div class="opt-grid-2">
+                            <div class="opt-field">
+                                <label for="opt-fv-backend">FV Backend</label>
+                                <select id="opt-fv-backend" class="tb-select">
+                                    <option value="">AUTO (Default)</option>
+                                    <option value="CPU">CPU</option>
+                                </select>
+                            </div>
+                            <div class="opt-field">
+                                <label for="opt-fv-compaction">Compaction</label>
+                                <select id="opt-fv-compaction" class="tb-select">
+                                    <option value="">YES (Default)</option>
+                                    <option value="NO">NO</option>
+                                </select>
+                            </div>
+                            <div class="opt-field full-width">
+                                <label for="opt-fv-dispersion">Dispersion (m²/s or ft²/s)</label>
+                                <input type="number" id="opt-fv-dispersion" class="tb-input" step="any" placeholder="0 (disabled)">
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <small style="display:block;margin-top:6px;color:#64748b;">Leave blank to disable. Configures the exponential depletion/recovery process.</small>
 
-            <div class="modal-actions" style="margin-top:24px;">
+            <div class="modal-actions" style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);">
                 <button id="btn-cancel-options" class="tb-btn">Cancel</button>
                 <button id="btn-save-options" class="tb-btn tb-btn-run">Save Options</button>
             </div>

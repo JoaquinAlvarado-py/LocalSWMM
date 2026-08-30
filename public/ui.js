@@ -149,23 +149,67 @@
     const optionsModal = document.getElementById('options-modal');
     document.getElementById('btn-options').addEventListener('click', () => {
         const opt = Net.options || {};
-        document.getElementById('opt-node-continuity').value = opt.nodeContinuity || '';
-        document.getElementById('opt-anderson-accel').value = opt.andersonAccel || '';
-        document.getElementById('opt-rdii-k0').value = opt.rdiiDecay ? opt.rdiiDecay.k0 : '';
-        document.getElementById('opt-rdii-kt').value = opt.rdiiDecay ? opt.rdiiDecay.kT : '';
-        document.getElementById('opt-rdii-tref').value = opt.rdiiDecay ? opt.rdiiDecay.tRef : '';
+        const setVal = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) el.value = val || '';
+        };
+
+        setVal('opt-node-continuity', opt.nodeContinuity);
+        setVal('opt-anderson-accel', opt.andersonAccel);
+        setVal('opt-threads', opt.threads);
+        setVal('opt-surcharge-method', opt.surchargeMethod);
+        setVal('opt-infiltration', opt.infiltration);
+        setVal('opt-routing-step', opt.routingStep);
+        setVal('opt-minimum-step', opt.minimumStep);
+        setVal('opt-inertial-damping', opt.inertialDamping);
+        setVal('opt-courant-factor', opt.courantFactor);
+
         const fr = document.getElementById('opt-flow-routing');
-        if (fr) fr.value = Net.options.flowRouting || '';
-        const fv = Net.options.fv || {};
-        const revMap = { 'FV_CELL_LENGTH': 'cell-length', 'FV_MIN_CELLS': 'min-cells', 'FV_CFL': 'cfl', 'FV_RIEMANN': 'riemann', 'FV_ORDER': 'order', 'FV_LIMITER': 'limiter', 'FV_SCALAR_SCHEME': 'scalar-scheme', 'FV_TIME_INTEGRATION': 'time-integration', 'FV_SLOT_CELERITY': 'slot-celerity', 'FV_NODE_COUPLING': 'node-coupling', 'FV_NODE_DT': 'node-dt', 'FV_NODE_PICARD': 'node-picard', 'FV_STRUCTURE_COUPLING': 'structure-coupling', 'FV_BACKEND': 'backend', 'FV_COMPACTION': 'compaction', 'FV_DISPERSION': 'dispersion' };
+        if (fr) fr.value = opt.flowRouting || '';
+
+        const fv = opt.fv || {};
+        const revMap = {
+            'FV_CELL_LENGTH': 'cell-length', 'FV_MIN_CELLS': 'min-cells', 'FV_CFL': 'cfl',
+            'FV_RIEMANN': 'riemann', 'FV_ORDER': 'order', 'FV_LIMITER': 'limiter',
+            'FV_SCALAR_SCHEME': 'scalar-scheme', 'FV_TIME_INTEGRATION': 'time-integration',
+            'FV_SLOT_CELERITY': 'slot-celerity', 'FV_NODE_COUPLING': 'node-coupling',
+            'FV_NODE_DT': 'node-dt', 'FV_NODE_PICARD': 'node-picard',
+            'FV_STRUCTURE_COUPLING': 'structure-coupling', 'FV_BACKEND': 'backend',
+            'FV_COMPACTION': 'compaction', 'FV_DISPERSION': 'dispersion',
+            'FV_LTS': 'lts', 'FV_LTS_MAX_TIERS': 'lts-max-tiers'
+        };
         Object.entries(revMap).forEach(([key, suffix]) => {
             const el = document.getElementById('opt-fv-' + suffix);
-            if (el && fv[key] !== undefined) el.value = String(fv[key]);
+            if (el) el.value = fv[key] !== undefined ? String(fv[key]) : '';
         });
+
         const perfNote = document.getElementById('fv-perf-note');
         if (perfNote) perfNote.style.display = (fr && fr.value === 'FV') ? 'block' : 'none';
-        if (fr) fr.addEventListener('change', () => { if (perfNote) perfNote.style.display = fr.value === 'FV' ? 'block' : 'none'; });
+        // Reset active tab to General & Hydraulics on open
+        const optTabBtns = document.querySelectorAll('#options-modal .opt-tab-btn');
+        optTabBtns.forEach(b => b.classList.remove('active'));
+        const genBtn = document.getElementById('opt-tab-btn-gen');
+        if (genBtn) genBtn.classList.add('active');
+        const tabGen = document.getElementById('opt-tab-gen');
+        const tabFv = document.getElementById('opt-tab-fv');
+        if (tabGen) tabGen.style.display = 'flex';
+        if (tabFv) tabFv.style.display = 'none';
+
         optionsModal.classList.remove('hidden');
+    });
+
+    // Options Modal Tab Switcher
+    const optTabBtns = document.querySelectorAll('#options-modal .opt-tab-btn');
+    optTabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const target = btn.getAttribute('data-tab');
+            optTabBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const tabGen = document.getElementById('opt-tab-gen');
+            const tabFv = document.getElementById('opt-tab-fv');
+            if (tabGen) tabGen.style.display = target === 'gen' ? 'flex' : 'none';
+            if (tabFv) tabFv.style.display = target === 'fv' ? 'flex' : 'none';
+        });
     });
 
     // Time Series Plot Selection Modal
@@ -184,23 +228,25 @@
     document.getElementById('btn-save-options').addEventListener('click', () => {
         if (!Net.options) Net.options = {};
         
-        const nodeCont = document.getElementById('opt-node-continuity').value;
-        const anderson = document.getElementById('opt-anderson-accel').value;
-        const k0 = document.getElementById('opt-rdii-k0').value;
-        const kT = document.getElementById('opt-rdii-kt').value;
-        const tRef = document.getElementById('opt-rdii-tref').value;
-        
-        if (nodeCont) Net.options.nodeContinuity = nodeCont;
-        else delete Net.options.nodeContinuity;
-        
-        if (anderson) Net.options.andersonAccel = anderson;
-        else delete Net.options.andersonAccel;
-        
-        if (k0 !== '' && kT !== '' && tRef !== '') {
-            Net.options.rdiiDecay = { k0, kT, tRef };
-        } else {
-            delete Net.options.rdiiDecay;
-        }
+        const saveField = (id, key) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const v = el.value.trim();
+            if (v !== '') Net.options[key] = v;
+            else delete Net.options[key];
+        };
+
+        saveField('opt-node-continuity', 'nodeContinuity');
+        saveField('opt-anderson-accel', 'andersonAccel');
+        saveField('opt-threads', 'threads');
+        saveField('opt-surcharge-method', 'surchargeMethod');
+        saveField('opt-infiltration', 'infiltration');
+        saveField('opt-routing-step', 'routingStep');
+        saveField('opt-minimum-step', 'minimumStep');
+        saveField('opt-inertial-damping', 'inertialDamping');
+        saveField('opt-courant-factor', 'courantFactor');
+
+        delete Net.options.rdiiDecay;
         
         const flowRouting = document.getElementById('opt-flow-routing').value;
         const fv = {};
@@ -211,7 +257,8 @@
             'slot-celerity': 'FV_SLOT_CELERITY', 'node-coupling': 'FV_NODE_COUPLING',
             'node-dt': 'FV_NODE_DT', 'node-picard': 'FV_NODE_PICARD',
             'structure-coupling': 'FV_STRUCTURE_COUPLING', 'backend': 'FV_BACKEND',
-            'compaction': 'FV_COMPACTION', 'dispersion': 'FV_DISPERSION'
+            'compaction': 'FV_COMPACTION', 'dispersion': 'FV_DISPERSION',
+            'lts': 'FV_LTS', 'lts-max-tiers': 'FV_LTS_MAX_TIERS'
         };
         Object.entries(fvMap).forEach(([suffix, key]) => {
             const el = document.getElementById('opt-fv-' + suffix);

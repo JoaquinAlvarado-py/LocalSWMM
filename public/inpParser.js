@@ -1,4 +1,4 @@
-﻿// inpParser.js â€” Parse a SWMM .inp file into a Network-model shape
+// inpParser.js â€” Parse a SWMM .inp file into a Network-model shape
 // Coordinates are returned raw (may be UTM/local); the caller
 // reprojects before loading into the Network.
 
@@ -105,16 +105,13 @@ class InpParser {
                 case 'ROUTING_STEP': model.options.routingStep = val; break;
                 case 'NODE_CONTINUITY': model.options.nodeContinuity = val; break;
                 case 'ANDERSON_ACCEL': model.options.andersonAccel = val; break;
+                case 'THREADS': model.options.threads = val; break;
+                case 'SURCHARGE_METHOD': model.options.surchargeMethod = val; break;
+                case 'MINIMUM_STEP': model.options.minimumStep = val; break;
+                case 'INERTIAL_DAMPING': model.options.inertialDamping = val; break;
+                case 'COURANT_FACTOR': model.options.courantFactor = val; break;
             }
         });
-
-        // --- RDII_DECAY ---
-        if (S['RDII_DECAY'] && S['RDII_DECAY'].length > 0) {
-            const row = S['RDII_DECAY'][0];
-            if (row.length >= 3) {
-                model.options.rdiiDecay = { k0: row[0], kT: row[1], tRef: row[2] };
-            }
-        }
 
         // --- Coordinates lookup ---
         const coords = {};

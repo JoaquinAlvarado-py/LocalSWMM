@@ -88,7 +88,7 @@ class InpExporter {
         // from the raw passthrough below (prefix match, so engine-only keys like
         // FV_MIN_PARALLEL_CELLS / FV_LTS / FV_LTS_MAX_TIERS / FV_CFL_CENSUS_INTERVAL
         // never leak when routing switches to KINWAVE/DYNWAVE).
-        const FV_ORDER = ['FV_CELL_LENGTH','FV_MIN_CELLS','FV_CFL','FV_RIEMANN','FV_ORDER','FV_LIMITER','FV_SCALAR_SCHEME','FV_TIME_INTEGRATION','FV_SLOT_CELERITY','FV_DISPERSION','FV_STRUCTURE_COUPLING','FV_NODE_COUPLING','FV_NODE_DT','FV_NODE_PICARD','FV_COMPACTION','FV_BACKEND'];
+        const FV_ORDER = ['FV_CELL_LENGTH','FV_MIN_CELLS','FV_CFL','FV_RIEMANN','FV_ORDER','FV_LIMITER','FV_SCALAR_SCHEME','FV_TIME_INTEGRATION','FV_SLOT_CELERITY','FV_DISPERSION','FV_STRUCTURE_COUPLING','FV_NODE_COUPLING','FV_NODE_DT','FV_NODE_PICARD','FV_COMPACTION','FV_BACKEND','FV_LTS','FV_LTS_MAX_TIERS'];
         if (fr === 'FV' && opt.fv) {
             FV_ORDER.forEach(k => { if (opt.fv[k] !== undefined && opt.fv[k] !== '') emitOpt(k, opt.fv[k]); });
         }
@@ -109,7 +109,7 @@ class InpExporter {
         emitOpt('WET_STEP', opt.wetStep || rawOr('WET_STEP', '00:05:00'));
         emitOpt('DRY_STEP', opt.dryStep || rawOr('DRY_STEP', '01:00:00'));
         emitOpt('ROUTING_STEP', opt.routingStep || rawOr('ROUTING_STEP', '00:00:30'));
-        emitOpt('INERTIAL_DAMPING', rawOr('INERTIAL_DAMPING', 'PARTIAL'));
+        emitOpt('INERTIAL_DAMPING', opt.inertialDamping || rawOr('INERTIAL_DAMPING', 'PARTIAL'));
         emitOpt('NORMAL_FLOW_LIMITED', rawOr('NORMAL_FLOW_LIMITED', 'BOTH'));
         emitOpt('FORCE_MAIN_EQUATION', rawOr('FORCE_MAIN_EQUATION', 'H-W'));
         emitOpt('VARIABLE_STEP', rawOr('VARIABLE_STEP', '0.75'));
@@ -121,8 +121,11 @@ class InpExporter {
         emitOpt('LAT_FLOW_TOL', rawOr('LAT_FLOW_TOL', '5'));
         if (opt.nodeContinuity) emitOpt('NODE_CONTINUITY', opt.nodeContinuity);
         if (opt.andersonAccel) emitOpt('ANDERSON_ACCEL', opt.andersonAccel);
-        // engine options the app has no field for (MINIMUM_STEP, THREADS,
-        // RULE_STEP, SURCHARGE_METHOD, â€¦) pass through unchanged
+        if (opt.threads) emitOpt('THREADS', opt.threads);
+        if (opt.surchargeMethod) emitOpt('SURCHARGE_METHOD', opt.surchargeMethod);
+        if (opt.minimumStep) emitOpt('MINIMUM_STEP', opt.minimumStep);
+        if (opt.courantFactor) emitOpt('COURANT_FACTOR', opt.courantFactor);
+        // engine options pass through unchanged
         for (const [key, value] of Object.entries(raw)) {
             if (!emitted.has(key) && !key.startsWith('FV_')) emitOpt(key, value);
         }
@@ -154,13 +157,6 @@ class InpExporter {
                 }
             });
             extraGageRows.forEach(row => L.push(row));
-            L.push('');
-        }
-
-        if (opt.rdiiDecay && opt.rdiiDecay.k0 !== undefined) {
-            L.push('[RDII_DECAY]');
-            L.push(';;k0             kT               Tref');
-            L.push(`${this.pad(opt.rdiiDecay.k0, 16)} ${this.pad(opt.rdiiDecay.kT, 16)} ${this.pad(opt.rdiiDecay.tRef, 16)}`);
             L.push('');
         }
 
