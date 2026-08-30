@@ -364,11 +364,28 @@
         _appliedLink: new Map(),
         _applied2D: new Map(),
 
+        // Mirror resultColor onto the 3D network source when it exists.
+        _push3D(id, color) {
+            try {
+                if (window.map && window.map.getSource('swmm-3d')) {
+                    window.map.setFeatureState({ source: 'swmm-3d', id }, { resultColor: color });
+                }
+            } catch (e) { /* source not ready */ }
+        },
+
+        // Replay current result colors onto the 3D source unconditionally —
+        // used when the swmm-3d source is (re)created after colors were already pushed.
+        push3DAll() {
+            Object.entries(this.nodeColors).forEach(([id, color]) => this._push3D(id, color));
+            Object.entries(this.linkColors).forEach(([id, color]) => this._push3D(id, color));
+        },
+
         applyToMap() {
             Object.entries(this.nodeColors).forEach(([id, color]) => {
                 if (this._appliedNode.get(id) === color) return;
                 this._appliedNode.set(id, color);
                 try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: color }); } catch (e) { }
+                this._push3D(id, color);
                 this._applied2D.set(id, color);
                 try { map.setFeatureState({ source: 'swmm-2d-mesh', id }, { resultColor: color }); } catch (e) { }
             });
@@ -376,6 +393,7 @@
                 if (this._appliedLink.get(id) === color) return;
                 this._appliedLink.set(id, color);
                 try { map.setFeatureState({ source: 'swmm-links', id }, { resultColor: color }); } catch (e) { }
+                this._push3D(id, color);
             });
         },
 
@@ -452,6 +470,7 @@
                         if (this._appliedNode.get(id) === color) return;
                         this._appliedNode.set(id, color);
                         try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: color }); } catch (e) { }
+                        this._push3D(id, color);
                     });
                 }
 
@@ -464,6 +483,7 @@
                         if (this._appliedLink.get(id) === color) return;
                         this._appliedLink.set(id, color);
                         try { map.setFeatureState({ source: 'swmm-links', id }, { resultColor: color }); } catch (e) { }
+                        this._push3D(id, color);
                     });
                 }
             } else if (!r2d) {
@@ -476,6 +496,7 @@
                         if (this._appliedNode.get(id) === color) return;
                         this._appliedNode.set(id, color);
                         try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: color }); } catch (e) { }
+                        this._push3D(id, color);
                     }
                 });
 
@@ -487,6 +508,7 @@
                         if (this._appliedLink.get(id) === color) return;
                         this._appliedLink.set(id, color);
                         try { map.setFeatureState({ source: 'swmm-links', id }, { resultColor: color }); } catch (e) { }
+                        this._push3D(id, color);
                     }
                 });
             }
@@ -510,9 +532,11 @@
             const linkIds = new Set([...Object.keys(this.linkColors), ...this._appliedLink.keys()]);
             nodeIds.forEach(id => {
                 try { map.setFeatureState({ source: 'swmm-nodes', id }, { resultColor: null }); } catch (e) { }
+                this._push3D(id, null);
             });
             linkIds.forEach(id => {
                 try { map.setFeatureState({ source: 'swmm-links', id }, { resultColor: null }); } catch (e) { }
+                this._push3D(id, null);
             });
             // Clear 2D mesh feature states
             this._applied2D.forEach((_, id) => {

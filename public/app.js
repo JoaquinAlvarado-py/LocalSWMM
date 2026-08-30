@@ -366,21 +366,14 @@
 
     // ---------- 3D extras (terrain + buildings) ----------
     function apply3D() {
+        if (map.setTerrain) map.setTerrain(null);
+        if (map.setFog) map.setFog(null);
         if (window.App.is3D) {
             if (window.App.currentStyle !== 'blank') {
-                if (!map.getSource('terrain-dem')) {
-                    map.addSource('terrain-dem', {
-                        type: 'raster-dem',
-                        url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
-                        tileSize: 512, maxzoom: 14
-                    });
-                }
-                map.setTerrain({ source: 'terrain-dem', exaggeration: 1.3 });
                 add3DBuildings();
             }
             if (map.getPitch() < 30) map.easeTo({ pitch: 55, duration: 800 });
         } else {
-            map.setTerrain(null);
             if (map.getLayer('3d-buildings-base')) map.setLayoutProperty('3d-buildings-base', 'visibility', 'none');
             map.easeTo({ pitch: 0, bearing: 0, duration: 800 });
         }
@@ -483,7 +476,7 @@
                 elev = map.queryTerrainElevation(lngLat);
             }
 
-            if (!terrainWasSet && !window.App.is3D) {
+            if (!terrainWasSet) {
                 map.setTerrain(null);
             }
 
@@ -509,7 +502,7 @@
                 map.setTerrain({ source: 'terrain-dem', exaggeration: 1.0 });
             }
             const elev = typeof map.queryTerrainElevation === 'function' ? map.queryTerrainElevation(lngLat) : null;
-            if (!terrainWasSet && !window.App.is3D) {
+            if (!terrainWasSet) {
                 map.setTerrain(null);
             }
             if (elev !== null && elev !== undefined) {
