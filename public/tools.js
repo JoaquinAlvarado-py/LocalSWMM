@@ -30,7 +30,11 @@
         className: 'results-popup'
     });
 
-    const INTERACTIVE_LAYERS = ['swmm-nodes-layer', 'swmm-links-hit', 'swmm-links-layer', 'swmm-subcatchments-fill', 'swmm-2d-mesh-fill'];
+    const INTERACTIVE_LAYERS = [
+        'swmm-nodes-layer', 'swmm-links-hit', 'swmm-links-layer',
+        'swmm-3d-nodes', 'swmm-3d-outfalls', 'swmm-3d-conduits', 'swmm-3d-links-other',
+        'swmm-subcatchments-fill', 'swmm-2d-mesh-fill'
+    ];
 
     const Tools = {
         active: 'select',
@@ -50,8 +54,9 @@
         
         updateHoverPopup(step) {
             if (!resultPopup.isOpen() || !this.lastHoveredFeat || !this.lastHoveredLngLat) return;
-            const ts = window.ResultStyling && window.ResultStyling.timeSeries;
-            if (!ts) return;
+            const feat = this.lastHoveredFeat;
+            const elId = feat.properties.id;
+            if (!elId) return;
 
             const isUS   = (typeof Net !== 'undefined') && Net.units === 'US';
             const depthU = isUS ? 'ft'  : 'm';
@@ -59,14 +64,14 @@
             const flowU  = isUS ? 'CFS' : 'LPS';
             const velU   = isUS ? 'fps' : 'm/s';
 
-            const feat = this.lastHoveredFeat;
-            const elId = feat.properties.id;
-            const elType = feat.properties.type || '';
+            const node = (typeof Net !== 'undefined') ? Net.getNode(elId) : null;
+            const link = (typeof Net !== 'undefined') ? Net.getLink(elId) : null;
+            const ts = window.ResultStyling && window.ResultStyling.timeSeries;
 
             let html = '';
             let hasData = false;
 
-            if (feat.source === 'swmm-nodes' && ts.nodes[elId]) {
+            if (ts && (feat.source === 'swmm-nodes' || feat.source === 'swmm-3d' || node) && ts.nodes && ts.nodes[elId]) {
                 const data = ts.nodes[elId];
                 if (data.depth && data.depth[step] !== undefined) {
                     const depth    = data.depth[step];
@@ -77,7 +82,7 @@
 
                     html += `<div class="rp-header">`;
                     html += `<span class="rp-id">${elId}</span>`;
-                    if (elType) html += `<span class="rp-type">${elType}</span>`;
+                    html += `<span class="rp-type">${(node && node.type) || feat.properties.kind || 'NODE'}</span>`;
                     if (isFlooding) html += `<span class="rp-badge rp-badge-flood">FLOODING</span>`;
                     html += `</div>`;
 
@@ -92,7 +97,7 @@
                     html += `</table>`;
                     hasData = true;
                 }
-            } else if (feat.source === 'swmm-links' && ts.links[elId]) {
+            } else if (ts && (feat.source === 'swmm-links' || feat.source === 'swmm-3d' || link) && ts.links && ts.links[elId]) {
                 const data = ts.links[elId];
                 if (data.flow && data.flow[step] !== undefined) {
                     const flow     = data.flow[step];
@@ -104,7 +109,7 @@
 
                     html += `<div class="rp-header">`;
                     html += `<span class="rp-id">${elId}</span>`;
-                    if (elType) html += `<span class="rp-type">${elType}</span>`;
+                    html += `<span class="rp-type">${(link && link.type) || feat.properties.kind || 'LINK'}</span>`;
                     if (isSurcharged) html += `<span class="rp-badge rp-badge-surcharge">SURCHARGED</span>`;
                     html += `</div>`;
 
@@ -121,7 +126,7 @@
                     html += `</table>`;
                     hasData = true;
                 }
-            } else if (feat.source === 'swmm-2d-mesh' && ts.nodes[elId]) {
+            } else if (ts && feat.source === 'swmm-2d-mesh' && ts.nodes && ts.nodes[elId]) {
                 // 2-D mesh cell results
                 const data = ts.nodes[elId];
                 if (data.depth && data.depth[step] !== undefined) {
@@ -133,6 +138,22 @@
                     html += `</table>`;
                     hasData = true;
                 }
+            } else if (node) {
+                const inv = Number(node.props && node.props.invertEl || 0).toFixed(2);
+                const maxD = Number(node.props && node.props.maxDepth || 0).toFixed(2);
+                html += `<div class="rp-header"><span class="rp-id">${elId}</span><span class="rp-type">${node.type}</span></div>`;
+                html += `<table class="rp-table">`;
+                html += `<tr><td class="rp-label">Invert El.</td><td class="rp-value">${inv}</td><td class="rp-unit">${depthU}</td></tr>`;
+                html += `<tr><td class="rp-label">Max Depth</td><td class="rp-value">${maxD}</td><td class="rp-unit">${depthU}</td></tr>`;
+                html += `</table>`;
+                hasData = true;
+            } else if (link) {
+                html += `<div class="rp-header"><span class="rp-id">${elId}</span><span class="rp-type">${link.type}</span></div>`;
+                html += `<table class="rp-table">`;
+                html += `<tr><td class="rp-label">From Node</td><td class="rp-value">${link.from}</td><td class="rp-unit"></td></tr>`;
+                html += `<tr><td class="rp-label">To Node</td><td class="rp-value">${link.to}</td><td class="rp-unit"></td></tr>`;
+                html += `</table>`;
+                hasData = true;
             }
 
             if (hasData) {
@@ -220,16 +241,23 @@
             );
             if (!feats.length) return null;
             // prefer nodes > links > subcatchments > 2d mesh cells
-            const rank = f => f.layer.id === 'swmm-nodes-layer' ? 0 : (f.layer.id.startsWith('swmm-links') ? 1 : (f.layer.id === 'swmm-subcatchments-fill' ? 2 : 3));
+            const rank = f => {
+                const id = f.layer.id;
+                if (id === 'swmm-nodes-layer' || id === 'swmm-3d-nodes' || id === 'swmm-3d-outfalls') return 0;
+                if (id.startsWith('swmm-links') || id.startsWith('swmm-3d-')) return 1;
+                if (id === 'swmm-subcatchments-fill') return 2;
+                return 3;
+            };
             feats.sort((a, b) => rank(a) - rank(b));
             return feats[0];
         },
 
         snapNodeAt(point, hydraulicOnly = true) {
-            if (!map.getLayer('swmm-nodes-layer')) return null;
+            const nodeLayers = ['swmm-nodes-layer', 'swmm-3d-nodes', 'swmm-3d-outfalls'].filter(l => map.getLayer(l));
+            if (!nodeLayers.length) return null;
             const feats = map.queryRenderedFeatures(
                 [[point.x - 12, point.y - 12], [point.x + 12, point.y + 12]],
-                { layers: ['swmm-nodes-layer'] }
+                { layers: nodeLayers }
             );
             for (const f of feats) {
                 const node = Net.getNode(f.properties.id);
@@ -399,8 +427,8 @@
                 map.getCanvas().style.cursor = newId ? 'pointer' : '';
             }
             
-            // Show result popup on hover
-            if (feat && window.ResultStyling && window.ResultStyling.timeSeries && window.AnimationUI) {
+            // Show status / result popup on hover
+            if (feat && (window.ResultStyling || Net.getNode(newId) || Net.getLink(newId))) {
                 const slider = document.getElementById('time-slider');
                 const step = slider ? parseInt(slider.value) : 0;
                 

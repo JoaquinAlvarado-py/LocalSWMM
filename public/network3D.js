@@ -72,9 +72,9 @@
             cum += s;
         }
         return segs;
-    }
-
-    function nodeFeatures(nodes, units, colors) {
+    }    function nodeFeatures(nodes, units, colors, opts) {
+        opts = opts || {};
+        const nodeScale = Number(opts.nodeScale) || 1.0;
         const out = [];
         for (const n of nodes || []) {
             const p = n.props || {};
@@ -82,7 +82,8 @@
             const isOutfall = n.type === 'OUTFALL';
             const maxDepth = toMeters(Number(p.maxDepth) || 2, units);
             const height = isOutfall ? 0.5 : maxDepth;
-            const width = isOutfall ? 0.6 : Math.max(0.6, Math.min(maxDepth * 0.35, 1.5));
+            const baseWidth = isOutfall ? 0.6 : Math.max(0.6, Math.min(maxDepth * 0.35, 1.5));
+            const width = baseWidth * nodeScale;
             const cx = Number((n.lngLat || [0, 0])[0]), cy = Number((n.lngLat || [0, 0])[1]);
             out.push({
                 type: 'Feature', id: n.id,
@@ -112,6 +113,7 @@
         opts = opts || {};
         const colors = opts.colors || DEFAULT_COLORS;
         const maxSegs = opts.maxSegs || 64;
+        const linkWidthScale = Number(opts.linkWidthScale) || 1.0;
         const out = [];
         const nodeById = new Map((nodes || []).map(n => [n.id, n]));
         for (const l of links || []) {
@@ -125,7 +127,8 @@
                 if (geom1 <= 0) { console.warn('network3D: skip conduit ' + l.id + ' (geom1<=0)'); continue; }
                 const geom2 = toMeters(Number(p.geom2) || 0, units);
                 const circ = /CIRCULAR/.test(p.xShape || '');
-                const width = circ || !geom2 ? geom1 : geom2;
+                const rawWidth = circ || !geom2 ? geom1 : geom2;
+                const width = rawWidth * linkWidthScale;
                 for (const seg of linkPathSegments(pts, 0, 0, maxSegs)) {
                     out.push({
                         type: 'Feature', id: l.id,
@@ -135,14 +138,14 @@
                 }
             } else if (l.type === 'WEIR') {
                 const h = toMeters(Number(p.crestHt) || 0, units) + toMeters(Number(p.geom1) || 0, units);
-                const w = toMeters(Number(p.geom2) || Number(p.roadWidth) || 0, units) || toMeters(1, units);
+                const w = (toMeters(Number(p.geom2) || Number(p.roadWidth) || 0, units) || toMeters(1, units)) * linkWidthScale;
                 out.push(boxFeature(l, 'weir', 0, h, w, a, b, colors.LINK_COLORS.WEIR));
             } else if (l.type === 'ORIFICE') {
                 const h = toMeters(Number(p.geom1) || 0, units) || toMeters(0.5, units);
-                const w = toMeters(Number(p.geom2) || Number(p.geom1) || 0, units) || h;
+                const w = ((toMeters(Number(p.geom2) || Number(p.geom1) || 0, units) || h)) * linkWidthScale;
                 out.push(boxFeature(l, 'orifice', 0, h, w, a, b, colors.LINK_COLORS.ORIFICE));
             } else if (l.type === 'PUMP') {
-                out.push(boxFeature(l, 'pump', 0, toMeters(1, units), toMeters(0.6, units), a, b, colors.LINK_COLORS.PUMP));
+                out.push(boxFeature(l, 'pump', 0, toMeters(1, units), toMeters(0.6, units) * linkWidthScale, a, b, colors.LINK_COLORS.PUMP));
             }
         }
         return out;
@@ -152,16 +155,18 @@
         opts = opts || {};
         const colors = opts.colors || ((typeof window !== 'undefined' && window.SWMM_COLORS) || DEFAULT_COLORS);
         const units = (net.units || 'SI') === 'US' ? 'US' : 'SI';
+        const nodeScale = opts.nodeScale || ACTIVE.nodeScale || 1.0;
+        const linkWidthScale = opts.linkWidthScale || ACTIVE.linkWidthScale || 1.0;
         return {
             type: 'FeatureCollection',
             features: [].concat(
-                nodeFeatures(net.nodes, units, colors),
-                linkFeatures(net.links, net.nodes, units, { colors, maxSegs: opts.maxSegs })
+                nodeFeatures(net.nodes, units, colors, { nodeScale }),
+                linkFeatures(net.links, net.nodes, units, { colors, maxSegs: opts.maxSegs, linkWidthScale })
             )
         };
     }
 
-    const ACTIVE = { on: false };
+    const ACTIVE = { on: false, nodeScale: 1.0, linkWidthScale: 1.0 };
 
     const LAYER_SPECS = [
         { id: 'swmm-3d-conduits', filter: ['==', ['get', 'kind'], 'conduit'], opacity: 0.9 },
@@ -172,6 +177,8 @@
 
     function resultColorExpr() {
         return ['case',
+            ['boolean', ['feature-state', 'selected'], false], '#ffab00',
+            ['boolean', ['feature-state', 'hovered'], false], '#64b5f6',
             ['!=', ['feature-state', 'resultColor'], null], ['feature-state', 'resultColor'],
             ['get', 'color']];
     }
@@ -249,7 +256,15 @@
         apply: apply,
         refresh: refresh,
         clear: clear,
-        isActive: function () { return ACTIVE.on; }
+        isActive: function () { return ACTIVE.on; },
+        setNodeScale: function (scale) {
+            ACTIVE.nodeScale = Number(scale) || 1.0;
+            if (ACTIVE.on) refresh();
+        },
+        setLinkWidthScale: function (scale) {
+            ACTIVE.linkWidthScale = Number(scale) || 1.0;
+            if (ACTIVE.on) refresh();
+        }
     };
 
     if (typeof window !== 'undefined') {
@@ -268,11 +283,8 @@
 
         if (window.Net && window.Net.onChange) {
             window.Net.onChange(function (net, evt) {
-                if (ACTIVE.on && !(evt && evt.type === 'move')) refresh();
+                if (ACTIVE.on) refresh();
             });
         }
-    }
-    if (typeof module !== 'undefined' && module.exports) {
-        module.exports = { toMeters, octagon, stripPolygon, linkPathSegments, nodeFeatures, linkFeatures, buildGeoJSON };
     }
 })();
