@@ -3,6 +3,7 @@ public/config.js
 node_modules/
 
 .claude/
+.custom-domain.env
 __pycache__/
 *.pyc
 build/
