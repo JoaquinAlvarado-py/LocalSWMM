@@ -25,7 +25,7 @@ $$r_k = G(H_k) - H_k,$$
 
 y el coeficiente de mezcla es
 
-$$\alpha_k = \mathrm{clamp}\!\left(
+$$\alpha_k = \mathrm{clamp}\left(
     \frac{r_k\,(r_k - r_{k-1})}{(r_k - r_{k-1})^{2}},\ 0,\ 1\right),
   \qquad
   H_{k+1} = (1-\alpha_k)\,G(H_k) + \alpha_k\,G(H_{k-1}).$$

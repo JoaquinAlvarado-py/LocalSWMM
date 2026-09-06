@@ -32,7 +32,7 @@ guarding against excessive head change in one step.
 
 The next routing step (`getRoutingStep`) is the minimum over all links, nodes, and virtual-junction pairs, each scaled by the user's Courant factor, then floored and clamped:
 
-$$\Delta t_{\min}^{\mathrm{eff}} = \max\!\left(\min_{j,i}\{t_j, t_i\}\cdot \mathrm{Cr},\ \max(\min(\Delta t_{\min},\ \Delta t_{\mathrm{routing}}),\ 0.001\ \mathrm{s})\right),$$
+$$\Delta t_{\min}^{\mathrm{eff}} = \max\left(\min_{j,i}\{t_j, t_i\}\cdot \mathrm{Cr},\ \max(\min(\Delta t_{\min},\ \Delta t_{\mathrm{routing}}),\ 0.001\ \mathrm{s})\right),$$
 
 rounded to milliseconds. The effective step is then capped by the user's fixed `ROUTING_STEP` and the remaining simulation duration. The initial step is the minimum step. The first call (no flows yet) also returns the minimum step. The FV solver substeps internally at its own CFL limit, so the routing step under FV is only a reporting cadence.
 
@@ -49,7 +49,7 @@ Numerical instability appears as non-damping oscillations in flow and water surf
 
 A routing step "does not converge" only when the head tolerance ($\varepsilon_H = 0.005\ \mathrm{ft}$) is not met at some non-outfall node after `MAX_TRIALS` iterations. Anderson acceleration (optional) speeds convergence by blending the two most recent operator outputs at each node:
 
-$$\alpha_k = \mathrm{clamp}\!\left( \frac{r_k\,(r_k - r_{k-1})}{(r_k - r_{k-1})^{2}},\ 0,\ 1\right), \qquad H_{k+1} = (1-\alpha_k)\,G(H_k) + \alpha_k\,G(H_{k-1}),$$
+$$\alpha_k = \mathrm{clamp}\left( \frac{r_k\,(r_k - r_{k-1})}{(r_k - r_{k-1})^{2}},\ 0,\ 1\right), \qquad H_{k+1} = (1-\alpha_k)\,G(H_k) + \alpha_k\,G(H_{k-1}),$$
 
 with $r_k = G(H_k) - H_k$ the residual and $G$ the head-update operator. It is skipped at nodes where $G$ is non-smooth (EXTRAN-surcharged, dynamic-slot active, near the static-slot cutoff, weir/orifice at crown, pump ends, ponding boundary).
 

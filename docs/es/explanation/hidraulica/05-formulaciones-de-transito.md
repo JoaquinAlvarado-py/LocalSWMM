@@ -35,7 +35,7 @@ $$\frac{(1-\theta)(A_1^{t+1}-A_1^{t}) + \theta\,(A_2^{t+1}-A_2^{t})}{\Delta t} \
 
 con $\theta = \varphi = 0.6$. Como cada cámara de unión tiene a lo más un conducto de salida, procesar los enlaces en orden topológico deja solo a $A_2^{t+1}$ y $Q_2^{t+1}$ como incógnitas; $Q_1^{t+1}$ se conoce desde el ingreso del nodo aguas arriba y $A_1^{t+1}$ desde el factor de sección inverso en $Q_1^{t+1}/\beta$. Sustituyendo la curva de gasto se obtiene la única ecuación no lineal
 
-$$f\!\left(A_2^{t+1}\right) = \beta\,\Psi\!\left(A_2^{t+1}\right) + C_1\,A_2^{t+1} + C_2 = 0,$$
+$$f\left(A_2^{t+1}\right) = \beta\,\Psi\left(A_2^{t+1}\right) + C_1\,A_2^{t+1} + C_2 = 0,$$
 
 con (en la implementación normalizada del motor, `KinematicWave.cpp:solveConduit`)
 

@@ -26,14 +26,14 @@ $$T_s = \frac{g\,A_{\mathrm{full}}}{c_{pT}^{2}}\,P^{2},$$
 where $A_{\mathrm{full}}$ is the full-section area. The Preissmann number
 starts, at the beginning of pressurization, at
 
-$$P_{0} = \max\!\left(\frac{c_{pT}}{\alpha\,c_g},\ 1\right),
+$$P_{0} = \max\left(\frac{c_{pT}}{\alpha\,c_g},\ 1\right),
   \qquad c_g = \sqrt{g\,A_{\mathrm{full}}/W_{\max}},$$
 
 with $\alpha$ the shock parameter (`DPS_ALPHA`, 3 by default) and
 $c_g$ the gravity wave celerity at full section. The slot area is
 accumulated in a *path-dependent* way:
 
-$$A_s \leftarrow \max\!\left(A_s + T_s\,\Delta h_s,\ 0\right),
+$$A_s \leftarrow \max\left(A_s + T_s\,\Delta h_s,\ 0\right),
   \qquad h_s = \max(\bar y - y_{\mathrm{full}},\ 0),$$
 
 that is, each storage increment is created with the slot width in force at
@@ -46,7 +46,7 @@ successive negative increments (depressurization hysteresis).
 After pressurization, $P$ decays exponentially toward 1 with the time scale
 `DPS_DECAY_TIME` ($r = 0.5$ s by default):
 
-$$\hat P(t) = 1 + (\hat P_0 - 1)\exp\!\left(-\frac{10\,(t - t_s)}{r}\right),$$
+$$\hat P(t) = 1 + (\hat P_0 - 1)\exp\left(-\frac{10\,(t - t_s)}{r}\right),$$
 
 with $t_s$ the instant the conduit entered surcharge, and it is smoothed
 spatially once per step by averaging $\hat P$ over the conduits incident to

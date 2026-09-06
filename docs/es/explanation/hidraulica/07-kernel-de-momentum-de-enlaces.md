@@ -16,7 +16,7 @@ $$\mathrm{Fr} = \frac{\lvert v \rvert}{\sqrt{g\,\bar A / \bar W}} \quad\text{(0 
 
 El factor de amortiguación inercial sigue el enfoque de *inercia parcial local* (mezcla lineal sobre $0.5 \le \mathrm{Fr} \le 1$):
 
-$$\sigma = \begin{cases} 1 & \mathrm{Fr} \le 0.5,\\ 2\,(1 - \mathrm{Fr}) & 0.5 < \mathrm{Fr} < 1,\\ 0 & \mathrm{Fr} \ge 1, \end{cases} \qquad\text{es decir}\quad \sigma = \mathrm{clamp}\!\big(2(1-\mathrm{Fr}),\ 0,\ 1\big).$$
+$$\sigma = \begin{cases} 1 & \mathrm{Fr} \le 0.5,\\ 2\,(1 - \mathrm{Fr}) & 0.5 < \mathrm{Fr} < 1,\\ 0 & \mathrm{Fr} \ge 1, \end{cases} \qquad\text{es decir}\quad \sigma = \mathrm{clamp}\big(2(1-\mathrm{Fr}),\ 0,\ 1\big).$$
 
 La opción `INERTIAL_DAMPING` sobrescribe esto: NONE fuerza $\sigma = 1$, FULL fuerza $\sigma = 0$ (sin términos inerciales en absoluto); un conducto cerrado con escurrimiento en carga siempre tiene $\sigma = 0$.
 
@@ -60,7 +60,7 @@ Después de la actualización de momentum cruda, `applyFlowLimits` (`DynamicWave
 1. **Control de entrada de alcantarilla** (FHWA HEC-5): si hay un código de alcantarilla y el conducto no está a sección llena, $q \leftarrow \min(q, q_{\mathrm{inlet}})$.
 2. **Límite de caudal normal**: para un conducto abierto/de superficie libre no lleno, si se cumple la condición de pendiente ($y_1 < y_2$, es decir, la pendiente de la superficie del agua es menor que la pendiente de fondo) o la condición de Froude aguas arriba ($\mathrm{Fr}_1 \ge 1$) (según la opción `NORMAL_FLOW_LIMITED`), entonces
 
-$$q \leftarrow \min\!\left(q,\ \beta\,A_1\,R_1^{2/3}\right),$$
+$$q \leftarrow \min\left(q,\ \beta\,A_1\,R_1^{2/3}\right),$$
 
    el caudal normal de Manning al tirante aguas arriba.
 3. **Subrelajación** (iteraciones $> 0$): $q = (1-\omega)q_{\mathrm{last}} + \omega\,q$ con acotación del cambio de signo a $\pm 0.001$.

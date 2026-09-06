@@ -41,7 +41,7 @@ donde $V_{\mathrm{full}} = \mathrm{MIN\_SURFAREA}\cdot d_{\mathrm{full}}$ salvo 
 - Tabular: $V = \mathrm{table}(d\cdot \mathrm{Ucf}[L])/\mathrm{Ucf}[V]$ con interpolación de tabla;
 - Las formas geométricas (cilíndrica, cónica, paraboloide, piramidal) usan la relación cuadrática de área superficial $A(d) = c + a\,d + b\,d^{2}$, integrada al polinomio cúbico
 
-$$V(d) = d\left(c + d\!\left(\tfrac{a}{2} + d\,\tfrac{b}{3}\right)\right);$$
+$$V(d) = d\left(c + d\left(\tfrac{a}{2} + d\,\tfrac{b}{3}\right)\right);$$
 
 - Almacenamiento funcional: ley de potencia $A(d) = c + a\,d^{b}$ integrada analíticamente.
 
@@ -55,7 +55,7 @@ $$A_{\mathrm{pond}}(d) = \begin{cases} A_{\mathrm{surf}}(d) & d \le d_{\mathrm{f
 
 **Caudal máximo de salida** (usado por la reunión de ingreso de enlace de la onda cinemática y del escurrimiento permanente):
 
-$$Q_{\max} = Q_{\mathrm{in}} + \frac{V_{\mathrm{old}}}{dt}, \qquad Q_{\mathrm{in}} = \min\!\left(Q_{\mathrm{in}}, Q_{\max}\right).$$
+$$Q_{\max} = Q_{\mathrm{in}} + \frac{V_{\mathrm{old}}}{dt}, \qquad Q_{\mathrm{in}} = \min\left(Q_{\mathrm{in}}, Q_{\max}\right).$$
 
 ## Datos de los enlaces
 

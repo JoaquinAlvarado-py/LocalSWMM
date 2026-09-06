@@ -3,12 +3,13 @@
   "private": true,
   "scripts": {
     "test:3d": "node --test scripts/test-network3d.mjs",
-    "docs:build": "vitepress build docs",
+    "docs:build": "vitepress build docs && node scripts/copy-docs.js",
     "docs:dev": "vitepress dev docs",
     "docs:preview": "vitepress preview docs",
-    "build": "vitepress build docs"
+    "build": "vitepress build docs && node scripts/copy-docs.js"
   },
   "devDependencies": {
+    "markdown-it-mathjax3": "^4.3.2",
     "vitepress": "^1.6.4"
   }
 }

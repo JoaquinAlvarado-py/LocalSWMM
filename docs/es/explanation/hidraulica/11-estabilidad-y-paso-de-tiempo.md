@@ -32,7 +32,7 @@ resguardando contra un cambio excesivo de carga en un solo paso.
 
 El siguiente paso de tránsito (`getRoutingStep`) es el mínimo sobre todos los enlaces, nodos y pares de unión virtual, cada uno escalado por el factor de Courant del usuario, y luego pisado y acotado:
 
-$$\Delta t_{\min}^{\mathrm{eff}} = \max\!\left(\min_{j,i}\{t_j, t_i\}\cdot \mathrm{Cr},\ \max(\min(\Delta t_{\min},\ \Delta t_{\text{tránsito}}),\ 0.001\ \mathrm{s})\right),$$
+$$\Delta t_{\min}^{\mathrm{eff}} = \max\left(\min_{j,i}\{t_j, t_i\}\cdot \mathrm{Cr},\ \max(\min(\Delta t_{\min},\ \Delta t_{\text{tránsito}}),\ 0.001\ \mathrm{s})\right),$$
 
 redondeado a milisegundos. El paso efectivo se acota luego por el `ROUTING_STEP` fijo del usuario y por la duración restante de la simulación. El paso inicial es el paso mínimo. La primera llamada (sin caudales aún) también retorna el paso mínimo. El solver FV sub-pasea internamente a su propio límite CFL, por lo que bajo FV el paso de tránsito es solo una cadencia de reporte.
 
@@ -49,7 +49,7 @@ La inestabilidad numérica se manifiesta como oscilaciones que no se amortiguan 
 
 Un paso de tránsito "no converge" solo cuando la tolerancia de carga ($\varepsilon_H = 0.005\ \mathrm{ft}$) no se cumple en algún nodo no-emisario después de `MAX_TRIALS` iteraciones. La aceleración de Anderson (opcional) acelera la convergencia mezclando las dos salidas más recientes del operador en cada nodo:
 
-$$\alpha_k = \mathrm{clamp}\!\left( \frac{r_k\,(r_k - r_{k-1})}{(r_k - r_{k-1})^{2}},\ 0,\ 1\right), \qquad H_{k+1} = (1-\alpha_k)\,G(H_k) + \alpha_k\,G(H_{k-1}),$$
+$$\alpha_k = \mathrm{clamp}\left( \frac{r_k\,(r_k - r_{k-1})}{(r_k - r_{k-1})^{2}},\ 0,\ 1\right), \qquad H_{k+1} = (1-\alpha_k)\,G(H_k) + \alpha_k\,G(H_{k-1}),$$
 
 con $r_k = G(H_k) - H_k$ el residual y $G$ el operador de actualización de carga. Se omite en nodos donde $G$ es no suave (en carga bajo EXTRAN, ranura dinámica activa, cerca del corte de la ranura estática, vertedero/orificio en la clave, extremos de bomba, borde de encharcamiento).
 

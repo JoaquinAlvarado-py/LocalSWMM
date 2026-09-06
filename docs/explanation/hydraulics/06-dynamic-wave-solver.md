@@ -10,7 +10,7 @@ The dynamic wave model solves the full one-dimensional de Saint-Venant equations
 
 $$\underbrace{\frac{\partial A}{\partial t}}_{\text{storage}} + \underbrace{\frac{\partial Q}{\partial x}}_{\text{convective flux}} = 0,$$
 
-$$\underbrace{\frac{\partial Q}{\partial t}}_{\text{local acceleration}} + \underbrace{\frac{\partial}{\partial x}\!\left(\frac{Q^{2}}{A}\right)}_{\text{convective acceleration}} + \underbrace{gA\,\frac{\partial H}{\partial x}}_{\text{pressure gradient}} + \underbrace{gA\,S_f}_{\text{friction}} = 0,$$
+$$\underbrace{\frac{\partial Q}{\partial t}}_{\text{local acceleration}} + \underbrace{\frac{\partial}{\partial x}\left(\frac{Q^{2}}{A}\right)}_{\text{convective acceleration}} + \underbrace{gA\,\frac{\partial H}{\partial x}}_{\text{pressure gradient}} + \underbrace{gA\,S_f}_{\text{friction}} = 0,$$
 
 where $A$ is the flow area, $Q$ the discharge, $H = Z + y$ the hydraulic head ($Z$ conduit invert, $y$ depth), $g$ gravity, and $S_f$ the friction slope. The friction slope follows Manning:
 

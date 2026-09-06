@@ -28,14 +28,14 @@ $$T_s = \frac{g\,A_{\mathrm{full}}}{c_{pT}^{2}}\,P^{2},$$
 donde $A_{\mathrm{full}}$ es el área de sección llena. El número de Preissmann
 parte, al inicio de la presurización, en
 
-$$P_{0} = \max\!\left(\frac{c_{pT}}{\alpha\,c_g},\ 1\right),
+$$P_{0} = \max\left(\frac{c_{pT}}{\alpha\,c_g},\ 1\right),
   \qquad c_g = \sqrt{g\,A_{\mathrm{full}}/W_{\max}},$$
 
 con $\alpha$ el parámetro de choque (`DPS_ALPHA`, por defecto 3) y
 $c_g$ la celeridad de la onda de gravedad a sección llena. El área de ranura se
 acumula de forma *dependiente de la trayectoria*:
 
-$$A_s \leftarrow \max\!\left(A_s + T_s\,\Delta h_s,\ 0\right),
+$$A_s \leftarrow \max\left(A_s + T_s\,\Delta h_s,\ 0\right),
   \qquad h_s = \max(\bar y - y_{\mathrm{full}},\ 0),$$
 
 es decir, cada incremento de almacenamiento se crea con el ancho de ranura
@@ -49,7 +49,7 @@ despresurización).
 Después de la presurización, $P$ decae exponencialmente hacia 1 con la escala
 de tiempo `DPS_DECAY_TIME` ($r = 0.5$ s por defecto):
 
-$$\hat P(t) = 1 + (\hat P_0 - 1)\exp\!\left(-\frac{10\,(t - t_s)}{r}\right),$$
+$$\hat P(t) = 1 + (\hat P_0 - 1)\exp\left(-\frac{10\,(t - t_s)}{r}\right),$$
 
 con $t_s$ el instante en que el conducto entró en carga, y se suaviza
 espacialmente una vez por paso promediando $\hat P$ sobre los conductos

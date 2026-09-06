@@ -20,7 +20,7 @@ Los orificios de fondo y laterales usan un coeficiente y un tirante crítico def
 
 $$
 \begin{aligned}
-  f &= \min\!\left(\frac{\text{carga}}{h_{\mathrm{crit}}},\ 1\right),
+  f &= \min\left(\frac{\text{carga}}{h_{\mathrm{crit}}},\ 1\right),
       \qquad h_{\mathrm{crit}} = \frac{C_d}{0.414}\,\frac{h_{\mathrm{open}}} {4}\ \text{(circular)}\ \text{o}\ \frac{C_d}{0.414}\, \frac{h_{\mathrm{open}}\,W_{\max}}{2(h_{\mathrm{open}} + W_{\max})} \text{(rectangular)},\\
   q &= \begin{cases}
     C_w\,f^{3/2} & f < 1 \quad\text{(escurrimiento parcial tipo vertedero)},\\
