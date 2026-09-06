@@ -1,0 +1,6 @@
+﻿# Exclude documentation source and compiled HTML from GitHub language statistics
+docs/** linguist-documentation
+public/docs/** linguist-documentation
+
+# Mark vendored third-party libraries so they don't count toward repository code
+public/vendor/** linguist-vendored
