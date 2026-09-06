@@ -1,16 +1,14 @@
 # Architecture
 
-The big picture: a client-side-only web application for 1D hydraulic modeling, where everything — the editor and the SWMM hydraulics engine — runs in the browser.
+An architectural overview of LocalSWMM: its client-side structure, module dependencies, global state management, and end-to-end simulation data pipeline.
 
-## Client-side-only design
+## Core Architectural Decisions
 
-Local SWMM is a **client-side-only web application** for 1D hydraulic modeling and simulation of stormwater and wastewater networks. Everything — the editor and the SWMM hydraulics engine — runs in the browser. The simulation engine is the HydroCouple **OpenSWMM** engine compiled to **WebAssembly** with Emscripten.
+LocalSWMM is designed from the ground up to execute all hydraulic modeling tasks directly inside the user's browser without reliance on a server-side computing backend.
 
-## Key properties
-
-- **No backend.** The only server is a trivial static-file + health endpoint server (`server.py`). No database, no build step for the UI, no bundler.
-- **No UI framework.** The frontend is ~15,000 lines of dependency-free JavaScript (classic scripts + IIFEs) using Mapbox GL JS as the primary map rendering library.
-- **WASM-embedded hydraulics.** The OpenSWMM engine is cross-compiled for `wasm32-emscripten` with vcpkg-managed C++ dependencies (Eigen, HDF5, nlohmann-json, SUNDIALS).
+- **No backend required:** The Python server (`server.py`) is merely a local static file server and health endpoint (`GET /api/status`).
+- **Dependency-free UI:** Built with ~15,000 lines of standard JavaScript structured via IIFEs, with Mapbox GL JS providing interactive map rendering.
+- **WASM-embedded hydraulics:** The OpenSWMM engine is cross-compiled for `wasm32-emscripten` with C++ dependencies (Eigen, HDF5, nlohmann-json, SUNDIALS), executing inside a dedicated Web Worker (`simWorker.js`).
 
 ## Architecture at a glance
 
@@ -52,16 +50,13 @@ Local SWMM is a **client-side-only web application** for 1D hydraulic modeling a
                         └─────────────────────────────────────────────────────────┘
 ```
 
-**Data flow (simulation):** model (`Net`) → `inpExporter.generateInp()` → optional 2D section injection (`Mesh2DInp.buildInput`) → `.inp` string → Worker → `FS.writeFile('/in.inp')` → `swmm_engine_open/initialize/start` → `stride()` loop → `.rpt` + `.out` read back → `swmmOutParser` → `results.js` rendering (tables, map colors, time slider, profile/chart plots).
+**Data flow (simulation):** model (`Net`) → `inpExporter.generateInp()` → `.inp` string → Worker (`simWorker.js`) → `FS.writeFile('/in.inp')` → `swmm_engine_open/initialize/start` → `stride()` loop → `.rpt` + `.out` read back → `swmmOutParser` → `results.js` rendering (tables, map colors, time slider, profile/chart plots).
 
 ## Module system and globals
 
-There are **no ES modules, no bundler, no `import`/`export`**. Every file is a classic script wrapped in an IIFE. Modules communicate exclusively through globals attached to `window`. **Script order in `index.html` is the dependency contract** (`index.html:779-810`):
+There are **no ES modules, no bundler, no `import`/`export`**. Every file is a classic script wrapped in an IIFE. Modules communicate exclusively through globals attached to `window`. **Script order in `index.html` is the dependency contract**:
 
 ```
-config.js → mapbox/proj4/shp/dxf/poly2tri/geotiff (CDN)
-→ inpParser → inpExporter → network → swmmOutParser → street_view_overlay
-→ swmm6wasm → results → importers → app → tools → profile → plot
 config.js → mapbox/proj4/shp/dxf/geotiff (CDN)
 → inpParser → inpExporter → network → swmmOutParser → street_view_overlay
 → swmm6wasm → results → importers → app → tools → profile → plot

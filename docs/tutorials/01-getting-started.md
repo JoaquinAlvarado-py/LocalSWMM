@@ -18,15 +18,16 @@ By the end of this lesson you will have:
 
 ## What LocalSWMM is
 
-LocalSWMM is a **client-side-only web application** for 1D hydraulic modeling and simulation of stormwater and wastewater networks. Everything, such as the editor and the SWMM hydraulics engine, runs in the browser. The simulation engine is the HydroCouple **OpenSWMM** engine compiled to **WebAssembly** with Emscripten.
+LocalSWMM is an interactive, browser-based web application for 1D hydraulic modeling and simulation of urban stormwater and wastewater networks. Both the network editor and the computational engine run entirely client-side.
 
 Key properties:
 
-- **No backend.** The only server is a trivial static file paired with a health endpoint server (`server.py`). No database, no build step for the UI, no bundler.
-- **No UI framework.** The frontend is dependency-free JavaScript (classic scripts + IIFEs) using Mapbox GL JS as the primary map rendering library.
-- **WASM-embedded hydraulics.** The OpenSWMM engine is cross-compiled for `wasm32-emscripten` with vcpkg-managed C++ dependencies (Eigen, HDF5, nlohmann-json, SUNDIALS).
+- **No backend required:** A minimal local Python server (`server.py`) serves static assets and a health endpoint. No database, external solver, or backend computation is required.
+- **Dependency-free UI:** Built with standard JavaScript (classic scripts + IIFEs) without heavy UI frameworks, using Mapbox GL JS for 2D/3D map and terrain visualization.
+- **In-browser hydraulics:** The [HydroCouple OpenSWMM engine](https://github.com/HydroCouple/openswmm.engine) is cross-compiled to WebAssembly via Emscripten, enabling full hydrodynamic simulations right inside your browser.
 
-The app provides an interactive map interface to build, edit, and simulate urban drainage systems. It uses Mapbox GL JS for 3D terrain and building visualization, and the [HydroCouple OpenSWMM engine](https://github.com/HydroCouple/openswmm.engine) to execute hydraulic simulations directly in your web browser thanks to WebAssembly. You can try it yourself at https://swmm6.is-local.org. A demo video is available at https://github.com/user-attachments/assets/6ea0af51-125d-4b7d-a6ba-e0452cfae368 (a `demo.mp4` file is also bundled in the repo under `assets/`).
+You can try the live app at **https://swmm6.is-local.org**. A demo video is available at https://github.com/user-attachments/assets/6ea0af51-125d-4b7d-a6ba-e0452cfae368 (or `assets/demo.mp4` in the repository).
+
 
 ## Step 1:  Open the app
 

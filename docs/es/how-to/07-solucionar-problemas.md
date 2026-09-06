@@ -1,6 +1,6 @@
 # Cómo Solucionar Problemas de Local SWMM
 
-Arregla problemas comunes con el mapa, las corridas, el build de WASM y la ruta WebGPU, y conoce las trampas conocidas de este codebase.
+Arregla problemas comunes con el mapa, las simulaciones, el build de WASM, y conoce las particularidades de este codebase.
 
 ## Cómo arreglar un mapa en blanco / sin teselas
 
@@ -9,52 +9,35 @@ Arregla problemas comunes con el mapa, las corridas, el build de WASM y la ruta 
 
 ## Cómo arreglar errores de "Run" inmediatos con una advertencia
 
-- Causa: sin nodos, sin outfall, o **unidades US con una malla 2D** (2D es solo SI) — `app.js:1402-1406`.
-- Fix: agrega al menos un nodo y un `OUTFALL`; cambia las unidades a SI si hay una malla 2D presente.
+- Causa: no hay nodos o no hay un outfall en el modelo.
+- Solución: agrega al menos un nodo y un `OUTFALL` conectado a la red.
 
 ## Cómo arreglar una corrida que falla en silencio / con errores del motor
 
-1. Revisa la ventana **Run Status** y luego la pestaña **Report**. Para diagnóstico profundo, el worker vuelca las líneas de error del `.rpt` y los primeros 3000 caracteres del INP al fallar (`openSwmm2dWorker.js:109-148`).
-2. Reproduce en Node: `node scripts/run-engine-marcher.mjs model.inp out.json` imprime los códigos del motor (`SWMM_ERR_LIFECYCLE = 6` es el código de "completado natural").
+1. Revisa la ventana **Run Status** y luego la pestaña **Report**. Para diagnóstico profundo, el worker vuelca las líneas de error del `.rpt` y los primeros 3000 caracteres del INP al fallar (`simWorker.js`).
+2. Reproduce en Node: `node scripts/bench-1d.mjs model.inp` imprime los códigos del motor (`SWMM_ERR_LIFECYCLE = 6` es el código de completado normal).
 
 ## Cómo arreglar un build de WASM que falla en `PluginFactory.cpp:46: unsupported platform`
 
 - Causa: el submodule se re-fijó sin el commit de compatibilidad de wasm.
-- Fix: restaura `85e4be38` (consulta [Cómo Compilar el Motor WASM desde el Código Fuente](03-compilar-desde-fuente.md), sección 5) o vuelve a aplicar los no-ops de Emscripten.
+- Solución: restaura `85e4be38` (consulta [Cómo Compilar el Motor WASM desde el Código Fuente](03-compilar-desde-fuente.md), sección 5) o vuelve a aplicar los no-ops de Emscripten.
 
 ## Cómo arreglar `Could not find zip` durante el bootstrap de vcpkg
 
 - Causa: falta `zip`/`unzip`/`tar` del sistema.
-- Fix: en Arch: `sudo pacman -S zip unzip tar`.
-
-## Cómo manejar una corrida 2D que cae de vuelta a WASM
-
-- Causa: `navigator.gpu` ausente o `maxStorageBuffersPerShaderStage < 16` (p. ej., Apple Silicon/Metal).
-- Fix: no se necesita ninguno — esto es esperado; la ruta WASM es la referencia.
-
-## Cómo arreglar fallas de generación de malla en dominios enormes
-
-- El heap de Triangle WASM está fijado en 16 MB; los límites de presupuesto (`trianglePointBudget=8000`, `autoAreaCap`) se activan automáticamente. Reduce el área del dominio o el minAngle.
+- Solución: en Arch Linux: `sudo pacman -S zip unzip tar`; en Debian/Ubuntu: `sudo apt install zip unzip tar`.
 
 ## Cómo arreglar wasm obsoleto servido en caché
 
-- El servidor envía `Cache-Control: no-store`, pero si estás alojando en otro lado, haz un refresh forzado después de recompilar (se usan parámetros de query `swmm6wasm.js?v=<n>` en `index.html:790-810`).
+- El servidor envía `Cache-Control: no-store`, pero si estás alojando en otro lado, haz un refresh forzado después de recompilar (se usan parámetros de query `swmm6wasm.js?v=<n>` en `index.html`).
 
-## Cómo arreglar fixtures faltantes para los scripts de WebGPU
+## Trampas y particularidades conocidas
 
-- Regenera: `node scripts/make-marcher-inp.mjs …` / `node scripts/make-marcher-cpl-inp.mjs …` o ejecuta `verify-bellinge.mjs` una vez para poblar `scripts/verify-out/`.
-
-## Trampas y rarezas conocidas
-
-1. **Deriva del README:** el Inicio Rápido del README dice `cd SWMM_3D_Web_UI` y `http://localhost:8000`; el directorio real es `LocalSWMM` y el puerto es `8080`.
-2. **Dos binarios de motor idénticos** (`openswmm2d.*` y `swmm6wasm.*`) son copias byte por byte — mantenlos sincronizados (el script de build lo hace).
-3. **Los mensajes de progreso de `simWorker` son protocolo muerto:** el worker nunca los publica y `app.js:1275` los ignora; la barra de progreso 1D es cosmética basada en tiempo.
-4. **El parseo de `.out` es solo 1D:** la ruta 2D lleva arreglos JS por frame en su lugar y pone explícitamente `App.outData` en null (`app.js:1443`).
-5. **`bench-1d.mjs` lleva un comentario de cabecera "probe-1d.mjs" obsoleto.**
-6. **Hard-coding solo de Windows** en `bench-gpu-coupl.mjs` y `run-webgpu-harness.mjs` (ruta de Chrome hardcodeada).
-7. **Los parámetros de la capa LID se parsean pero no se almacenan** (`inpParser.js:411-424`) — los round-trips de LID dependen de `rawSections`.
-8. **El `config.js` de CI usa `const CONFIG`** mientras que las configuraciones locales usan `var`; las búsquedas de `window.CONFIG` (`app.js:446`) son defensivas en cualquier caso.
-9. **Las "lecciones" de `harness.html`** documentan una fijación histórica de VARIABLE_STEP que luego se demostró incorrecta — lee las entradas del 2026-08-06 en `WEBGPU_PLAN.md` antes de "arreglar" nada en `couplingSplit.js`.
-10. **La reconstrucción de altura en vivo acoplada por vértices** (`stCnt>0`) existe en el kernel WGSL, pero el split limpia los punteros de stencil — la ruta en vivo usa la altura de la celda de lecho más baja.
-11. **La precipitación NATURAL_NEIGHBOUR** no la modela el marcher (solo media uniforme del gage).
-12. **Capas del manifiesto de vcpkg:** el `vcpkg.json` propio del motor se ignora para el build de wasm; solo se aplica el manifiesto raíz.
+1. **Deriva histórica del README:** El inicio rápido del README referenció anteriormente `cd SWMM_3D_Web_UI` y `http://localhost:8000`; el directorio es `LocalSWMM` y el puerto del servidor es `8080`.
+2. **Nombres de binarios del motor:** El motor WebAssembly activo se entrega mediante `swmm6wasm.js` y `swmm6wasm.wasm`, cargados por `simWorker.js`.
+3. **Mensajes de progreso de `simWorker`:** El worker calcula asíncronamente en bucles de stride; la barra de progreso entrega retroalimentación visual durante el cómputo.
+4. **Parseo de salida binaria:** `swmmOutParser.js` parsea los binarios `.out` para máximo rendimiento, con fallback al reporte de texto `.rpt` para tablas resumen.
+5. **Comentario en `bench-1d.mjs`:** `bench-1d.mjs` conserva un comentario de cabecera que hace referencia a `probe-1d.mjs`.
+6. **Parámetros de capas LID:** Los parámetros de capa LID se preservan en `rawSections` (`inpParser.js`) para garantizar la persistencia fiel en exportaciones INP.
+7. **Declaraciones de configuración:** El `config.js` de CI usa `const CONFIG` mientras que las configuraciones locales usan `var`; las búsquedas de `window.CONFIG` son defensivas en ambos casos.
+8. **Capas del manifiesto de vcpkg:** El `vcpkg.json` propio del motor se ignora para el build de WASM; solo se aplica el manifiesto raíz.

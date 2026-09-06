@@ -15,9 +15,6 @@ sobre el SWMM oficial.
 | `VIRTUAL_JUNCTION_MOMENTUM` | corrección convectiva a través de la unión virtual | BASIC |
 | `FLOW_ROUTING FV` | solver 1D explícito de volúmenes finitos | DYNWAVE (legado) |
 | `FV_*` | opciones del solver FV (CFL, Riemann, orden, LTS, ...) | ver la [tabla de opciones del solver FV](../explanation/modificaciones-motor/06-transito-por-volumenes-finitos.md) |
-| `[2D_VERTICES]`<br>`[2D_TRIANGLES]` | malla 2D de aguas someras local-inercial | --- |
-| `[2D_OPTIONS]` | opciones del marchante 2D y del acople (`COUPLING_CD`, `COUPLING_SYNC`, ...) | COUPLING_CD 0.65 |
-| `IGNORE_2D` | desactiva el solver 2D conservando la malla | NO |
 | `[RDII_DECAY]` | recuperación exponencial de la abstracción del RDII con temperatura ($k_0$, $k_T$, $T_{\mathrm{ref}}$) | --- |
 | `THREADS` | hilos OpenMP bit-exactos del solver | 1 |
 | `CRS` | sistema de referencia espacial (EPSG/PROJ) | vacío |

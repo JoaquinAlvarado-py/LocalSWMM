@@ -38,9 +38,9 @@ plus runon and groundwater contributions. These are scattered into `nodes.runoff
 
 Every routing step, the lateral inflows are assembled from decomposed source buffers in legacy order (`assembleLateralInflows`, `SWMMEngine.cpp:5691`):
 
-$$Q_{\mathrm{lat}} = Q_{\mathrm{ext}} + Q_{\mathrm{dwf}} + Q_{\mathrm{wet}} + Q_{\mathrm{gw}} + Q_{\mathrm{rdii}} + Q_{\mathrm{iface}} + Q_{\mathrm{user}} + Q_{\mathrm{coupling}},$$
+$$Q_{\mathrm{lat}} = Q_{\mathrm{ext}} + Q_{\mathrm{dwf}} + Q_{\mathrm{wet}} + Q_{\mathrm{gw}} + Q_{\mathrm{rdii}} + Q_{\mathrm{iface}} + Q_{\mathrm{user}},$$
 
-where the terms are external/inflow time series, dry-weather flow, wet-weather (runoff) inflow, groundwater inflow, RDII, interface-file inflow, user-forced inflow, and 1D–2D coupling inflow respectively.
+where the terms are external/inflow time series, dry-weather flow, wet-weather (runoff) inflow, groundwater inflow, RDII, interface-file inflow, and user-forced inflow respectively.
 
 ### The routing step
 

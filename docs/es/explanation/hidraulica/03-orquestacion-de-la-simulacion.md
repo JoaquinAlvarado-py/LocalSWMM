@@ -36,9 +36,9 @@ más los aportes por escurrimiento superficial recibido (runon) y por napa freá
 
 En cada paso de tránsito, los aportes laterales se ensamblan a partir de los búferes de fuente descompuestos en el orden legado (`assembleLateralInflows`, `SWMMEngine.cpp:5691`):
 
-$$Q_{\mathrm{lat}} = Q_{\mathrm{ext}} + Q_{\mathrm{dwf}} + Q_{\mathrm{wet}} + Q_{\mathrm{gw}} + Q_{\mathrm{rdii}} + Q_{\mathrm{iface}} + Q_{\mathrm{user}} + Q_{\mathrm{coupling}},$$
+$$Q_{\mathrm{lat}} = Q_{\mathrm{ext}} + Q_{\mathrm{dwf}} + Q_{\mathrm{wet}} + Q_{\mathrm{gw}} + Q_{\mathrm{rdii}} + Q_{\mathrm{iface}} + Q_{\mathrm{user}},$$
 
-donde los términos son, respectivamente: series de tiempo externas/ingresos, caudal de tiempo seco (DWF), ingreso de tiempo húmedo (escorrentía), ingreso de napa freática, RDII (infiltración/entrada por lluvia), ingreso por archivo de interfaz, ingreso forzado por el usuario e ingreso por acoplamiento 1D–2D.
+donde los términos son, respectivamente: series de tiempo externas/ingresos, caudal de tiempo seco (DWF), ingreso de tiempo húmedo (escorrentía), ingreso de napa freática, RDII (infiltración/entrada por lluvia), ingreso por archivo de interfaz e ingreso forzado por el usuario.
 
 ## El paso de tránsito
 

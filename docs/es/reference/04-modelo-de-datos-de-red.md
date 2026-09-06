@@ -9,8 +9,6 @@
 | `nodes[]` | `{ id, type, lngLat:[lng,lat], props }` |
 | `links[]` | `{ id, type, from, to, vertices[], props }` (`vertices` = coordenadas intermedias) |
 | `subcatchments[]` | `{ id, ring:[[lng,lat]…], props }` |
-| `mesh2D[]` | `{ id:'M2D_n', ring, manningN, parentSubcatch, props }` — derivado de la malla indexada |
-| `mesh2DIndexed` | Salida del motor Triangle; ver el modelo de datos de la malla 2D |
 | `timeseries` | `{ TS1: [{date,time,value}…] }` |
 | `options`, `units` | Opciones de simulación, `'SI'`/`'US'` |
 | Metadata | `title`, `counters`, `rawSections`, `curves`, `lidControls`, `pollutants`, `landUses`, `treatments`, `aquifers`, `snowpacks`, `importedLayers` |
@@ -21,9 +19,9 @@ Las **props por defecto** vienen de factories: `defaultNodeProps(type)`, `defaul
 
 ## IDs, índices, caché GeoJSON
 
-- **Generación de IDs** (`nextId`, `network.js:171-181`): contadores por tipo con prefijos de `ID_PREFIX` (`network.js:19-23`): nodos `J/O/ST/D/RG`, enlaces `C/P/W/OR/OL`, subcuencas `S`, celdas de malla `M2D_`.
-- **Búsqueda O(1):** `_nodeMap/_linkMap/_subMap` reconstruidos por `rebuildIndexes()` (`network.js:141-150`); `findAny(id)` (`network.js:197-212`) también resuelve celdas de malla.
-- **Cachés GeoJSON:** `nodesGeoJSON/linksGeoJSON/subcatchmentsGeoJSON/mesh2DGeoJSON` (`network.js:784-865`) invalidadas por `_invalidateGeo()`; los movimientos de nodo se parchean in place (`_patchGeoForMove`, `network.js:350-365`) para que los drags no reconstruyan todo.
+- **Generación de IDs** (`nextId`, `network.js:171-181`): contadores por tipo con prefijos de `ID_PREFIX` (`network.js:19-23`): nodos `J/O/ST/D/RG`, enlaces `C/P/W/OR/OL`, subcuencas `S`.
+- **Búsqueda O(1):** `_nodeMap/_linkMap/_subMap` reconstruidos por `rebuildIndexes()` (`network.js:141-150`); `findAny(id)` (`network.js:197-212`) resuelve cualquier elemento por su ID.
+- **Cachés GeoJSON:** `nodesGeoJSON/linksGeoJSON/subcatchmentsGeoJSON` (`network.js:784-865`) invalidadas por `_invalidateGeo()`; los movimientos de nodo se parchean in place (`_patchGeoForMove`, `network.js:350-365`) para que los drags no reconstruyan todo.
 
 ## Undo/redo (patrón de comandos)
 
@@ -38,4 +36,4 @@ Las **props por defecto** vienen de factories: `defaultNodeProps(type)`, `defaul
 
 ## Serialización
 
-`serialize()` (`network.js:465-488`) es el volcado canónico del modelo (versión 2); `loadState()` (`network.js:490-520`) lo restaura, reconstruyendo índices y la malla indexada. `rawSections` (texto INP verbatim de las importaciones) se preserva para que los datos que la UI no tiene editor sobrevivan los round-trips.
+`serialize()` (`network.js:465-488`) es el volcado canónico del modelo (versión 2); `loadState()` (`network.js:490-520`) lo restaura, reconstruyendo índices. `rawSections` (texto INP verbatim de las importaciones) se preserva para que los datos que la UI no tiene editor sobrevivan los round-trips.

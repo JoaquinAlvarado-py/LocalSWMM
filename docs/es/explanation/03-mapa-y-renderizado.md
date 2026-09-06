@@ -26,7 +26,7 @@ Fuentes y capas (fuente → ids de capa):
 
 - `refreshNetworkData()` (`app.js:276-293`) reenvía todas las fuentes + restaura el feature-state de selección; `refreshNetworkDataForMove()` (`app.js:299-310`) está limitado por rAF y actualiza solo nodos/enlaces durante los arrastres.
 - `map.on('style.load')` (`app.js:622-629`) re-ejecuta la creación de capas tras los cambios de mapa base.
-- **Muestreo de elevación DEM** (`sampleDEMElevationAsync`, `app.js:437-495`): (1) sampler de terreno de la malla en memoria, o si no (2) API de puntos de OpenTopography para fuentes no-Mapbox (COP30/USGS10m/SRTMGL1/NASADEM/ANADEM/GEDTM30), o si no (3) DEM de terreno de Mapbox + `map.queryTerrainElevation`. `sampleAllNodesDEM()` (`app.js:522-543`) recorre todos los nodos. La variante síncrona (`sampleDEMElevation`, `app.js:497-520`) corre al colocar un nodo.
+- **Muestreo de elevación DEM** (`sampleDEMElevationAsync`): (1) API de puntos de OpenTopography para fuentes no-Mapbox (COP30/USGS10m/SRTMGL1/NASADEM/ANADEM/GEDTM30), o bien (2) DEM de terreno de Mapbox + `map.queryTerrainElevation`. `sampleAllNodesDEM()` recorre todos los nodos. La variante síncrona (`sampleDEMElevation`) corre al colocar un nodo.
 
 ## Overlays
 

@@ -11,7 +11,7 @@
 
 ### Alcance
 
-Este documento cubre los cálculos hidráulicos (tránsito de caudales) *unidimensionales* del proyecto LocalSWMM. LocalSWMM es una aplicación web basada en navegador para el modelamiento de redes de aguas lluvias y aguas servidas; incorpora el motor HydroCouple OpenSWMM (C++) compilado a WebAssembly. El componente hidráulico 1D resuelve el escurrimiento unidimensional, no permanente y gradualmente variado a través de una red de *nodos* (cámaras de unión, estanques de almacenamiento, divisores de flujo, emisarios) y *enlaces* (conductos, bombas, orificios, vertederos, descargas). El módulo de escurrimiento superficial 2D y su acoplamiento 1D–2D quedan fuera del alcance, salvo donde interactúan con el solver 1D (por ejemplo, a través de los aportes laterales y del acoplamiento por área de encharcamiento).
+Este documento cubre los cálculos hidráulicos (tránsito de caudales) *unidimensionales* del proyecto LocalSWMM. LocalSWMM es una aplicación web basada en navegador para el modelamiento de redes de aguas lluvias y aguas servidas; incorpora el motor HydroCouple OpenSWMM (C++) compilado a WebAssembly. El componente hidráulico 1D resuelve el escurrimiento unidimensional, no permanente y gradualmente variado a través de una red de *nodos* (cámaras de unión, estanques de almacenamiento, divisores de flujo, emisarios) y *enlaces* (conductos, bombas, orificios, vertederos, descargas).
 
 El motor es un *modelo de simulación distribuida de tiempo discreto*: avanza un vector de estado a lo largo de una secuencia de pasos de tiempo,
 

@@ -15,8 +15,6 @@ Abre la aplicación: usa el sitio de producción en https://swmm6.is-local.org, 
 1. Haz clic en el **Ícono de Engranaje** del mapa para abrir el menú **Map Settings**.
 2. Bajo **Units**, selecciona **SI** (metros, milímetros, LPS) o **US** (pies, pulgadas, CFS).
 
-Nota para más adelante: si agregas una malla 2D a tu modelo, **2D es solo SI** — una corrida con una malla 2D presente mientras las unidades son US se rechaza con una advertencia.
-
 ## Paso 2 — Agrega nodos
 
 1. En la **Paleta de Herramientas Izquierda**, elige una **herramienta de Nodo** — **Junction**, **Outfall**, **Storage** o **Divider**.
@@ -66,7 +64,7 @@ Consejo: con la **Select Tool** (`Esc`) puedes hacer clic en los elementos para 
 2. Haz clic en **Run** en la **Barra de Herramientas Superior**.
 3. Supervisa el progreso en la ventana **Run Status** (porcentaje de progreso y tiempo simulado en `Days` y `Hrs:Min`). Puedes **Stop** la corrida o **Minimize** a una insignia flotante en cualquier momento.
 
-Si la corrida aborta de inmediato con una advertencia, las causas son: sin nodos, sin `OUTFALL`, o **unidades US con una malla 2D** (2D es solo SI).
+Si la corrida aborta de inmediato con una advertencia, asegúrate de que tu modelo contenga nodos válidos y al menos un `OUTFALL` conectado.
 
 ## Paso 8 — Inspecciona los resultados
 
@@ -83,5 +81,6 @@ Si la corrida aborta de inmediato con una advertencia, las causas son: sin nodos
 
 ## Siguientes pasos
 
-- **Agrega una malla 2D** para el tránsito superficial sobre el terreno: usa el botón **Mesh2D** o el menú **Data** (**2D Mesh**) para abrir el diálogo de malla, un modal de 3 pestañas (**Sources / Quality / Hydraulics**) que genera la malla de superficie. Recuerda que 2D requiere unidades SI.
-- Aprende más sobre el modelo detrás de la UI en las secciones de referencia de esta documentación.
+- Explora [Cómo Ejecutar la Aplicación Localmente](../how-to/01-ejecutar-localmente.md) y [Cómo Configurar Local SWMM](../how-to/02-configurar.md) para personalizar tu entorno.
+- Aprende más sobre el motor de cálculo subyacente en la sección de [Explicación de Hidráulica 1D](../explanation/hidraulica/01-modelo-conceptual.md).
+

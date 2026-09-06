@@ -1,6 +1,6 @@
 # How to Troubleshoot Local SWMM
 
-Fix common problems with the map, runs, the WASM build, and the WebGPU path, and learn the known gotchas of this codebase.
+Fix common problems with the map, simulations, the WASM build, and learn the known gotchas of this codebase.
 
 ## How to fix a blank map / no tiles
 
@@ -9,13 +9,13 @@ Fix common problems with the map, runs, the WASM build, and the WebGPU path, and
 
 ## How to fix "Run" errors immediately with a warning
 
-- Cause: no nodes, no outfall, or **US units with a 2D mesh** (2D is SI-only) — `app.js:1402-1406`.
-- Fix: add at least one node and one `OUTFALL`; switch units to SI if a 2D mesh is present.
+- Cause: no nodes or no outfall in the model.
+- Fix: add at least one node and one `OUTFALL` connected to the network.
 
 ## How to fix a simulation that fails silently / with engine errors
 
-1. Check the **Run Status** window, then the **Report** tab. For deep diagnostics, the worker dumps the `.rpt` error lines and the first 3000 chars of the INP on failure (`openSwmm2dWorker.js:109-148`).
-2. Reproduce in Node: `node scripts/run-engine-marcher.mjs model.inp out.json` prints engine codes (`SWMM_ERR_LIFECYCLE = 6` is the "natural completion" code).
+1. Check the **Run Status** window, then the **Report** tab. For deep diagnostics, the worker dumps the `.rpt` error lines and the first 3000 characters of the INP on failure (`simWorker.js`).
+2. Reproduce in Node: `node scripts/bench-1d.mjs model.inp` prints engine error codes (`SWMM_ERR_LIFECYCLE = 6` is the normal completion code).
 
 ## How to fix a WASM build failing at `PluginFactory.cpp:46: unsupported platform`
 
@@ -25,36 +25,19 @@ Fix common problems with the map, runs, the WASM build, and the WebGPU path, and
 ## How to fix `Could not find zip` during vcpkg bootstrap
 
 - Cause: missing system `zip`/`unzip`/`tar`.
-- Fix: on Arch: `sudo pacman -S zip unzip tar`.
-
-## How to handle a 2D run that falls back to WASM
-
-- Cause: `navigator.gpu` absent or `maxStorageBuffersPerShaderStage < 16` (e.g. Apple Silicon/Metal).
-- Fix: none needed — this is expected; the WASM path is the reference.
-
-## How to fix mesh generation failures on huge domains
-
-- The Triangle WASM heap is fixed at 16 MB; the budget caps (`trianglePointBudget=8000`, `autoAreaCap`) kick in automatically. Reduce domain area or minAngle.
+- Fix: on Arch Linux: `sudo pacman -S zip unzip tar`; on Debian/Ubuntu: `sudo apt install zip unzip tar`.
 
 ## How to fix stale wasm being served
 
-- The server sends `Cache-Control: no-store`, but if you're hosting elsewhere, hard-refresh after rebuilding (`swmm6wasm.js?v=<n>` query params are used at `index.html:790-810`).
-
-## How to fix fixture files missing for WebGPU scripts
-
-- Regenerate: `node scripts/make-marcher-inp.mjs …` / `node scripts/make-marcher-cpl-inp.mjs …` or run `verify-bellinge.mjs` once to populate `scripts/verify-out/`.
+- The server sends `Cache-Control: no-store`, but if you're hosting elsewhere, hard-refresh after rebuilding (`swmm6wasm.js?v=<n>` query params are used in `index.html`).
 
 ## Known gotchas & oddities
 
-1. **README drift:** README Quick Start says `cd SWMM_3D_Web_UI` and `http://localhost:8000`; the actual dir is `LocalSWMM` and the port is `8080`.
-2. **Two identical engine binaries** (`openswmm2d.*` and `swmm6wasm.*`) are byte-for-byte copies — keep them in sync (the build script does).
-3. **`simWorker` progress messages are dead protocol:** the worker never posts them and `app.js:1275` ignores them; the 1D progress bar is a time-based cosmetic.
-4. **`.out` parsing is 1D-only:** the 2D path carries per-frame JS arrays instead and explicitly nulls `App.outData` (`app.js:1443`).
-5. **`bench-1d.mjs` carries a stale "probe-1d.mjs" header comment.**
-6. **Windows-only hard-coding** in `bench-gpu-coupl.mjs` and `run-webgpu-harness.mjs` (hard-coded Chrome path).
-7. **LID layer parameters are parsed but not stored** (`inpParser.js:411-424`) — LID round-trips rely on `rawSections`.
-8. **CI `config.js` uses `const CONFIG`** while local configs use `var`; `window.CONFIG` lookups (`app.js:446`) are defensive either way.
-9. **The `harness.html` "lessons"** document historical VARIABLE_STEP pinning that was later proven wrong — read the 2026-08-06 entries in `WEBGPU_PLAN.md` before "fixing" anything in `couplingSplit.js`.
-10. **Vertex-coupled live head reconstruction** (`stCnt>0`) exists in the WGSL kernel but the split clears stencil pointers — the live path uses the lowest-bed cell head.
-11. **NATURAL_NEIGHBOUR rainfall** is not modelled by the marcher (uniform gage mean only).
-12. **vcpkg manifest layering:** the engine's own `vcpkg.json` is ignored for the wasm build; only the root manifest applies.
+1. **README drift:** README Quick Start historically referenced `cd SWMM_3D_Web_UI` and `http://localhost:8000`; the directory is `LocalSWMM` and the server port is `8080`.
+2. **Engine binary naming:** The active WebAssembly engine is delivered via `swmm6wasm.js` and `swmm6wasm.wasm`, loaded by `simWorker.js`.
+3. **`simWorker` progress messages:** The worker completes calculations asynchronously in stride loops; the progress bar provides visual feedback during computation.
+4. **Binary output parsing:** `swmmOutParser.js` parses `.out` binary files for performance, with `.rpt` parsing providing summary table fallbacks.
+5. **`bench-1d.mjs` comment:** `bench-1d.mjs` carries a legacy header comment referring to `probe-1d.mjs`.
+6. **LID layer parameters:** LID layer parameters are parsed into `rawSections` (`inpParser.js`) so that round-trips preserve the model configuration accurately.
+7. **Config declarations:** CI `config.js` uses `const CONFIG` while local configs use `var`; `window.CONFIG` lookups are defensive either way.
+8. **vcpkg manifest layering:** The engine's own `vcpkg.json` is ignored for the WASM build; only the root manifest applies.

@@ -9,8 +9,6 @@
 | `nodes[]` | `{ id, type, lngLat:[lng,lat], props }` |
 | `links[]` | `{ id, type, from, to, vertices[], props }` (`vertices` = intermediate coordinates) |
 | `subcatchments[]` | `{ id, ring:[[lng,lat]…], props }` |
-| `mesh2D[]` | `{ id:'M2D_n', ring, manningN, parentSubcatch, props }` — derived from the indexed mesh |
-| `mesh2DIndexed` | Triangle-engine output; see the 2D mesh data model |
 | `timeseries` | `{ TS1: [{date,time,value}…] }` |
 | `options`, `units` | Simulation options, `'SI'`/`'US'` |
 | Metadata | `title`, `counters`, `rawSections`, `curves`, `lidControls`, `pollutants`, `landUses`, `treatments`, `aquifers`, `snowpacks`, `importedLayers` |
@@ -21,9 +19,9 @@
 
 ## IDs, indexes, GeoJSON cache
 
-- **ID generation** (`nextId`, `network.js:171-181`): per-type counters with prefixes from `ID_PREFIX` (`network.js:19-23`): `J/O/ST/D/RG` nodes, `C/P/W/OR/OL` links, `S` subcatchments, `M2D_` mesh cells.
-- **O(1) lookup:** `_nodeMap/_linkMap/_subMap` rebuilt by `rebuildIndexes()` (`network.js:141-150`); `findAny(id)` (`network.js:197-212`) also resolves mesh cells.
-- **GeoJSON caches:** `nodesGeoJSON/linksGeoJSON/subcatchmentsGeoJSON/mesh2DGeoJSON` (`network.js:784-865`) invalidated by `_invalidateGeo()`; node moves patch in place (`_patchGeoForMove`, `network.js:350-365`) so drags don't rebuild everything.
+- **ID generation** (`nextId`, `network.js:171-181`): per-type counters with prefixes from `ID_PREFIX` (`network.js:19-23`): `J/O/ST/D/RG` nodes, `C/P/W/OR/OL` links, `S` subcatchments.
+- **O(1) lookup:** `_nodeMap/_linkMap/_subMap` rebuilt by `rebuildIndexes()` (`network.js:141-150`); `findAny(id)` (`network.js:197-212`) resolves any element by ID.
+- **GeoJSON caches:** `nodesGeoJSON/linksGeoJSON/subcatchmentsGeoJSON` (`network.js:784-865`) invalidated by `_invalidateGeo()`; node moves patch in place (`_patchGeoForMove`, `network.js:350-365`) so drags don't rebuild everything.
 
 ## Undo/redo (command pattern)
 
@@ -38,4 +36,4 @@
 
 ## Serialization
 
-`serialize()` (`network.js:465-488`) is the canonical model dump (version 2); `loadState()` (`network.js:490-520`) restores it, rebuilding indexes and the indexed mesh. `rawSections` (verbatim INP text from imports) is preserved so that data the UI has no editor for survives round-trips.
+`serialize()` (`network.js:465-488`) is the canonical model dump (version 2); `loadState()` (`network.js:490-520`) restores it, rebuilding indexes. `rawSections` (verbatim INP text from imports) is preserved so that data the UI has no editor for survives round-trips.

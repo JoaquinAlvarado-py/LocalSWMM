@@ -33,15 +33,13 @@ changes worth knowing about:
   model (official SWMM does not have it).
 - **Extension keys**: `ext_options` stores any unknown
   `[OPTIONS]` key for plugins.
-- **IGNORE_2D**: allows disabling the 2D solver while keeping the
-  mesh in the file (to run the model 1D only).
 - **Geopackage**: native GeoPackage input/output (including the
   `rdii_decay` table of the recovery parameters), in addition to the
   `.inp` format.
 - **C API**: a C API (with wrappers) exposes all the extensions (for
   example `swmm_rdii_decay_add`).
 - **WebAssembly**: the engine is compiled to WASM to run in the browser
-  (as LocalSWMM uses it), with the 2D solver on GPU/WebGPU.
+  (as LocalSWMM uses it), executing directly client-side.
 - **Manufactured solution tests**: the repository includes a battery of
   benchmarks with analytical solutions (Ritter dam break, lake at rest,
   Macdonald waves, pump discharge reference curves, among others) that
@@ -54,15 +52,11 @@ changes worth knowing about:
 2. Sharior, S., Hodges, B. R., & Vasconcelos, J. G. (2023).
    Generalized, dynamic, and transient-storage form of the Preissmann
    slot. *Journal of Hydraulic Engineering*, 149(11).
-3. de Almeida, G. A. M., & Bates, P. D. (2013). Applicability of the
-   local inertial approximation of the shallow water equations to flood
-   modeling. *Water Resources Research*, 49(8).
-4. Source code of the OpenSWMM engine (HydroCouple):
+3. Source code of the OpenSWMM engine (HydroCouple):
    - `src/engine/hydraulics/DynamicWave.cpp`,
      `src/engine/hydraulics/HydStructures.cpp`,
      `src/engine/hydraulics/fv/ExplicitFvSolver.cpp`
-   - `src/engine/2d/` (marching scheme and coupling),
-     `src/engine/hydrology/RDII.cpp`,
+   - `src/engine/hydrology/RDII.cpp`,
      `src/engine/core/SimulationOptions.hpp`
-5. OpenSWMM engine reference manuals (Vol. II — Hydraulics, ch. 3, 7, 9;
+4. OpenSWMM engine reference manuals (Vol. II — Hydraulics, ch. 3, 7, 9;
    Vol. I — Hydrology, ch. 7).

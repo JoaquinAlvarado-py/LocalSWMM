@@ -58,7 +58,7 @@ Run button (#btn-run, ui.js:216)
 
 `public/` contains the engine build (`swmm6wasm.js` + `swmm6wasm.wasm`).
 
-The Emscripten glue exports the factory **`createModule`** (or `createOpenSwmm2D`).
+The Emscripten glue exports the factory **`createModule`**.
 
 ## Module instantiation
 

@@ -2,7 +2,7 @@
 
 Despliega la aplicación en un host estático. El sitio de producción es https://swmm6.is-local.org (Cloudflare Pages); también existe un workflow de GitHub Pages.
 
-El wasm del motor 2D está compilado con **pthreads/OpenMP** (`scripts/build-openswmm2d.sh` / `.ps1`), por lo que necesita **aislamiento de origen cruzado** — `SharedArrayBuffer` solo está disponible para páginas servidas con `Cross-Origin-Opener-Policy` + `Cross-Origin-Embedder-Policy`. GitHub Pages no permite headers personalizados y no puede servir el build con threads. **Usa Cloudflare Pages.**
+El WASM del motor OpenSWMM (`public/swmm6wasm.wasm`) está compilado con **pthreads/OpenMP**, por lo que necesita **aislamiento de origen cruzado** — `SharedArrayBuffer` solo está disponible para páginas servidas con `Cross-Origin-Opener-Policy` + `Cross-Origin-Embedder-Policy`. GitHub Pages no permite headers personalizados y no puede servir el build con threads. **Usa Cloudflare Pages.**
 
 ## 1. Despliega vía Cloudflare Pages (recomendado)
 
@@ -36,7 +36,7 @@ El workflow hace:
 3. **Genera `public/config.js` a partir de secretos** (`MAPBOX_ACCESS_TOKEN`, `GOOGLE_MAPS_API_KEY`, `OPENTOPOGRAPHY_API_KEY`).
 4. Sube `./public` como artefacto de Pages → despliega con `actions/deploy-pages@v4`.
 
-> Nota (desde el archivo del workflow): GitHub Pages no puede configurar headers COOP/COEP, por lo que el wasm 2D con threads (pthreads/SharedArrayBuffer) **NO** correrá en este despliegue. Elimina este workflow una vez que Cloudflare esté activo.
+> Nota (desde el archivo del workflow): GitHub Pages no puede configurar headers COOP/COEP, por lo que el wasm con threads (pthreads/SharedArrayBuffer) **NO** correrá en este despliegue. Elimina este workflow una vez que Cloudflare esté activo.
 
 ## 3. Sirve localmente para desarrollo
 

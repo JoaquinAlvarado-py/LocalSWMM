@@ -33,15 +33,13 @@ comportamiento que conviene conocer:
   del modelo (el SWMM oficial no la posee).
 - **Claves de extensión**: `ext_options` almacena
   cualquier clave desconocida de `[OPTIONS]` para plugins.
-- **IGNORE_2D**: permite desactivar el solver 2D conservando la
-  malla en el archivo (para ejecutar el modelo solo 1D).
 - **Geopackage**: entrada/salida nativa en GeoPackage
   (incluida la tabla `rdii_decay` de los parámetros de
   recuperación), además del formato `.inp`.
 - **API C**: una API en C (con envoltorios) expone todas las
   extensiones (por ejemplo `swmm_rdii_decay_add`).
 - **WebAssembly**: el motor se compila a WASM para ejecutarse en el
-  navegador (como usa LocalSWMM), con el solver 2D en GPU/WebGPU.
+  navegador (como usa LocalSWMM), ejecutándose directamente en el cliente.
 - **Pruebas de soluciones manufacturadas**: el repositorio incluye
   una batería de benchmarks con soluciones analíticas (rotura de presa
   de Ritter, lago en reposo, ondas de Macdonald, curvas de referencia de
@@ -54,15 +52,11 @@ comportamiento que conviene conocer:
 2. Sharior, S., Hodges, B. R., & Vasconcelos, J. G. (2023).
    Generalized, dynamic, and transient-storage form of the Preissmann
    slot. *Journal of Hydraulic Engineering*, 149(11).
-3. de Almeida, G. A. M., & Bates, P. D. (2013). Applicability of the
-   local inertial approximation of the shallow water equations to flood
-   modeling. *Water Resources Research*, 49(8).
-4. Código fuente del motor OpenSWMM (HydroCouple):
+3. Código fuente del motor OpenSWMM (HydroCouple):
    - `src/engine/hydraulics/DynamicWave.cpp`,
      `src/engine/hydraulics/HydStructures.cpp`,
      `src/engine/hydraulics/fv/ExplicitFvSolver.cpp`
-   - `src/engine/2d/` (marchante y acople),
-     `src/engine/hydrology/RDII.cpp`,
+   - `src/engine/hydrology/RDII.cpp`,
      `src/engine/core/SimulationOptions.hpp`
-5. Manuales de referencia del motor OpenSWMM (Vol. II — Hydraulics,
+4. Manuales de referencia del motor OpenSWMM (Vol. II — Hydraulics,
    cap. 3, 7, 9; Vol. I — Hydrology, cap. 7).

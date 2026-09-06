@@ -13,17 +13,15 @@ Al final de esta lección habrás:
 
 ## Qué es Local SWMM
 
-Local SWMM es una **aplicación web solo de cliente** para modelado hidráulico 2D y simulación de redes de aguas lluvias y aguas servidas. Todo — el editor, el generador de mallas y el motor hidráulico SWMM — corre en el navegador. El motor de simulación es el motor HydroCouple **OpenSWMM** compilado a **WebAssembly** con Emscripten.
+LocalSWMM es una aplicación web interactiva basada en el navegador para modelado y simulación hidráulica 1D de redes de aguas lluvias y alcantarillado. Tanto el editor de redes como el motor de cálculo se ejecutan enteramente en el cliente.
 
 Propiedades clave:
 
-- **Sin backend.** El único servidor es un servidor trivial de archivos estáticos + endpoint de salud (`server.py`). Sin base de datos, sin paso de build para la UI, sin bundler.
-- **Sin framework de UI.** El frontend son ~15 000 líneas de JavaScript sin dependencias (scripts clásicos + IIFEs) que usan Mapbox GL JS como única librería runtime pesada.
-- **Hidráulica embebida en WASM.** El motor OpenSWMM 6.0.0 está compilado de forma cruzada para `wasm32-emscripten` con dependencias C++ gestionadas por vcpkg (Eigen, HDF5, nlohmann-json, SUNDIALS).
-- **Dos backends de simulación.** Una ruta de motor WASM (1D + 1D/2D acoplado) y un backend **experimental WebGPU** que reimplementa el solver 2D explícito de inercia local como kernels de cómputo WGSL y lo ejecuta en paralelo al motor WASM.
-- **Dos generadores de malla.** Un generador heredado basado en `poly2tri` y el pipeline de producción **Shewchuk Triangle WASM** (npm `triangle-wasm`).
+- **Sin backend:** Un servidor Python mínimo (`server.py`) entrega los recursos estáticos y un endpoint de salud. No se requiere base de datos ni cálculo externo en el servidor.
+- **UI sin frameworks:** Desarrollada con JavaScript estándar (scripts clásicos + IIFEs), usando Mapbox GL JS para la visualización de mapas 2D/3D y terreno.
+- **Hidráulica embebida en WASM:** El [motor HydroCouple OpenSWMM](https://github.com/HydroCouple/openswmm.engine) está compilado a WebAssembly con Emscripten, permitiendo simulaciones hidrodinámicas completas directamente en tu navegador.
 
-La aplicación ofrece una interfaz de mapa interactiva para construir, editar y simular sistemas de drenaje urbano. Usa Mapbox GL JS para la visualización 3D de terreno y edificios, y el [motor HydroCouple OpenSWMM](https://github.com/HydroCouple/openswmm.engine) para ejecutar corridas de simulación hidráulica directamente en tu navegador gracias a WebAssembly. Puedes probarlo tú mismo en https://swmm6.is-local.org — hay un video de demostración disponible en https://github.com/user-attachments/assets/6ea0af51-125d-4b7d-a6ba-e0452cfae368 (también se incluye un `demo.mp4` en el repositorio bajo `assets/`).
+Puedes probar la aplicación en **https://swmm6.is-local.org**. Hay un video de demostración disponible en https://github.com/user-attachments/assets/6ea0af51-125d-4b7d-a6ba-e0452cfae368 (también incluido en `assets/demo.mp4` en el repositorio).
 
 ## Requisitos previos
 

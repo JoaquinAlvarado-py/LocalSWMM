@@ -58,7 +58,7 @@ Botón Run (#btn-run, ui.js:216)
 
 `public/` contiene el build del motor (`swmm6wasm.js` + `swmm6wasm.wasm`).
 
-El pegamento Emscripten exporta la fábrica **`createModule`** (o `createOpenSwmm2D`).
+El pegamento Emscripten exporta la fábrica **`createModule`**.
 
 ## Instanciación de módulo
 

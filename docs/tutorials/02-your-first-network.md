@@ -15,8 +15,6 @@ Open the app: use the production site at https://swmm6.is-local.org, or follow [
 1. Click the **Gear Icon** on the map to open the **Map Settings** menu.
 2. Under **Units**, select **SI** (meters, millimeters, LPS) or **US** (feet, inches, CFS).
 
-Note for later: if you add a 2D mesh to your model, **2D is SI-only** — a run with a 2D mesh present while units are US is rejected with a warning.
-
 ## Step 2 — Add nodes
 
 1. In the **Left Tool Palette**, pick a **Node tool** — **Junction**, **Outfall**, **Storage**, or **Divider**.
@@ -66,7 +64,7 @@ Tip: with the **Select Tool** (`Esc`) you can click elements to select them and 
 2. Click **Run** on the **Top Toolbar**.
 3. Monitor progress in the **Run Status** window (progress percentage and simulated time in `Days` and `Hrs:Min`). You can **Stop** the simulation or **Minimize** it into a floating badge at any time.
 
-If the run aborts immediately with a warning, the causes are: no nodes, no `OUTFALL`, or **US units with a 2D mesh** (2D is SI-only).
+If the run aborts immediately with a warning, verify that your model contains valid nodes and at least one connected `OUTFALL`.
 
 ## Step 8 — Inspect the results
 
@@ -83,5 +81,6 @@ If the run aborts immediately with a warning, the causes are: no nodes, no `OUTF
 
 ## Next steps
 
-- **Add a 2D mesh** for overland surface routing: use the **Mesh2D** button or the **Data** menu (**2D Mesh**) to open the mesh dialog, a 3-tab modal (**Sources / Quality / Hydraulics**) that generates the surface mesh. Remember 2D requires SI units.
-- Learn more about the model behind the UI in the reference sections of this documentation.
+- Explore [How to Run the App Locally](../how-to/01-run-locally.md) and [How to Configure Local SWMM](../how-to/02-configure.md) to customize your setup.
+- Learn more about the underlying calculation engine in the [1D Hydraulics Explanation](../explanation/hydraulics/01-conceptual-model.md) section.
+

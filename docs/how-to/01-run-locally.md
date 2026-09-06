@@ -26,7 +26,7 @@ Open **http://127.0.0.1:8080** in your web browser. If the basemap doesn't load,
 ## 4. (Optional) Install the JS tooling
 
 ```bash
-npm install                # installs triangle-wasm (dev dependency, vendored copy)
+npm install                # installs dev dependencies (docs & test tooling)
 ```
 
 ## 5. Verify with a sample model

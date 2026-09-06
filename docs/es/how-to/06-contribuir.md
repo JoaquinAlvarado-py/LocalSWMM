@@ -19,19 +19,18 @@ cd third_party/openswmm-engine
 # 2. point LocalSWMM at the new commit
 cd ..
 git submodule update --init --recursive   # or update the gitlink
-# 3. rebuild
-npm run build:2d-wasm:sh
-# 4. commit the rebuilt public/*.js/.wasm + version stamps
+# 3. recompilar el motor WASM (ver Cómo Compilar el Motor WASM desde el Código Fuente)
+emcmake cmake -S cmake/wasm -B build/wasm -G Ninja && cmake --build build/wasm
+# 4. commitear los archivos recompilados public/swmm6wasm.{js,wasm} + sellos de versión
 ```
 
 Recuerda: cualquier re-fijación debe mantener los cambios de compatibilidad de wasm (o llevarlos adelante) o el build se rompe — consulta [Cómo Compilar el Motor WASM desde el Código Fuente](03-compilar-desde-fuente.md), sección 5.
 
 ## 3. Probar tus cambios
 
-- Chequeos tipo unit: `node scripts/probe-1d.mjs`, `node scripts/bench-1d.mjs`.
-- Compuerta de extremo a extremo de la app: `node scripts/verify-bellinge.mjs` (Chrome headless, SwiftShader).
-- Compuertas WebGPU: `node scripts/run-webgpu-harness.mjs` y `node scripts/test-gpu-worker.mjs` (necesitan Chrome con ventana y WebGPU).
-- Regresión para la pierna 1D del split: `node scripts/verify-1d-split.mjs`.
+- Chequeos unitarios: `npm run test:3d`, `node scripts/probe-1d.mjs`, `node scripts/bench-1d.mjs`.
+- Compuerta de extremo a extremo de la app: `node scripts/verify-bellinge.mjs` (Chrome headless vía CDP).
+- Verificaciones de regresión: `node scripts/verify-1d-split.mjs`.
 
 Consulta [Cómo Ejecutar los Scripts, Benchmarks y Harnesses de Verificación](04-scripts-y-benchmarks.md) para el uso completo de cada script.
 

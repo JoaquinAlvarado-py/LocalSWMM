@@ -13,7 +13,7 @@
 
 ### Scope
 
-This document covers the *one-dimensional* hydraulic (flow-routing) calculations of the LocalSWMM project. LocalSWMM is a browser-based web application for stormwater and wastewater network modeling; it embeds the HydroCouple OpenSWMM engine (C++) compiled to WebAssembly. The 1D hydraulic component solves unsteady, gradually varied, one-dimensional flow through a network of *nodes* (junctions, storage units, dividers, outfalls) and *links* (conduits, pumps, orifices, weirs, outlets). The 2D overland-flow module and its 1D–2D coupling are out of scope except where they interact with the 1D solver (e.g. through lateral inflows and the ponded-area coupling).
+This document covers the *one-dimensional* hydraulic (flow-routing) calculations of the LocalSWMM project. LocalSWMM is a browser-based web application for stormwater and wastewater network modeling; it embeds the HydroCouple OpenSWMM engine (C++) compiled to WebAssembly. The 1D hydraulic component solves unsteady, gradually varied, one-dimensional flow through a network of *nodes* (junctions, storage units, dividers, outfalls) and *links* (conduits, pumps, orifices, weirs, outlets).
 
 The engine is a *distributed discrete-time simulation model*: it advances a state vector over a sequence of time steps,
 

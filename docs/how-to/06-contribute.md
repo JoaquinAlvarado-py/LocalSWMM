@@ -19,19 +19,18 @@ cd third_party/openswmm-engine
 # 2. point LocalSWMM at the new commit
 cd ..
 git submodule update --init --recursive   # or update the gitlink
-# 3. rebuild
-npm run build:2d-wasm:sh
-# 4. commit the rebuilt public/*.js/.wasm + version stamps
+# 3. rebuild WASM engine (see How to Build the WASM Engine from Source)
+emcmake cmake -S cmake/wasm -B build/wasm -G Ninja && cmake --build build/wasm
+# 4. commit the rebuilt public/swmm6wasm.{js,wasm} + version stamps
 ```
 
 Remember: any re-pin must keep the wasm-compat changes (or carry them forward) or the build breaks — see [How to Build the WASM Engine from Source](03-build-from-source.md), section 5.
 
 ## 3. Testing your changes
 
-- Unit-ish checks: `node scripts/probe-1d.mjs`, `node scripts/bench-1d.mjs`.
-- End-to-end app gate: `node scripts/verify-bellinge.mjs` (headless Chrome, SwiftShader).
-- WebGPU gates: `node scripts/run-webgpu-harness.mjs` and `node scripts/test-gpu-worker.mjs` (need headed Chrome with WebGPU).
-- Regression for the split 1D leg: `node scripts/verify-1d-split.mjs`.
+- Unit checks: `npm run test:3d`, `node scripts/probe-1d.mjs`, `node scripts/bench-1d.mjs`.
+- End-to-end app gate: `node scripts/verify-bellinge.mjs` (headless Chrome via CDP).
+- Regression checks: `node scripts/verify-1d-split.mjs`.
 
 See [How to Run the Scripts, Benchmarks & Verification Harnesses](04-scripts-and-benchmarks.md) for full usage of every script.
 

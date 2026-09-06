@@ -7,37 +7,32 @@ El árbol de código completo de `LocalSWMM` — cada ruta y su rol, desde la ra
 ```
 LocalSWMM/
 ├── README.md                     # Readme orientado al usuario (Quick Start, uso de herramientas)
-├── WEBGPU_PLAN.md                # Roadmap del backend WebGPU (español) + estado
+├── CONTEXT.md                    # Glosario de dominio y referencias técnicas
 ├── server.py                     # Servidor de desarrollo local estático + API (puerto 8080)
-├── package.json / package-lock   # Scripts de npm + devDependency de triangle-wasm
+├── wrangler.toml                 # Configuración de despliegue en Cloudflare Pages
+├── package.json / package-lock   # Scripts de npm para documentación y pruebas
 ├── vcpkg.json                    # Manifiesto de dependencias C++ para el build WASM
 ├── vcpkg-triplets/
 │   └── wasm32-emscripten.cmake   # Triplet de overlay de vcpkg para Emscripten
 ├── cmake/
-│   ├── OpenSwmm2DWasm.cmake      # (hermano legado, no usado por los scripts de build)
-│   └── wasm/CMakeLists.txt       # Wrapper ACTIVO que embebe el motor + el target wasm
-├── wasm/
-│   └── openswmm2d_exports.cpp    # TU solo-fuente que expone la API C a Emscripten
+│   └── wasm/CMakeLists.txt       # Wrapper ACTIVO que embebe el motor + target wasm
 ├── scripts/
-│   ├── build-openswmm2d.sh       # Build WASM para Linux/macOS (emcmake + vcpkg)
-│   ├── build-openswmm2d.ps1      # Build WASM para Windows
-│   └── *.mjs                     # 15 scripts de bench/probe/verify/harness (ver §15)
+│   └── *.mjs                     # Scripts de prueba, benchmark y verificación
 ├── third_party/
-│   └── openswmm-engine/          # GIT SUBMODULE — el motor C++ de OpenSWMM
-├── assets/                       # demo.mp4
+│   └── openswmm-engine/          # Submódulo git — el motor C++ de OpenSWMM
+├── assets/                       # Recursos multimedia (demo.mp4)
 ├── wasm-build.log                # Registro histórico de build en Windows (solo referencia)
-├── .github/workflows/static.yml  # Deploy de GitHub Pages (sin build wasm en CI)
+├── .github/workflows/
+│   ├── cloudflare.yml            # Despliegue automatizado de CI/CD en Cloudflare Pages
+│   └── static.yml                # Workflow de despliegue en GitHub Pages
 └── public/                       # <-- todo lo que sirve server.py
     ├── index.html                # Shell SPA (toolbar, paleta, mapa, paneles, modales)
-    ├── config.js                 # GITIGNORED — claves de API (Mapbox, etc.)
-    ├── *.js                      # ~47 módulos de la app (~15k líneas), scripts planos
-    ├── openswmm2d.js / .wasm     # Build del motor (factory createOpenSwmm2D)
-    ├── swmm6wasm.js / .wasm      # Copias byte a byte de openswmm2d.* (nombre legado)
-    ├── openswmm2d.version.json   # Sello del commit del motor (escrito por el script de build)
-    ├── swmm6wasm.version.json    # Mismo sello (archivo gemelo)
-    ├── sample_models/            # Modelos de ejemplo Bellinge + DEM Bellinge2.tif
-    ├── vendor/triangle/          # Loader de triangle-wasm (wrapper TriangleWASM)
-    └── webgpu/                   # Marchante WebGPU, split, worker, harness, WGSL
+    ├── config.js                 # Ignorado por git — claves de API en runtime (Mapbox, etc.)
+    ├── *.js                      # Módulos de la app (scripts planos, IIFEs)
+    ├── swmm6wasm.js / .wasm      # Build del motor WebAssembly cargado por simWorker.js
+    ├── swmm6wasm.version.json    # Sello de commit y compilación del motor
+    ├── sample_models/            # Modelos de red preconfigurados (Bellinge Web, etc.)
+    └── vendor/                   # Librerías de terceros vendorizadas
 ```
 
 ## Índice de entradas
@@ -45,34 +40,26 @@ LocalSWMM/
 | Ruta | Rol |
 |---|---|
 | `README.md` | Readme orientado al usuario (Quick Start, uso de herramientas) |
-| `WEBGPU_PLAN.md` | Roadmap del backend WebGPU (español) + estado |
-| `server.py` | Servidor de desarrollo local estático + API (puerto 8080) |
-| `package.json` / `package-lock` | Scripts de npm + devDependency de triangle-wasm |
+| `CONTEXT.md` | Glosario de dominio y referencias de ingeniería |
+| `server.py` | Servidor estático local y endpoint de salud (puerto 8080) |
+| `wrangler.toml` | Configuración de despliegue en Cloudflare Pages |
+| `package.json` / `package-lock` | Scripts de npm para documentación y suite de pruebas |
 | `vcpkg.json` | Manifiesto de dependencias C++ para el build WASM |
 | `vcpkg-triplets/wasm32-emscripten.cmake` | Triplet de overlay de vcpkg para Emscripten |
-| `cmake/OpenSwmm2DWasm.cmake` | Hermano legado, no usado por los scripts de build |
-| `cmake/wasm/CMakeLists.txt` | Wrapper ACTIVO que embebe el motor + el target wasm |
-| `wasm/openswmm2d_exports.cpp` | TU solo-fuente que expone la API C a Emscripten |
-| `scripts/build-openswmm2d.sh` | Build WASM para Linux/macOS (emcmake + vcpkg) |
-| `scripts/build-openswmm2d.ps1` | Build WASM para Windows |
-| `scripts/*.mjs` | 15 scripts de bench/probe/verify/harness |
-| `third_party/openswmm-engine/` | GIT SUBMODULE — el motor C++ de OpenSWMM |
-| `assets/` | demo.mp4 |
+| `cmake/wasm/CMakeLists.txt` | Wrapper de CMake que embebe el motor |
+| `scripts/*.mjs` | Scripts de pruebas, benchmark y verificación |
+| `third_party/openswmm-engine/` | Submódulo git — el motor C++ de OpenSWMM |
+| `assets/` | Video y gráficos (`demo.mp4`) |
 | `wasm-build.log` | Registro histórico de build en Windows (solo referencia) |
-| `.github/workflows/static.yml` | Deploy de GitHub Pages (sin build wasm en CI) |
+| `.github/workflows/cloudflare.yml` | Despliegue automatizado de producción en Cloudflare Pages |
+| `.github/workflows/static.yml` | Workflow de despliegue estático en GitHub Pages |
 | `public/index.html` | Shell SPA (toolbar, paleta, mapa, paneles, modales) |
-| `public/config.js` | GITIGNORED — claves de API (Mapbox, etc.) |
-| `public/*.js` | ~47 módulos de la app (~15k líneas), scripts planos |
-| `public/openswmm2d.js` / `.wasm` | Build del motor (factory `createOpenSwmm2D`) |
-| `public/swmm6wasm.js` / `.wasm` | Copias byte a byte de `openswmm2d.*` (nombre legado) |
-| `public/openswmm2d.version.json` | Sello del commit del motor (escrito por el script de build) |
-| `public/swmm6wasm.version.json` | Mismo sello (archivo gemelo) |
-| `public/sample_models/` | Modelos de ejemplo Bellinge + DEM `Bellinge2.tif` |
-| `public/vendor/triangle/` | Loader de triangle-wasm (wrapper TriangleWASM) |
-| `public/webgpu/` | Marchante WebGPU, split, worker, harness, WGSL |
-
-Todo lo que está bajo `public/` es lo que sirve `server.py`.
+| `public/config.js` | Ignorado por git — claves de API en runtime (Mapbox, etc.) |
+| `public/*.js` | Módulos de la app (~15k líneas, scripts planos envueltos en IIFEs) |
+| `public/swmm6wasm.js` / `.wasm` | Binario WebAssembly del motor OpenSWMM |
+| `public/swmm6wasm.version.json` | Timestamp y commit de compilación del motor |
+| `public/sample_models/` | Modelos de red preconfigurados (Bellinge Web) |
 
 ## Artefactos ignorados por git
 
-> Nota: `.tools/` (emsdk + vcpkg), `build/`, `node_modules/`, `public/config.js`, `__pycache__/` y `public/webgpu/fixtures/` son artefactos locales ignorados por git (`.gitignore`).
+> Nota: `.tools/` (emsdk + vcpkg), `build/`, `node_modules/`, `public/config.js` y `__pycache__/` son artefactos locales ignorados por git (`.gitignore`).

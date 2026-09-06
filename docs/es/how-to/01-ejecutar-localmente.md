@@ -26,7 +26,7 @@ Abre **http://127.0.0.1:8080** en tu navegador web. Si el mapa base no carga, ne
 ## 4. (Opcional) Instala el tooling de JS
 
 ```bash
-npm install                # installs triangle-wasm (dev dependency, vendored copy)
+npm install                # instala dependencias de desarrollo (docs y tooling de pruebas)
 ```
 
 ## 5. Verifica con un modelo de muestra

@@ -26,14 +26,14 @@ cd .tools/vcpkg && ./bootstrap-vcpkg.sh -disableMetrics && cd ../..
 npm install
 ```
 
-## 2. El script de build — `scripts/build-openswmm2d.sh`
+## 2. La configuración de build
 
-El script ejecuta todo el build. Lo que hace, paso a paso:
+El build compila OpenSWMM con `emcmake cmake` y Ninja:
 
-1. Localiza `.tools/emsdk`, `.tools/vcpkg`, el código fuente `cmake/wasm`, el directorio de build `build/openswmm2d-wasm-emscripten`; carga `emsdk_env.sh` si `emcmake` no está en PATH.
+1. Localiza `.tools/emsdk`, `.tools/vcpkg`, el código fuente `cmake/wasm`, el directorio de build `build/wasm`; carga `emsdk_env.sh` si `emcmake` no está en PATH.
 2. Guardas: submodule del motor presente; toolchain de vcpkg presente.
 3. Exporta `VCPKG_DEFAULT_TRIPLET=wasm32-emscripten`, `VCPKG_OVERLAY_TRIPLETS=$ROOT/vcpkg-triplets`, `EMCC_SKIP_SANITY_CHECK=1`.
-4. `emcmake cmake -S cmake/wasm -B build/openswmm2d-wasm-emscripten -G Ninja` con las banderas:
+4. `emcmake cmake -S cmake/wasm -B build/wasm -G Ninja` con las banderas:
 
 | Bandera | Valor |
 |---|---|
@@ -43,9 +43,8 @@ El script ejecuta todo el build. Lo que hace, paso a paso:
 | `VCPKG_TARGET_TRIPLET` / `VCPKG_DEFAULT_TRIPLET` | `wasm32-emscripten` |
 | `VCPKG_MANIFEST_DIR` | raíz del repo |
 | `VCPKG_MANIFEST_NO_DEFAULT_FEATURES` | `ON` |
-| `OPENSWMM_BUILD_2D` | `ON` |
 | `OPENSWMM_FORCE_SCALAR` | `ON` (sin SIMD en wasm32) |
-| `OPENSWMM_ENABLE_LTO` | `OFF` (`.sh`; el `.ps1` usa `ON` + `-msimd128`) |
+| `OPENSWMM_ENABLE_LTO` | `OFF` |
 | `OPENSWMM_WITH_GEOPACKAGE` | `OFF` |
 | `OPENSWMM_BUILD_GPU_PLUGIN` | `OFF` |
 | `OPENSWMM_BUILD_TESTS` | `OFF` |
@@ -53,17 +52,16 @@ El script ejecuta todo el build. Lo que hace, paso a paso:
 | `CMAKE_C_FLAGS` / `CMAKE_CXX_FLAGS` | `-fopenmp` (define `SWMM_USE_OPENMP` → los bucles `#pragma omp` del solver se activan) |
 | `OPENSWMM_INSTALL` | `OFF` |
 
-El wrapper `cmake/wasm/CMakeLists.txt` agrega `-pthread` + `-s PTHREAD_POOL_SIZE=4` (+ `PTHREAD_POOL_SIZE_STRICT=0`): los bucles OpenMP se asignan a pthreads de Emscripten respaldados por `SharedArrayBuffer`. Eso hace que el build sea **solo de navegador** — la página debe tener aislamiento de origen cruzado (COOP/COEP; consulta `public/_headers` / `server.py`). Los modelos optan con `THREADS n` en `[OPTIONS]` (predeterminado 1, resultados bit idénticos); el solver 2D degrada automáticamente a 1 thread por debajo de `4·THREADS` triángulos. Por lo tanto, una corrida de referencia en Node simple (`run-engine-marcher.mjs`) necesita un build sin threads.
+El wrapper `cmake/wasm/CMakeLists.txt` agrega `-pthread` + `-s PTHREAD_POOL_SIZE=4` (+ `PTHREAD_POOL_SIZE_STRICT=0`): los bucles OpenMP se asignan a pthreads de Emscripten respaldados por `SharedArrayBuffer`. Eso hace que el build sea **solo de navegador** — la página debe tener aislamiento de origen cruzado (COOP/COEP; consulta `public/_headers` / `server.py`). Los modelos optan con `THREADS n` en `[OPTIONS]` (predeterminado 1, resultados bit idénticos).
 
-5. `cmake --build … --target openswmm2d_wasm --parallel` (el `libopenswmm.engine.a` estático se enlaza en el par modular JS/WASM).
-6. **Copia** `public/openswmm2d.wasm → public/swmm6wasm.wasm`, `openswmm2d.js → swmm6wasm.js` y `openswmm2d.worker.js → swmm6wasm.worker.js` (alias heredados; el archivo de worker solo se emite si el toolchain produce uno).
-7. **Sella** `public/openswmm2d.version.json` + `public/swmm6wasm.version.json` con `engineCommit`, `engineDescribe` (`git describe --always --dirty --tags`), `builtAtUtc`.
-
-Ejecútalo con `npm run build:2d-wasm:sh` (Linux) o `npm run build:2d-wasm` (Windows PowerShell `.ps1`).
+5. `cmake --build build/wasm --parallel` (el `libopenswmm.engine.a` estático se enlaza en el par modular JS/WASM).
+6. **Emite** `public/swmm6wasm.wasm` y `public/swmm6wasm.js`.
+7. **Sella** `public/swmm6wasm.version.json` con `engineCommit`, `engineDescribe` (`git describe --always --dirty --tags`), `builtAtUtc`.
 
 ## 3. El manifiesto y el triplet de vcpkg
 
-Dependencias de la raíz `vcpkg.json`: **`eigen3`, `hdf5`, `nlohmann-json`, `sundials`**. (HDF5 lo necesita el `Default2DOutputPlugin` del módulo 2D; SUNDIALS está declarado pero el marcher explícito actual ya no lo usa.)
+Dependencias de la raíz `vcpkg.json`: **`eigen3`, `hdf5`, `nlohmann-json`, `sundials`**.
+
 
 `vcpkg-triplets/wasm32-emscripten.cmake` (por qué importa cada línea):
 
@@ -76,22 +74,22 @@ Dependencias de la raíz `vcpkg.json`: **`eigen3`, `hdf5`, `nlohmann-json`, `sun
 | `VCPKG_CHAINLOAD_TOOLCHAIN_FILE "$ENV{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"` | el módulo de plataforma real de Emscripten |
 | `VCPKG_BUILD_TYPE release` | solo variantes de release |
 
-> **Sutileza del manifiesto:** el submodule del motor trae su *propio* `vcpkg.json` (gtest, sqlite3, kokkos…). Como el wrapper de WASM consume el motor vía `add_subdirectory`, vcpkg solo honra el manifiesto de **nivel superior** (`VCPKG_MANIFEST_DIR=$ROOT`), por lo que el manifiesto raíz rige el build de WASM. `VCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON` mantiene fuera las características predeterminadas `2d`/`gpu` del motor (que arrastrarían HDF5/Kokkos *de nuevo*).
+> **Sutileza del manifiesto:** el submodule del motor trae su *propio* `vcpkg.json` (gtest, sqlite3, kokkos…). Como el wrapper de WASM consume el motor vía `add_subdirectory`, vcpkg solo honra el manifiesto de **nivel superior** (`VCPKG_MANIFEST_DIR=$ROOT`), por lo que el manifiesto raíz rige el build de WASM. `VCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON` mantiene fuera las características no requeridas del motor.
 
 ## 4. El wrapper de CMake — `cmake/wasm/CMakeLists.txt`
 
 El wrapper existe porque el upstream eliminó el hook `OPENSWMM_WASM_INJECT_FILE`, por lo que el target de wasm ya no se puede declarar dentro del árbol del motor. El wrapper:
 
 - `add_subdirectory(../../third_party/openswmm-engine …)` (el mismo embedding que usan los bindings de Python del upstream).
-- `add_executable(openswmm2d_wasm wasm/openswmm2d_exports.cpp)` + `target_link_libraries(openswmm2d_wasm PRIVATE openswmm_engine)`.
-- Salida `openswmm2d` en `public/`.
+- Compila la API C del motor y la enlaza contra `openswmm_engine`.
+- Salida `swmm6wasm` en `public/`.
 
 **Banderas de enlace de emcc** (`cmake/wasm/CMakeLists.txt:34-48`) y su significado:
 
 | Bandera | Significado |
 |---|---|
 | `-s WASM=1` | salida WebAssembly |
-| `-s MODULARIZE=1`, `-s EXPORT_NAME=createOpenSwmm2D` | envuelve la salida en la función de fábrica |
+| `-s MODULARIZE=1`, `-s EXPORT_NAME=createOpenSwmm` | envuelve la salida en la función de fábrica |
 | `-s EXPORT_ES6=0`, `-s ENVIRONMENT=web,worker` | wrapper clásico, usable en el hilo principal + workers |
 | `-s ALLOW_MEMORY_GROWTH=1` | el heap puede crecer más allá de `INITIAL_MEMORY` |
 | `-s FILESYSTEM=1` | FS virtual MEMFS (para `.inp`/`.rpt`/`.out`) |
@@ -101,8 +99,6 @@ El wrapper existe porque el upstream eliminó el hook `OPENSWMM_WASM_INJECT_FILE
 | `-s EXPORTED_FUNCTIONS=[…31 símbolos…]` | superficie exacta de la API C |
 | `-s INITIAL_MEMORY=134217728` (128 MiB), `-s STACK_SIZE=5242880` (5 MiB) | dimensionamiento de memoria |
 | `-s WASM_ASYNC_COMPILATION=1` | compilación asíncrona (todos los llamadores usan `instantiateWasm`) |
-
-`cmake/OpenSwmm2DWasm.cmake` es un **hermano heredado** del mismo target (no referenciado por los scripts de build).
 
 ## 5. El submodule del motor y el fix de compatibilidad de wasm
 
@@ -123,8 +119,9 @@ El repo LocalSWMM lleva el commit `83dc0df` *"submodule: pin openswmm-engine wit
 
 ```bash
 cd ~/LocalSWMM
-npm run build:2d-wasm:sh        # = bash scripts/build-openswmm2d.sh
-# outputs: public/openswmm2d.{js,wasm}, public/swmm6wasm.{js,wasm}, *.version.json
+emcmake cmake -S cmake/wasm -B build/wasm -G Ninja
+cmake --build build/wasm --parallel
+# outputs: public/swmm6wasm.{js,wasm}, public/swmm6wasm.version.json
 ```
 
 El primer build compila los cuatro ports de vcpkg para `wasm32-emscripten` (Eigen/HDF5/nlohmann-json/SUNDIALS) — permite de 10 a 40 minutos. Los builds siguientes usan la caché binaria de vcpkg. Los binarios recompilados son **archivos trackeados** — commiteálos junto con el sello del motor cuando cambien.
