@@ -1,12 +1,18 @@
 import { defineConfig } from 'vitepress'
+import markdownItKatex from 'markdown-it-katex'
 
 export default defineConfig({
   title: "LocalSWMM",
   description: "1D hydraulic modeling and simulation in the browser",
   base: "/docs/",
   ignoreDeadLinks: true,
+  head: [
+    ['link', { rel: 'stylesheet', href: 'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css' }]
+  ],
   markdown: {
-    math: true
+    config: (md) => {
+      md.use(markdownItKatex)
+    }
   },
   themeConfig: {
     nav: [

@@ -17,7 +17,7 @@ This document covers the *one-dimensional* hydraulic (flow-routing) calculations
 
 The engine is a *distributed discrete-time simulation model*: it advances a state vector over a sequence of time steps,
 
-$$\boldsymbol{X}_{t} = f\!\left(\boldsymbol{X}_{t-1}, \boldsymbol{I}_{t}, \boldsymbol{P}\right), \qquad \boldsymbol{Y}_{t} = g\!\left(\boldsymbol{X}_{t}, \boldsymbol{P}\right),$$
+$$\boldsymbol{X}_{t} = f\left(\boldsymbol{X}_{t-1}, \boldsymbol{I}_{t}, \boldsymbol{P}\right), \qquad \boldsymbol{Y}_{t} = g\left(\boldsymbol{X}_{t}, \boldsymbol{P}\right),$$
 
 where $\boldsymbol{X}$ is the state vector, $\boldsymbol{I}$ external inputs, $\boldsymbol{P}$ fixed parameters, and $\boldsymbol{Y}$ the outputs.
 

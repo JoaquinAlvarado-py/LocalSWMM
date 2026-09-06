@@ -28,7 +28,7 @@ disponible se agota exponencialmente con la lámina de lluvia $\Delta P$,
 $$IA_{\mathrm{avail}}^{+} = IA_{\mathrm{avail}}\,
     e^{-k_{\mathrm{dep}}\,\Delta P},
   \qquad
-  P_{\mathrm{net}} = \max\!\left(0,\ \Delta P -
+  P_{\mathrm{net}} = \max\left(0,\ \Delta P -
     \left(IA_{\mathrm{avail}} - IA_{\mathrm{avail}}^{+}\right)\right),$$
 
 con contabilidad másica consistente (el almacenamiento drena exactamente lo
@@ -47,7 +47,7 @@ donde la tasa de recuperación depende de la temperatura con una base
 independiente de la temperatura (drenaje gravitacional / redistribución
 capilar) más un término térmico:
 
-$$k_{\mathrm{rec}}(T) = \max\!\left(0,\ k_0 + k_T\,
+$$k_{\mathrm{rec}}(T) = \max\left(0,\ k_0 + k_T\,
     e^{\theta_{\mathrm{rec}}\,(T - T_{\mathrm{ref}})}\right),$$
 
 y se anula bajo la temperatura de congelamiento $T_{\mathrm{cong}}$ (suelo
@@ -59,7 +59,7 @@ emite una advertencia.
 **Particionado lluvia/nieve (opcional)**: con la cláusula `SNOW`,
 $T \le T_{\mathrm{nieve}}$ acumula la precipitación como equivalente en nieve
 (sin aporte líquido), y con nieve presente y $T > T_{\mathrm{nieve}}$ se agrega
-un derretimiento de grado-día $m = \min\!\left(SWE,\ DDF\,(T - T_{\mathrm{nieve}})\,\Delta t\right)$ a la lluvia (lluvia sobre nieve).
+un derretimiento de grado-día $m = \min\left(SWE,\ DDF\,(T - T_{\mathrm{nieve}})\,\Delta t\right)$ a la lluvia (lluvia sobre nieve).
 
 La recuperación de primer orden es más rápida cuando el déficit es grande y se
 ralentiza cerca de la saturación, a diferencia de la tasa constante lineal del

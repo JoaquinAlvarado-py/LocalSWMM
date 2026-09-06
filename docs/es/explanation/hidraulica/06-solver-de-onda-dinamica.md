@@ -10,7 +10,7 @@ El modelo de onda dinámica resuelve las ecuaciones unidimensionales completas d
 
 $$\underbrace{\frac{\partial A}{\partial t}}_{\text{almacenamiento}} + \underbrace{\frac{\partial Q}{\partial x}}_{\text{flujo convectivo}} = 0,$$
 
-$$\underbrace{\frac{\partial Q}{\partial t}}_{\text{aceleración local}} + \underbrace{\frac{\partial}{\partial x}\!\left(\frac{Q^{2}}{A}\right)}_{\text{aceleración convectiva}} + \underbrace{gA\,\frac{\partial H}{\partial x}}_{\text{gradiente de presión}} + \underbrace{gA\,S_f}_{\text{fricción}} = 0,$$
+$$\underbrace{\frac{\partial Q}{\partial t}}_{\text{aceleración local}} + \underbrace{\frac{\partial}{\partial x}\left(\frac{Q^{2}}{A}\right)}_{\text{aceleración convectiva}} + \underbrace{gA\,\frac{\partial H}{\partial x}}_{\text{gradiente de presión}} + \underbrace{gA\,S_f}_{\text{fricción}} = 0,$$
 
 donde $A$ es el área hidráulica, $Q$ el caudal, $H = Z + y$ la carga hidráulica ($Z$ cota de batea del conducto, $y$ tirante), $g$ la gravedad y $S_f$ la pendiente de fricción. La pendiente de fricción sigue a Manning:
 

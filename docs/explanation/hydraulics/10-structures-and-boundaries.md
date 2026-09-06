@@ -20,7 +20,7 @@ Bottom and side orifices use a coefficient and a critical depth set up from the 
 
 $$
 \begin{aligned}
-  f &= \min\!\left(\frac{\text{head}}{h_{\mathrm{crit}}},\ 1\right),
+  f &= \min\left(\frac{\text{head}}{h_{\mathrm{crit}}},\ 1\right),
   \qquad h_{\mathrm{crit}} = \frac{C_d}{0.414}\,\frac{h_{\mathrm{open}}}{4}\ \text{(circular)}\ \text{or}\ \frac{C_d}{0.414}\, \frac{h_{\mathrm{open}}\,W_{\max}}{2(h_{\mathrm{open}} + W_{\max})} \text{(rectangular)},\\
   q &= \begin{cases}
     C_w\,f^{3/2} & f < 1 \quad\text{(weir-like partial flow)},\\

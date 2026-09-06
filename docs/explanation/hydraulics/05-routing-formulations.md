@@ -35,7 +35,7 @@ $$\frac{(1-\theta)(A_1^{t+1}-A_1^{t}) + \theta\,(A_2^{t+1}-A_2^{t})}{\Delta t} \
 
 with $\theta = \varphi = 0.6$. Because each junction has at most one outlet conduit, processing links in topological order leaves only $A_2^{t+1}$ and $Q_2^{t+1}$ as unknowns; $Q_1^{t+1}$ is known from the upstream node's inflow and $A_1^{t+1}$ from the inverse section factor at $Q_1^{t+1}/\beta$. Substituting the rating curve yields the single nonlinear equation
 
-$$f\!\left(A_2^{t+1}\right) = \beta\,\Psi\!\left(A_2^{t+1}\right) + C_1\,A_2^{t+1} + C_2 = 0,$$
+$$f\left(A_2^{t+1}\right) = \beta\,\Psi\left(A_2^{t+1}\right) + C_1\,A_2^{t+1} + C_2 = 0,$$
 
 with (in the engine's normalized implementation, `KinematicWave.cpp:solveConduit`)
 

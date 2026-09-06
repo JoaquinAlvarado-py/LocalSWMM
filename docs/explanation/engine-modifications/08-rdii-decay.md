@@ -27,7 +27,7 @@ is depleted exponentially with the rainfall depth $\Delta P$,
 $$IA_{\mathrm{avail}}^{+} = IA_{\mathrm{avail}}\,
     e^{-k_{\mathrm{dep}}\,\Delta P},
   \qquad
-  P_{\mathrm{net}} = \max\!\left(0,\ \Delta P -
+  P_{\mathrm{net}} = \max\left(0,\ \Delta P -
     \left(IA_{\mathrm{avail}} - IA_{\mathrm{avail}}^{+}\right)\right),$$
 
 with consistent mass accounting (the storage drains exactly what it
@@ -46,7 +46,7 @@ where the recovery rate depends on temperature with a temperature-independent
 base (gravitational drainage / capillary redistribution) plus a thermal
 term:
 
-$$k_{\mathrm{rec}}(T) = \max\!\left(0,\ k_0 + k_T\,
+$$k_{\mathrm{rec}}(T) = \max\left(0,\ k_0 + k_T\,
     e^{\theta_{\mathrm{rec}}\,(T - T_{\mathrm{ref}})}\right),$$
 
 and vanishes below the freezing temperature $T_{\mathrm{cong}}$ (frozen
@@ -57,7 +57,7 @@ configured, $T$ is set to $T_{\mathrm{ref}}$ and a warning is issued.
 **Rain/snow partitioning (optional)**: with the `SNOW` clause,
 $T \le T_{\mathrm{snow}}$ accumulates the precipitation as snow equivalent
 (no liquid input), and with snow present and $T > T_{\mathrm{snow}}$ a
-degree-day melt $m = \min\!\left(SWE,\ DDF\,(T - T_{\mathrm{snow}})\,\Delta t\right)$ is added to the rainfall (rain-on-snow).
+degree-day melt $m = \min\left(SWE,\ DDF\,(T - T_{\mathrm{snow}})\,\Delta t\right)$ is added to the rainfall (rain-on-snow).
 
 The first-order recovery is faster when the deficit is large and slows down
 near saturation, unlike the linear constant rate of official SWMM. Pairs

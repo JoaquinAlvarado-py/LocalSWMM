@@ -43,7 +43,7 @@ where $V_{\mathrm{full}} = \mathrm{MIN\_SURFAREA}\cdot d_{\mathrm{full}}$ unless
 - Tabular: $V = \mathrm{table}(d\cdot \mathrm{Ucf}[L])/\mathrm{Ucf}[V]$ with table interpolation;
 - Geometric shapes (cylindrical, conical, paraboloid, pyramidal) use the quadratic surface-area relation $A(d) = c + a\,d + b\,d^{2}$, integrated to the cubic
 
-  $$V(d) = d\left(c + d\!\left(\tfrac{a}{2} + d\,\tfrac{b}{3}\right)\right);$$
+  $$V(d) = d\left(c + d\left(\tfrac{a}{2} + d\,\tfrac{b}{3}\right)\right);$$
 
 - Functional storage: power law $A(d) = c + a\,d^{b}$ integrated analytically.
 
@@ -63,7 +63,7 @@ $$
 
 **Maximum outflow** (used by the kinematic-wave and steady-flow link inflow gathering):
 
-$$Q_{\max} = Q_{\mathrm{in}} + \frac{V_{\mathrm{old}}}{dt}, \qquad Q_{\mathrm{in}} = \min\!\left(Q_{\mathrm{in}}, Q_{\max}\right).$$
+$$Q_{\max} = Q_{\mathrm{in}} + \frac{V_{\mathrm{old}}}{dt}, \qquad Q_{\mathrm{in}} = \min\left(Q_{\mathrm{in}}, Q_{\max}\right).$$
 
 ### Link data
 

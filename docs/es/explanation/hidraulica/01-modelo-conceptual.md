@@ -15,7 +15,7 @@ Este documento cubre los cálculos hidráulicos (tránsito de caudales) *unidime
 
 El motor es un *modelo de simulación distribuida de tiempo discreto*: avanza un vector de estado a lo largo de una secuencia de pasos de tiempo,
 
-$$\boldsymbol{X}_{t} = f\!\left(\boldsymbol{X}_{t-1}, \boldsymbol{I}_{t}, \boldsymbol{P}\right), \qquad \boldsymbol{Y}_{t} = g\!\left(\boldsymbol{X}_{t}, \boldsymbol{P}\right),$$
+$$\boldsymbol{X}_{t} = f\left(\boldsymbol{X}_{t-1}, \boldsymbol{I}_{t}, \boldsymbol{P}\right), \qquad \boldsymbol{Y}_{t} = g\left(\boldsymbol{X}_{t}, \boldsymbol{P}\right),$$
 
 donde $\boldsymbol{X}$ es el vector de estado, $\boldsymbol{I}$ las entradas externas, $\boldsymbol{P}$ los parámetros fijos e $\boldsymbol{Y}$ las salidas.
 

@@ -18,7 +18,7 @@ $$\mathrm{Fr} = \frac{\lvert v \rvert}{\sqrt{g\,\bar A / \bar W}} \quad\text{(0 
 
 The inertial-damping factor follows the *local partial inertia* approach (linear blend over $0.5 \le \mathrm{Fr} \le 1$):
 
-$$\sigma = \begin{cases} 1 & \mathrm{Fr} \le 0.5,\\ 2\,(1 - \mathrm{Fr}) & 0.5 < \mathrm{Fr} < 1,\\ 0 & \mathrm{Fr} \ge 1, \end{cases} \qquad\text{i.e.}\quad \sigma = \mathrm{clamp}\!\big(2(1-\mathrm{Fr}),\ 0,\ 1\big).$$
+$$\sigma = \begin{cases} 1 & \mathrm{Fr} \le 0.5,\\ 2\,(1 - \mathrm{Fr}) & 0.5 < \mathrm{Fr} < 1,\\ 0 & \mathrm{Fr} \ge 1, \end{cases} \qquad\text{i.e.}\quad \sigma = \mathrm{clamp}\big(2(1-\mathrm{Fr}),\ 0,\ 1\big).$$
 
 The `INERTIAL_DAMPING` option overrides this: NONE forces $\sigma = 1$, FULL forces $\sigma = 0$ (no inertial terms at all); a closed conduit that is surcharged always has $\sigma = 0$.
 
@@ -65,7 +65,7 @@ After the raw momentum update, `applyFlowLimits` (`DynamicWave.cpp:2211`) applie
 1. **Culvert inlet control** (FHWA HEC-5): if a culvert code is present and the conduit is not full, $q \leftarrow \min(q, q_{\mathrm{inlet}})$.
 2. **Normal-flow limit**: for an open/free-surface conduit not full, if the slope condition ($y_1 < y_2$, i.e. the water-surface slope is smaller than the bed slope) or the upstream-Froude condition ($\mathrm{Fr}_1 \ge 1$) holds (per the `NORMAL_FLOW_LIMITED` option), then
 
-   $$q \leftarrow \min\!\left(q,\ \beta\,A_1\,R_1^{2/3}\right),$$
+   $$q \leftarrow \min\left(q,\ \beta\,A_1\,R_1^{2/3}\right),$$
 
    the Manning normal flow at the upstream depth.
 3. **Under-relaxation** (iterations $> 0$): $q = (1-\omega)q_{\mathrm{last}} + \omega\,q$ with a sign-change clamp to $\pm 0.001$.
