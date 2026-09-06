@@ -13,3 +13,7 @@ build/
 
 # WebGPU harness fixtures (copied from scripts/verify-out at runtime)
 public/webgpu/fixtures/
+
+# VitePress build artifacts
+docs/.vitepress/dist/
+docs/.vitepress/cache/
