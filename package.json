@@ -3,10 +3,10 @@
   "private": true,
   "scripts": {
     "test:3d": "node --test scripts/test-network3d.mjs",
-    "docs:build": "vitepress build docs && node -e \"require('fs').cpSync('docs/.vitepress/dist', 'public/docs', { recursive: true })\"",
+    "docs:build": "vitepress build docs && node scripts/copy-docs.js",
     "docs:dev": "vitepress dev docs",
     "docs:preview": "vitepress preview docs",
-    "build": "vitepress build docs && node -e \"require('fs').cpSync('docs/.vitepress/dist', 'public/docs', { recursive: true })\""
+    "build": "vitepress build docs && node scripts/copy-docs.js"
   },
   "devDependencies": {
     "vitepress": "^1.6.4"
