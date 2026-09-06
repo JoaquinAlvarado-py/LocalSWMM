@@ -464,73 +464,7 @@ class InpExporter {
         }
 
 
-        // --- 2D Mesh (OpenSWMM Engine) ---
-        if (net.mesh2DIndexed && net.mesh2DIndexed.vertices && net.mesh2DIndexed.triangles) {
-            const indexed = net.mesh2DIndexed;
-            const options = indexed.options || {};
-            L.push(';; UNITS: SI (m)');
-            L.push(';; 2D_ORIGIN ' + Number(indexed.origin && indexed.origin.lng || 0) + ' ' + Number(indexed.origin && indexed.origin.lat || 0));
-            L.push('[2D_OPTIONS]');
-            const optionLines = window.Mesh2DExport && window.Mesh2DExport.buildOptionsLines
-                ? window.Mesh2DExport.buildOptionsLines(options)
-                : ['MAX_TIMESTEP 2', 'DRY_DEPTH 0.001'];
-            L.push(...optionLines);
-            L.push('');
-            L.push('[2D_VERTICES]', ';;X Y Z TAG');
-            indexed.vertices.forEach(v => L.push(`${Number(v.x || 0).toFixed(6)} ${Number(v.y || 0).toFixed(6)} ${Number(v.z || 0).toFixed(6)} ${String(v.tag || '-').replace(/\s+/g, '_')}`));
-            L.push('');
-            L.push('[2D_TRIANGLES]', ';;V1 V2 V3 MANNINGS_N TAG');
-            indexed.triangles.forEach(t => L.push(`${t.v[0]} ${t.v[1]} ${t.v[2]} ${Number(t.n || 0.045).toFixed(6)} ${String(t.tag || '-').replace(/\s+/g, '_')}`));
-            if (indexed.vertexNodeMap && indexed.vertexNodeMap.length) {
-                L.push('', '[2D_VERTEX_NODE_MAP]', ';;IDX NODE CD AREA');
-                indexed.vertexNodeMap.forEach(m => {
-                    let line = `${m.vertexIndex !== undefined ? m.vertexIndex : m.vertex} ${m.nodeId || m.node} ${Number(m.cd || 0.65).toFixed(6)}`;
-                    if (options.couplingArea && options.couplingArea !== 'AUTO') line += ` ${Number(m.area || 0).toFixed(6)}`;
-                    L.push(line);
-                });
-            }
-            L.push('');
-        } else if (net.mesh2D && net.mesh2D.length > 0) {
-            // Collect unique vertices from all mesh cells
-            const vertexMap = new Map(); // key: 'lng_lat' -> vertex ID
-            let vIdx = 1;
-            net.mesh2D.forEach(cell => {
-                cell.ring.forEach(coord => {
-                    const key = `${coord[0].toFixed(8)}_${coord[1].toFixed(8)}`;
-                    if (!vertexMap.has(key)) {
-                        vertexMap.set(key, { id: `V${vIdx}`, lng: coord[0], lat: coord[1] });
-                        vIdx++;
-                    }
-                });
-            });
 
-            L.push('[2D_VERTICES]');
-            L.push(';;ID               X-Coord            Y-Coord');
-            for (const [, v] of vertexMap) {
-                L.push(`${this.pad(v.id, 18)} ${v.lng.toFixed(8).padStart(18)} ${v.lat.toFixed(8).padStart(18)}`);
-            }
-            L.push('');
-
-            L.push('[2D_CELLS]');
-            L.push(';;ID               Vertex1            Vertex2            Vertex3');
-            net.mesh2D.forEach(cell => {
-                const vIds = cell.ring.map(coord => {
-                    const key = `${coord[0].toFixed(8)}_${coord[1].toFixed(8)}`;
-                    return vertexMap.get(key).id;
-                });
-                // Only output unique triangle vertices (skip closing vertex if ring is closed)
-                const uniqueIds = [];
-                for (const vid of vIds) {
-                    if (uniqueIds.length === 0 || vid !== uniqueIds[0]) {
-                        uniqueIds.push(vid);
-                    } else {
-                        break; // Reached closing vertex
-                    }
-                }
-                L.push(`${this.pad(cell.id, 18)} ${uniqueIds.map(v => this.pad(v, 18)).join(' ')}`);
-            });
-            L.push('');
-        }
 
         // --- Curves ---
         if (net.curves && net.curves.length > 0) {
@@ -720,7 +654,7 @@ class InpExporter {
                 'JUNCTIONS', 'VIRTUAL_JUNCTIONS', 'OUTFALLS', 'STORAGE',
                 'DIVIDERS', 'CONDUITS', 'PUMPS', 'WEIRS', 'ORIFICES', 'OUTLETS', 'XSECTIONS', 'LOSSES', 'TAGS',
                 'COORDINATES', 'VERTICES', 'POLYGONS', 'SYMBOLS', 'REPORT', 'TIMESERIES',
-                '2D_VERTICES', '2D_CELLS', '2D_OPTIONS', '2D_TRIANGLES', '2D_VERTEX_NODE_MAP', '2D_TRIANGLE_NODE_MAP', '2D_MESH_FILE','CURVES', 'LID_CONTROLS', 'LID_USAGE','POLLUTANTS', 'LANDUSES', 'BUILDUP', 'WASHOFF', 'TREATMENT','AQUIFERS', 'GROUNDWATER', 'SNOWPACKS', 'SNOWPACK_ASSIGNMENT'
+                'CURVES', 'LID_CONTROLS', 'LID_USAGE','POLLUTANTS', 'LANDUSES', 'BUILDUP', 'WASHOFF', 'TREATMENT','AQUIFERS', 'GROUNDWATER', 'SNOWPACKS', 'SNOWPACK_ASSIGNMENT'
             ]);
             for (const [secName, lines] of Object.entries(net.rawSections)) {
                 if (!handledSections.has(secName)) {

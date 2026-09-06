@@ -354,15 +354,12 @@
         outData: null,    // binary out data parser
         nodeMinMax: { min: 0, max: 0.1 },
         linkMinMax: { min: 0, max: 0.1 },
-        mesh2DMinMax: { min: 0, max: 0.1 },
         currentStep: 0,
         activeNodeVar: 'depth',
         activeLinkVar: 'flow',
-        active2DVar: 'depth',   // 'depth' | 'head' | 'velocity'
         // dirty-tracking: last color pushed via setFeatureState, per element
         _appliedNode: new Map(),
         _appliedLink: new Map(),
-        _applied2D: new Map(),
 
         // Mirror resultColor onto the 3D network source when it exists.
         _push3D(id, color) {
@@ -391,8 +388,6 @@
                 this._appliedNode.set(id, color);
                 this._setFeatureState('swmm-nodes', id, { resultColor: color });
                 this._push3D(id, color);
-                this._applied2D.set(id, color);
-                this._setFeatureState('swmm-2d-mesh', id, { resultColor: color });
             });
             Object.entries(this.linkColors).forEach(([id, color]) => {
                 if (this._appliedLink.get(id) === color) return;
@@ -410,49 +405,6 @@
 
             const nMin = this.nodeMinMax.min, nMax = this.nodeMinMax.max;
             const lMin = this.linkMinMax.min, lMax = this.linkMinMax.max;
-
-            // ---- 2D mesh frame-based animation ----
-            const r2d = window.App && window.App.results2D;
-            if (r2d && r2d.frames && r2d.triangleIds) {
-                const frame = r2d.frames[step];
-                if (frame) {
-                    const varKey = this.active2DVar; // 'depth' | 'head' | 'velocity'
-                    const arr = frame[varKey];
-                    if (arr) {
-                        const ids = r2d.triangleIds;
-                        // Absolute scale, stable across frames: depth/velocity
-                        // use the global-across-frames robust max, head keeps
-                        // the global range. No per-frame re-normalization.
-                        const mMax = this.mesh2DMinMax.max;
-                        const mMin = varKey === 'head' ? this.mesh2DMinMax.min : 0;
-                        const depthArr = frame.depth;
-                        const shouldShow = window.View2D ? window.View2D.shouldShow : null;
-                        for (let i = 0; i < ids.length; i++) {
-                            const raw = Number(arr[i]);
-                            const val = Number.isFinite(raw) ? raw : 0;
-                            // Per-variable masking (View2D.shouldShow / CONTEXT.md):
-                            // depth hides the film below the mask; head shows only
-                            // cells with water present; velocity is source-gated.
-                            const show = shouldShow ? shouldShow(varKey, val, depthArr ? Number(depthArr[i]) : NaN) : (Number.isFinite(raw) && val > 0);
-                            const t = mMax > mMin ? Math.min(1, (val - mMin) / (mMax - mMin)) : 0;
-                            const color = show ? rampColor(t) : 'rgba(0,0,0,0)';
-                            if (this._applied2D.get(ids[i]) === color) continue;
-                            this._applied2D.set(ids[i], color);
-                            this._setFeatureState('swmm-2d-mesh', ids[i], { resultColor: color });
-                        }
-                    } else {
-                        // Do not leave a previous frame painted when a backend
-                        // omits the selected field.
-                        r2d.triangleIds.forEach(id => {
-                            const color = 'rgba(0,0,0,0)';
-                            if (this._applied2D.get(id) === color) return;
-                            this._applied2D.set(id, color);
-                            this._setFeatureState('swmm-2d-mesh', id, { resultColor: color });
-                        });
-                    }
-                    if (window.Mesh2DLayers) window.Mesh2DLayers.onStep(step, frame);
-                }
-            }
 
             const outData = this.outData;
             if (outData && outData.parsed) {
@@ -543,20 +495,12 @@
                 this._setFeatureState('swmm-links', id, { resultColor: null });
                 this._push3D(id, null);
             });
-            // Clear 2D mesh feature states
-            this._applied2D.forEach((_, id) => {
-                this._setFeatureState('swmm-2d-mesh', id, { resultColor: null });
-            });
             this._appliedNode.clear();
             this._appliedLink.clear();
-            this._applied2D.clear();
-            if (window.Mesh2DLayers && window.Mesh2DLayers.clear) window.Mesh2DLayers.clear();
             this.nodeColors = {};
             this.linkColors = {};
             this.timeSeries = null;
             this.outData = null;
-            this.mesh2DMinMax = null;
-            this.mesh2DDepthScale = null;
             if (window.AnimationUI) window.AnimationUI.hide();
         }
     };
@@ -788,7 +732,6 @@
 
     window.clearResults = function () {
         ResultStyling.clear();
-        if (window.set2DResultLayerMode) window.set2DResultLayerMode(false);
         if (sparkObserver) sparkObserver.disconnect();
         const select = parkCategorySelect();
         if (select) select.classList.add('hidden');
@@ -798,8 +741,6 @@
         if (hint) hint.classList.remove('hidden');
         window.App.lastRunReport = null;
         window.App.outData = null;
-        window.App.results2D = null;
-        window.App.resultFrame2D = null;
         if (window.displayStatusReport) window.displayStatusReport(null);
     };
 
@@ -1300,236 +1241,6 @@
         container.appendChild(note);
 
         if (window.displayStatusReport) window.displayStatusReport(rpt);
-        if (window.openResultsPanel) window.openResultsPanel();
-    };
-
-    // ---------- 2D-specific results display ----------
-    window.display2DResults = function (result) {
-        const container = document.getElementById('results-content');
-        const hint = document.getElementById('results-hint');
-        const select = parkCategorySelect();
-
-        if (hint) hint.classList.add('hidden');
-        container.innerHTML = '';
-
-        const frames = result.frames || [];
-        const ids = result.triangleIds || [];
-        const diag = result.diagnostics || {};
-        const mb = diag.massBalance || {};
-        const report = result.report || '';
-
-        // ---- compute global min/max across all frames for the active 2D variable ----
-        // Depth/velocity use a global-across-frames robust max (stable scale
-        // across the animation); head keeps the true global range (its
-        // gradient is the signal). See View2D.fieldScale / CONTEXT.md.
-        function compute2DMinMax(varKey) {
-            let min = Infinity, max = -Infinity;
-            let finiteCount = 0;
-            for (let f = 0; f < frames.length; f++) {
-                const arr = frames[f][varKey];
-                if (!arr) continue;
-                for (let i = 0; i < arr.length; i++) {
-                    const v = Number(arr[i]);
-                    if (!Number.isFinite(v)) continue;
-                    finiteCount++;
-                    if (v < min) min = v;
-                    if (v > max) max = v;
-                }
-            }
-            if (!Number.isFinite(min)) min = 0;
-            if (!Number.isFinite(max)) max = 0;
-            return { min: min, max: Math.max(max, min + 0.001), hasFinite: finiteCount > 0 };
-        }
-        const scaleOf = (varKey) => (window.View2D ? window.View2D.fieldScale(frames, varKey) : compute2DMinMax(varKey));
-
-        const depthScale = scaleOf('depth');
-        const headScale = scaleOf('head');
-        const velScale = scaleOf('velocity');
-        const rangeMap = { depth: depthScale, head: headScale, velocity: velScale };
-        const invalidFields = [];
-        if (!depthScale.hasFinite) invalidFields.push('depth');
-        if (!velScale.hasFinite) invalidFields.push('velocity');
-
-        // ---- set up ResultStyling for 2D ----
-        ResultStyling.clear();
-        ResultStyling.active2DVar = 'depth';
-        ResultStyling.mesh2DMinMax = depthScale;
-        ResultStyling.mesh2DDepthScale = depthScale;
-        if (window.LayerTree && window.LayerTree.applyResultsPreset) window.LayerTree.applyResultsPreset('depth');
-
-        // Color-code mesh with last-frame depth values initially
-        // Some engine builds emit a completion marker with elapsedMs=0 after
-        // the real last frame. Never use that marker as the initial map field.
-        const renderFrames = frames.filter(frame => frame && Number.isFinite(Number(frame.elapsedMs)) &&
-            (Number(frame.elapsedMs) > 0 || frames.length === 1));
-        const lastFrame = (renderFrames.length ? renderFrames : frames)[(renderFrames.length ? renderFrames : frames).length - 1];
-        if (lastFrame) {
-            const dMin = depthScale.min;
-            const dMax = depthScale.max;
-            ids.forEach((id, i) => {
-                const raw = Number(lastFrame.depth && lastFrame.depth[i]);
-                const val = Number.isFinite(raw) ? raw : 0;
-                const t = dMax > dMin ? Math.min(1, (val - dMin) / (dMax - dMin)) : 0;
-                // Absolute depth scale: cells below the mask render nothing
-                // (uniform-rain film stays hidden — CONTEXT.md).
-                const show = window.View2D ? window.View2D.shouldShow('depth', val, val) : (Number.isFinite(raw) && val >= 0.005);
-                const color = show ? rampColor(t) : 'rgba(0,0,0,0)';
-                ResultStyling.nodeColors[id] = color;
-            });
-        }
-
-        // Build synthetic timeSeries so AnimationUI can drive 2D scrubbing
-        const ts = { times: [], nodes: {}, links: {}, nodeMax: {}, linkMax: {} };
-        for (let f = 0; f < frames.length; f++) {
-            const ms = frames[f].elapsedMs || 0;
-            const totalSec = Math.round(ms / 1000);
-            const hrs = Math.floor(totalSec / 3600);
-            const mins = Math.floor((totalSec % 3600) / 60);
-            const secs = totalSec % 60;
-            ts.times.push(`${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`);
-        }
-
-        ResultStyling.timeSeries = ts;
-        ResultStyling.active = true;
-        ResultStyling.applyToMap();
-        if (window.Mesh2DLayers && lastFrame) window.Mesh2DLayers.onStep(frames.length - 1, lastFrame);
-
-        if (window.AnimationUI && ts.times.length > 1) {
-            window.AnimationUI.setRange(ts.times.length);
-            window.AnimationUI.show();
-        }
-
-        // ---- continuity error ----
-        const contErr = Number.isFinite(mb.continuityError) ? mb.continuityError : null;
-        const contPct = contErr !== null ? (contErr * 100).toFixed(3) : null;
-        const statusCls = (contPct !== null && Math.abs(parseFloat(contPct)) >= 10) ? 'warn' : 'ok';
-        const statusTxt = 'OpenSWMM 1D–2D simulation complete';
-        const chips = contPct !== null
-            ? `<div class="rv-chips"><span class="rv-chip ${Math.abs(parseFloat(contPct)) < 5 ? 'ok' : Math.abs(parseFloat(contPct)) < 10 ? 'warn' : 'bad'}" title="2D surface continuity error">2D Continuity <b>${contPct}%</b></span></div>`
-            : '';
-        const dataWarning = invalidFields.length
-            ? `<div class="results-warning">2D ${invalidFields.join(' and ')} output has no finite values; dry/invalid cells are hidden.</div>`
-            : '';
-
-        let html = `
-            <div class="rv-hero">
-                <div class="rv-hero-top">
-                    <span class="rv-dot ${statusCls}"></span>
-                    <div>
-                        <div class="rv-hero-title">${statusTxt}</div>
-                        <div class="rv-hero-sub">${ids.length} mesh cells · ${frames.length} result frames</div>
-                    </div>
-                </div>
-                ${chips}
-            </div>${dataWarning}`;
-
-        // ---- KPI cards ----
-        const kpis = [];
-        // Peak depth across all frames
-        let peakDepth = 0, peakVel = 0;
-        for (const frame of frames) {
-            for (let i = 0; i < ids.length; i++) {
-                const depth = Number(frame.depth && frame.depth[i]);
-                const velocity = Number(frame.velocity && frame.velocity[i]);
-                if (Number.isFinite(depth) && depth > peakDepth) peakDepth = depth;
-                if (Number.isFinite(velocity) && velocity > peakVel) peakVel = velocity;
-            }
-        }
-        const isUS = (window.Net && Net.units === 'US');
-        const depthUnit = isUS ? 'ft' : 'm';
-        const velUnit = isUS ? 'ft/s' : 'm/s';
-
-        kpis.push(`<div class="rv-kpi"><div class="rv-kpi-label">Peak 2D depth</div><div class="rv-kpi-value">${fmtVal(peakDepth, 3)}<small>${esc(depthUnit)}</small></div></div>`);
-        kpis.push(`<div class="rv-kpi"><div class="rv-kpi-label">Peak 2D velocity</div><div class="rv-kpi-value">${fmtVal(peakVel, 3)}<small>${esc(velUnit)}</small></div></div>`);
-        kpis.push(`<div class="rv-kpi"><div class="rv-kpi-label">Mesh cells</div><div class="rv-kpi-value">${ids.length}</div></div>`);
-        kpis.push(`<div class="rv-kpi"><div class="rv-kpi-label">Time frames</div><div class="rv-kpi-value">${frames.length}</div></div>`);
-        html += `<div class="rv-kpis">${kpis.join('')}</div>`;
-
-        // ---- color ramp legend (updates with the selected variable) ----
-        const grad = `linear-gradient(90deg, ${RAMP.join(', ')})`;
-        const legendMeta = {
-            depth: { title: '2D Water Depth', unit: depthUnit },
-            head: { title: '2D Hydraulic Head', unit: depthUnit },
-            velocity: { title: '2D Flow Velocity', unit: velUnit }
-        };
-        html += `
-            <div class="rv-legend" id="results-2d-legend">
-                <div class="rv-legend-title"><span id="results-2d-legend-title">${esc(legendMeta.depth.title)}</span><span class="rv-legend-unit" id="results-2d-legend-unit">${esc(depthUnit)}</span></div>
-                <div class="rv-legend-bar" style="background:${grad}"></div>
-                <div class="rv-legend-scale" id="results-2d-legend-scale"><span>${fmtVal(depthScale.min, 3)}</span><span>${fmtVal((depthScale.min + depthScale.max) / 2, 3)}</span><span>${fmtVal(depthScale.max, 3)}</span></div>
-            </div>`;
-
-        // ---- 2D variable selector ----
-        html += `
-            <div class="rv-explorer" style="margin-top:8px">
-                <div class="rv-exp-head">
-                    <select id="results-2d-var-select" style="flex:1">
-                        <option value="depth" selected>Water Depth</option>
-                        <option value="head">Hydraulic Head</option>
-                        <option value="velocity">Flow Velocity</option>
-                    </select>
-                </div>
-            </div>`;
-
-        // ---- report text (collapsible) ----
-        if (report) {
-            html += `
-                <details class="rv-details" style="margin-top:8px">
-                    <summary>Full simulation report</summary>
-                    <div class="rv-details-body"><pre style="white-space:pre-wrap;font-size:11px;max-height:300px;overflow:auto">${esc(report)}</pre></div>
-                </details>`;
-        }
-
-        // ---- mass balance details ----
-        if (mb.initialVolume !== undefined) {
-            const mbLines = [
-                `Initial storage: ${fmtVal(mb.initialVolume, 4)} m³`,
-                `Final storage: ${fmtVal(mb.finalVolume, 4)} m³`,
-                `Rainfall in: ${fmtVal(mb.rainfall, 4)} m³`,
-                `1D→2D coupling: ${fmtVal(mb.coupling1DTo2D, 4)} m³`,
-                `2D→1D coupling: ${fmtVal(mb.coupling2DTo1D, 4)} m³`,
-                `Evaporation: ${fmtVal(mb.evaporation, 4)} m³`
-            ].join('\n');
-            html += `
-                <details class="rv-details" style="margin-top:8px">
-                    <summary>2D mass balance</summary>
-                    <div class="rv-details-body"><pre style="white-space:pre-wrap;font-size:11px">${esc(mbLines)}</pre></div>
-                </details>`;
-        }
-
-        container.innerHTML = html;
-
-        // ---- wire up 2D variable selector ----
-        const varSelect = document.getElementById('results-2d-var-select');
-        if (varSelect) {
-            const legendTitle = document.getElementById('results-2d-legend-title');
-            const legendUnit = document.getElementById('results-2d-legend-unit');
-            const legendScale = document.getElementById('results-2d-legend-scale');
-            const refreshLegend = (varKey, scale) => {
-                const meta = legendMeta[varKey] || legendMeta.depth;
-                if (legendTitle) legendTitle.textContent = meta.title;
-                if (legendUnit) legendUnit.textContent = meta.unit;
-                if (legendScale) {
-                    legendScale.innerHTML = `<span>${fmtVal(scale.min, 3)}</span><span>${fmtVal((scale.min + scale.max) / 2, 3)}</span><span>${fmtVal(scale.max, 3)}</span>`;
-                }
-            };
-            varSelect.addEventListener('change', () => {
-                const varKey = varSelect.value;
-                ResultStyling.active2DVar = varKey;
-                ResultStyling.mesh2DMinMax = rangeMap[varKey] || depthScale;
-                ResultStyling._applied2D.clear(); // force full repaint
-                ResultStyling.applyToMapForStep(ResultStyling.currentStep);
-                refreshLegend(varKey, ResultStyling.mesh2DMinMax);
-                if (window.LayerTree && window.LayerTree.applyResultsPreset) window.LayerTree.applyResultsPreset(varKey);
-            });
-        }
-
-        const note = document.createElement('div');
-        note.className = 'rv-note';
-        note.textContent = 'Drag the timeline slider to animate 2D inundation over time.';
-        container.appendChild(note);
-
-        if (window.displayStatusReport) window.displayStatusReport(result && result.report ? result.report : '');
         if (window.openResultsPanel) window.openResultsPanel();
     };
 })();

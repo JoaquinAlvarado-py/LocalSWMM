@@ -18,8 +18,7 @@
 
     const ID_PREFIX = {
         JUNCTION: 'J', OUTFALL: 'O', STORAGE: 'ST', DIVIDER: 'D', RAINGAGE: 'RG',
-        CONDUIT: 'C', PUMP: 'P', WEIR: 'W', ORIFICE: 'OR', OUTLET: 'OL', SUBCATCHMENT: 'S',
-        MESH2D: 'M2D_'
+        CONDUIT: 'C', PUMP: 'P', WEIR: 'W', ORIFICE: 'OR', OUTLET: 'OL', SUBCATCHMENT: 'S'
     };
 
     const HISTORY_LIMIT = 100;
@@ -116,8 +115,6 @@
             this.nodes = [];
             this.links = [];
             this.subcatchments = [];
-            this.mesh2D = [];
-            this.mesh2DIndexed = null;
             this.timeseries = {};
             this.options = defaultOptions();
             this.units = 'SI';
@@ -153,8 +150,6 @@
             this._geoNodes = null;
             this._geoLinks = null;
             this._geoSubs = null;
-            this._geoMesh = null;
-            this._mesh2DIndexedGeo = null;
             this._geoNodeFeat = null; // id -> cached node Feature
             this._geoLinkFeat = null; // id -> cached link Feature
         }
@@ -180,35 +175,9 @@
             return id;
         }
 
-        // O(1) mesh-cell lookup by id. mesh2D has no incremental index like
-        // _nodeMap/_linkMap/_subMap because mesh generation mutates the array
-        // directly (mesh2d.js pushes/clears without rebuildIndexes), so the map
-        // is rebuilt lazily and only when the array identity or length changed —
-        // cells are only ever pushed or cleared, never replaced in place by id.
-        _meshCell(id) {
-            const mesh = this.mesh2D || [];
-            if (!this._meshMap || this._meshMapSrc !== mesh || this._meshMap.size !== mesh.length) {
-                this._meshMap = new Map(mesh.map(c => [c.id, c]));
-                this._meshMapSrc = mesh;
-            }
-            return this._meshMap.get(id);
-        }
-
         findAny(id) {
             if (!id) return null;
-            let el = this._nodeMap.get(id) || this._linkMap.get(id) || this._subMap.get(id);
-            if (el) return el;
-            const cell = this._meshCell(id);
-            if (cell) {
-                cell.type = 'MESH2D';
-                cell.props ||= {
-                    parentSubcatch: cell.parentSubcatch || '',
-                    landCoverClass: cell.landCoverClass || 0,
-                    manningN: cell.manningN || 0.10
-                };
-                return cell;
-            }
-            return null;
+            return this._nodeMap.get(id) || this._linkMap.get(id) || this._subMap.get(id) || null;
         }
 
         // ---------- accessors ----------
@@ -472,8 +441,6 @@
                 nodes: this.nodes,
                 links: this.links,
                 subcatchments: this.subcatchments,
-                mesh2D: this.mesh2D,
-                mesh2DIndexed: this.mesh2DIndexed,
                 timeseries: this.timeseries,
                 rawSections: this.rawSections,
                 curves: this.curves,
@@ -495,8 +462,6 @@
             this.nodes = state.nodes || [];
             this.links = state.links || [];
             this.subcatchments = state.subcatchments || [];
-            this.mesh2D = state.mesh2D || [];
-            this.mesh2DIndexed = state.mesh2DIndexed || null;
             this.timeseries = state.timeseries || {};
             this.rawSections = state.rawSections || {};
             this.curves = state.curves || [];
@@ -508,9 +473,6 @@
             this.snowpacks = state.snowpacks || [];
             this.importedLayers = state.importedLayers || [];
             this.rebuildIndexes();
-            if (this.mesh2DIndexed && this.mesh2DIndexed.vertices && this.mesh2DIndexed.triangles) {
-                this.setIndexedMesh(this.mesh2DIndexed);
-            }
             if (resetHistory) {
                 this.history = [{ t: 'snap', json: JSON.stringify(this.serialize()) }];
                 this.hIndex = 0;
@@ -843,97 +805,11 @@
             return this._geoSubs;
         }
 
-        mesh2DGeoJSON() {
-            if (!this._geoMesh) {
-                this._geoMesh = {
-                    type: 'FeatureCollection',
-                    features: this.mesh2D.map(m => {
-                        const ring = [...m.ring];
-                        if (ring.length && (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1])) {
-                            ring.push([...ring[0]]);
-                        }
-                        return {
-                            type: 'Feature',
-                            id: m.id, // For feature-state binding
-                            properties: { id: m.id, type: 'MESH2D' },
-                            geometry: { type: 'Polygon', coordinates: [ring] }
-                        };
-                    })
-                };
-            }
-            return this._geoMesh;
-        }
-
-        // ---------- indexed 2D mesh (Triangle engine output) ----------
-        /**
-         * Store the indexed mesh and derive legacy Net.mesh2D cells so all
-         * existing consumers (map layers, selection, results feature-state)
-         * keep working with stable triangle order.
-         * @param {Object} indexed — { origin, vertices, triangles, vertexNodeMap, options }
-         */
-        setIndexedMesh(indexed) {
-            this.mesh2DIndexed = indexed || null;
-            this._invalidateGeo();
-            if (!indexed || !indexed.triangles || !indexed.vertices) {
-                return;
-            }
-            // Derive legacy cells with stable ids matching triangle order.
-            const cells = [];
-            for (let i = 0; i < indexed.triangles.length; i++) {
-                const tri = indexed.triangles[i];
-                const v0 = indexed.vertices[tri.v[0]];
-                const v1 = indexed.vertices[tri.v[1]];
-                const v2 = indexed.vertices[tri.v[2]];
-                if (!v0 || !v1 || !v2) continue;
-                const ring = [
-                    [v0.lng, v0.lat],
-                    [v1.lng, v1.lat],
-                    [v2.lng, v2.lat],
-                    [v0.lng, v0.lat] // closed
-                ];
-                cells.push({
-                    id: 'M2D_' + (i + 1),
-                    ring: ring,
-                    manningN: tri.n,
-                    parentSubcatch: tri.tag || '',
-                    props: {
-                        manningN: tri.n,
-                        parentSubcatch: tri.tag || '',
-                        landCoverClass: 0
-                    }
-                });
-            }
-            this.mesh2D = cells;
-        }
-
-        clearIndexedMesh() {
-            this.mesh2DIndexed = null;
-            this.mesh2D = [];
-            this._invalidateGeo();
-        }
-
-        // GeoJSON of the indexed mesh vertices (for vertex render layer).
-        mesh2DVerticesGeoJSON() {
-            if (!this.mesh2DIndexed || !this.mesh2DIndexed.vertices) {
-                return { type: 'FeatureCollection', features: [] };
-            }
-            return {
-                type: 'FeatureCollection',
-                features: this.mesh2DIndexed.vertices.map((v, i) => ({
-                    type: 'Feature',
-                    id: i,
-                    properties: { index: i, tag: v.tag || '', z: v.z || 0 },
-                    geometry: { type: 'Point', coordinates: [v.lng, v.lat] }
-                }))
-            };
-        }
-
         bounds() {
             const coords = [];
             this.nodes.forEach(n => coords.push(n.lngLat));
             this.links.forEach(l => { if (l.vertices) l.vertices.forEach(v => coords.push(v)); });
             this.subcatchments.forEach(s => s.ring.forEach(v => coords.push(v)));
-            this.mesh2D.forEach(m => m.ring.forEach(c => coords.push(c))); // Included mesh in bounds
             if (!coords.length) return null;
             return coords;
         }

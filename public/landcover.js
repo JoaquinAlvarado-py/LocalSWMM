@@ -191,37 +191,6 @@
         },
 
         /**
-         * Samples each triangle centroid and stores its detected class and Manning roughness.
-         */
-        classifyMeshCells(mapInstance, meshCells) {
-            const cells = Array.isArray(meshCells) ? meshCells : [];
-            const counts = {};
-            let classified = 0;
-
-            cells.forEach(cell => {
-                if (!cell.ring || cell.ring.length < 3) return;
-                const vertices = cell.ring.slice(0, 3);
-                const centroid = [
-                    vertices.reduce((sum, point) => sum + point[0], 0) / vertices.length,
-                    vertices.reduce((sum, point) => sum + point[1], 0) / vertices.length
-                ];
-                const code = this.classifyPointLandCover(centroid, mapInstance);
-                const roughness = this.getRoughness(code);
-
-                cell.landCoverClass = code;
-                cell.manningN = roughness.nPerv;
-                cell.props ||= {};
-                cell.props.landCoverClass = code;
-                cell.props.manningN = roughness.nPerv;
-                cell.props.parentSubcatch ||= cell.parentSubcatch || '';
-                counts[code] = (counts[code] || 0) + 1;
-                classified++;
-            });
-
-            return { classified, counts };
-        },
-
-        /**
          * Performs grid-cell sampling over a subcatchment polygon to detect land cover breakdown and compute weighted SWMM roughness.
          */
         sampleSubcatchmentLandCover(subcatchment, mapInstance) {

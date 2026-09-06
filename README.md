@@ -3,7 +3,7 @@
   <img width="500" height="500" alt="swmm6local" src="https://github.com/user-attachments/assets/dcf1065b-3a5d-4fc2-b588-3f922a034124" />
 </p>
 
-Local SWMM is a web application for 2D modeling and hydraulic simulation of stormwater and wastewater networks, check it by yourselft at https://swmm6.is-local.org
+Local SWMM is a web application for 1D modeling and hydraulic simulation of stormwater and wastewater networks, check it by yourself at https://swmm6.is-local.org
 
 ## Overview
 

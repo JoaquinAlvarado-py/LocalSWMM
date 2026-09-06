@@ -1,20 +1,16 @@
 # Arquitectura
 
-El panorama general: una aplicación web solo-cliente para modelado hidráulico 2D, donde todo — el editor, el generador de mallas y el motor hidráulico SWMM — se ejecuta en el navegador.
+El panorama general: una aplicación web solo-cliente para modelado hidráulico 1D, donde todo — el editor y el motor hidráulico SWMM — se ejecuta en el navegador.
 
 ## Diseño solo-cliente
 
-Local SWMM es una **aplicación web solo-cliente** para modelado y simulación hidráulica 2D de redes de aguas lluvias y aguas servidas. Todo — el editor, el generador de mallas y el motor hidráulico SWMM — se ejecuta en el navegador. El motor de simulación es el motor **OpenSWMM** de HydroCouple compilado a **WebAssembly** con Emscripten.
-
-La rama experimental agrega el módulo de tránsito superficial 2D (generación de mallas, acoplamiento 1D↔2D, marcher GPU WebGPU) sobre el editor de red 1D.
+Local SWMM es una **aplicación web solo-cliente** para modelado y simulación hidráulica 1D de redes de aguas lluvias y aguas servidas. Todo — el editor y el motor hidráulico SWMM — se ejecuta en el navegador. El motor de simulación es el motor **OpenSWMM** de HydroCouple compilado a **WebAssembly** con Emscripten.
 
 ## Propiedades clave
 
 - **Sin backend.** El único servidor es un trivial servidor de archivos estáticos + endpoint de salud (`server.py`). Sin base de datos, sin paso de build para la UI, sin bundler.
-- **Sin framework de UI.** El frontend son ~15.000 líneas de JavaScript sin dependencias (scripts clásicos + IIFEs) con Mapbox GL JS como única librería runtime pesada.
-- **Hidráulica embebida en WASM.** El motor OpenSWMM 6.0.0 está cross-compilado para `wasm32-emscripten` con dependencias C++ gestionadas por vcpkg (Eigen, HDF5, nlohmann-json, SUNDIALS).
-- **Dos backends de simulación.** Una vía de motor WASM (1D + 1D/2D acoplado) y un backend **experimental WebGPU** que reimplementa el solver 2D explícito local-inercial como kernels de cómputo WGSL y lo ejecuta en paralelo al motor WASM.
-- **Dos generadores de mallas.** Un generador legado basado en `poly2tri` y el pipeline de producción **Triangle WASM de Shewchuk** (npm `triangle-wasm`).
+- **Sin framework de UI.** El frontend son ~15.000 líneas de JavaScript sin dependencias (scripts clásicos + IIFEs) con Mapbox GL JS como librería de renderizado principal.
+- **Hidráulica embebida en WASM.** El motor OpenSWMM está cross-compilado para `wasm32-emscripten` con dependencias C++ gestionadas por vcpkg (Eigen, HDF5, nlohmann-json, SUNDIALS).
 
 ## Arquitectura de un vistazo
 
@@ -23,7 +19,7 @@ La rama experimental agrega el módulo de tránsito superficial 2D (generación 
                         │                       BROWSER                          │
                         │                                                        │
   ┌────────────┐        │   ┌───────────────────────  index.html  ────────────┐  │
-  │  server.py │───────▶│   │  [35 classic <script> modules, ordered by deps] │  │
+  │  server.py │───────▶│   │  [classic <script> modules, ordered by deps]     │  │
   │  static    │        │   └───────────────┬──────────────────────────────────┘  │
   │  :8080     │        │                   │                                    │
   └────────────┘        │                   ▼                                    │
@@ -34,27 +30,24 @@ La rama experimental agrega el módulo de tránsito superficial 2D (generación 
                         │   └───────┬───────────────┬───────┘                    │
                         │           │               │                            │
                         │           ▼               ▼                            │
-                        │   ┌──────────────────────┐ ┌──────────────────────────┐│
-                        │   │ INP serialize        │ │ 2D mesh pipeline         ││
-                        │   │ (inpExporter.js)     │ │ (mesh2dPslg → Triangle) ││
-                        │   │ INP parse            │ └────────────┬─────────────┘│
-                        │   │ (inpParser.js)       │              │              │
-                        │   └──────────┬───────────┘              │              │
-                        │              │                         ▼              │
-                        │              ▼        ┌───────────────────────────────┐│
-                        │   ┌─────────────────┐ │   Web Workers                 ││
-                        │   │  simWorker.js   │ │  ┌────────────┐ ┌────────────┐││
-                        │   │  openSwmm2dWrk  │ │  │ gpu2dWorker│ │  harness   │││
-                        │   └───────┬─────────┘ │  │ (WebGPU)   │ │            │││
-                        │           │           │  └────────────┘ └────────────┘││
-                        │           ▼           └───────────────────────────────┘│
+                        │   ┌──────────────────────┐                             │
+                        │   │ INP serialize        │                             │
+                        │   │ (inpExporter.js)     │                             │
+                        │   │ INP parse            │                             │
+                        │   │ (inpParser.js)       │                             │
+                        │   └──────────┬───────────┘                             │
+                        │              │                                         │
+                        │              ▼                                         │
+                        │   ┌─────────────────┐                                  │
+                        │   │  simWorker.js   │ (Web Worker)                     │
+                        │   └───────┬─────────┘                                  │
+                        │           │                                            │
+                        │           ▼                                            │
                         │   ┌─────────────────────────────────────────────┐      │
                         │   │   Emscripten WASM:  swmm6wasm.js/.wasm       │      │
-                        │   │   openswmm2d.js/.wasm                        │      │
                         │   │   ──────────────────────────────────────     │      │
                         │   │   OpenSWMM engine (C++20, static lib)        │      │
-                        │   │   exported C API: swmm_engine_* , swmm_2d_*  │      │
-                        │   │   swmm_node_*                                │      │
+                        │   │   exported C API: swmm_engine_*              │      │
                         │   └─────────────────────────────────────────────┘      │
                         └─────────────────────────────────────────────────────────┘
 ```
