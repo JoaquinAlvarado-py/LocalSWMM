@@ -488,14 +488,6 @@
             App.landCoverVisible = !App.landCoverVisible;
             btnLandCover.classList.toggle('toggled', App.landCoverVisible);
             if (window.toggleLandCoverLayer) window.toggleLandCoverLayer(App.landCoverVisible);
-            if (App.landCoverVisible && Net.mesh2D.length > 0 && window.LandCoverModule && App.map) {
-                const classification = window.LandCoverModule.classifyMeshCells(App.map, Net.mesh2D);
-                if (window.refreshNetworkData) window.refreshNetworkData();
-                renderPropsPanel();
-                if (window.showResultsWarning) {
-                    window.showResultsWarning(`Land cover classified for ${classification.classified} mesh cells.`);
-                }
-            }
         });
     }
 
@@ -880,14 +872,6 @@
             { key: 'infilDryTime', label: 'Infil. Dry Time (days)', type: 'number', step: 0.1 },
             { key: 'infilMaxInfil', label: 'Infil. Max Vol', unit: U('mm', 'in'), type: 'number', step: 0.1 },
             { key: 'curbLen', label: 'Curb length', type: 'number' }
-        ],
-        MESH2D: () => [
-            { key: 'parentSubcatch', label: 'Parent Subcatchment', type: 'text' },
-            { key: 'landCoverClass', label: 'Land Cover Class', type: 'number' },
-            { key: 'manningN', label: 'Manning N Roughness', type: 'number', step: 0.001 },
-            { key: 'depth', label: '2D Water Depth', unit: U('m', 'ft'), type: 'number', readonly: true },
-            { key: 'head', label: '2D Hydraulic Head', unit: U('m', 'ft'), type: 'number', readonly: true },
-            { key: 'velocity', label: '2D Velocity', unit: U('m/s', 'ft/s'), type: 'number', readonly: true }
         ]
     };
 
@@ -895,8 +879,7 @@
         JUNCTION: 'Junction', OUTFALL: 'Outfall', STORAGE: 'Storage Unit', DIVIDER: 'Flow Divider',
         RAINGAGE: 'Rain Gage', CONDUIT: 'Conduit', PUMP: 'Pump', WEIR: 'Weir', ORIFICE: 'Orifice',
         OUTLET: 'Outlet',
-        SUBCATCHMENT: 'Subcatchment',
-        MESH2D: '2D Surface Mesh Cell'
+        SUBCATCHMENT: 'Subcatchment'
     };
 
     function esc(s) {
@@ -1080,19 +1063,14 @@
         }
 
         const propId = document.getElementById('prop-id');
-        if (type === 'MESH2D') {
-            propId.readOnly = true;
-            document.getElementById('prop-delete').style.display = 'none';
-        } else {
-            propId.addEventListener('change', (e) => {
-                const newId = Net.renameElement(el.id, e.target.value);
-                App.selection.delete(id);
-                App.selection.add(newId);
-                window.setElementState(newId, { selected: true });
-                renderPropsPanel();
-            });
-            document.getElementById('prop-delete').addEventListener('click', () => Tools.deleteSelection());
-        }
+        propId.addEventListener('change', (e) => {
+            const newId = Net.renameElement(el.id, e.target.value);
+            App.selection.delete(id);
+            App.selection.add(newId);
+            window.setElementState(newId, { selected: true });
+            renderPropsPanel();
+        });
+        document.getElementById('prop-delete').addEventListener('click', () => Tools.deleteSelection());
     };
 
     function openRainDataEditor(seriesName) {

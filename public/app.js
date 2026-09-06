@@ -69,7 +69,7 @@
                     <h3>WebGL Hardware Acceleration Required</h3>
                 </div>
                 <p class="webgl-error-msg">
-                    The 3D/2D interactive map could not render because WebGL context creation failed or hardware acceleration is disabled in your browser.
+                    The 3D interactive map could not render because WebGL context creation failed or hardware acceleration is disabled in your browser.
                 </p>
                 <div class="webgl-status-grid">
                     <div class="webgl-status-item">
@@ -189,7 +189,6 @@
         nodesVisible: true,
         linksVisible: true,
         subcatchmentsVisible: true,
-        mesh2DVisible: true,
         is3D: false,
         warningsVisible: true,
         selection: new Set(),      // selected element ids
@@ -239,16 +238,6 @@
         ['!=', ['feature-state', 'resultColor'], null], ['feature-state', 'resultColor'],
         base];
 
-    // Once a 2D result is active, an unpainted cell must not fall back to the
-    // pre-result mesh blue. This keeps invalid/dry result cells transparent.
-    function set2DResultLayerMode(active) {
-        const layer = map.getLayer('swmm-2d-mesh-fill');
-        if (!layer) return;
-        try {
-            map.setPaintProperty('swmm-2d-mesh-fill', 'fill-color',
-                resultOr(active ? 'rgba(0,0,0,0)' : '#90caf9'));
-        } catch (e) { }
-    }
     // ---------- Network layers ----------
     function ensureNetworkLayers() {
         // Draft (in-progress drawing) source
@@ -385,7 +374,6 @@
         }
         (window.App.importedLayers || []).forEach(addConstraintLayer);
 
-        set2DResultLayerMode(!!window.App.results2D);
         applyResultStylingIfAny();
     }
 
@@ -395,8 +383,6 @@
         nodesSrc.setData(Net.nodesGeoJSON());
         map.getSource('swmm-links').setData(Net.linksGeoJSON());
         map.getSource('swmm-subcatchments').setData(Net.subcatchmentsGeoJSON());
-        const meshSrc = map.getSource('swmm-2d-mesh');
-        if (meshSrc) meshSrc.setData(Net.mesh2DGeoJSON());
         const constraintNames = new Set((window.App.importedLayers || []).map(l => 'constraint-' + l.name));
         const staleConstraints = new Set();
         ((map.getStyle() && map.getStyle().layers) || []).filter(l => l.id.indexOf('constraint-') === 0 && !constraintNames.has(l.id.replace(/-(line|fill|point)$/, ''))).forEach(l => { staleConstraints.add(l.id.replace(/-(line|fill|point)$/, '')); if (map.getLayer(l.id)) map.removeLayer(l.id); });
@@ -409,8 +395,8 @@
     window.refreshNetworkData = refreshNetworkData;
 
     // Incremental refresh for node moves: Net patches its cached GeoJSON in
-    // place, so we only re-send the nodes + links sources (subcatchments and
-    // mesh are untouched by a move). Throttled to one setData per rAF so
+    // place, so we only re-send the nodes + links sources (subcatchments are
+    // untouched by a move). Throttled to one setData per rAF so
     // dragging costs at most ~60 updates/s regardless of mousemove rate.
     let moveRefreshQueued = false;
     function refreshNetworkDataForMove() {
@@ -429,7 +415,6 @@
         if (Net.getNode(id)) return 'swmm-nodes';
         if (Net.getLink(id)) return 'swmm-links';
         if (Net.getSubcatchment(id)) return 'swmm-subcatchments';
-        if (Net._meshCell(id)) return 'swmm-2d-mesh';
         return null;
     }
 
@@ -548,10 +533,6 @@
 
     // ---------- DEM Terrain Sampling Functions ----------
     window.sampleDEMElevationAsync = async function (lngLat) {
-        if (window.App && window.App.mesh2DTerrainSampler && window.App.mesh2DTerrainSampler.sampleLngLat) {
-            const sampled = window.App.mesh2DTerrainSampler.sampleLngLat(lngLat);
-            if (Number.isFinite(sampled)) return sampled;
-        }
         if (!map) return null;
         const demSelect = document.getElementById('dem-source-select');
         const apiKeyInput = document.getElementById('opentopo-api-key');
@@ -719,12 +700,6 @@
     }
     window.applySubcatchmentsVisibility = applySubcatchmentsVisibility;
 
-    function applyMesh2DVisibility() {
-        applyLayerVisibility('swmm-2d-mesh-fill', window.App.mesh2DVisible);
-        applyLayerVisibility('swmm-2d-mesh-line', window.App.mesh2DVisible);
-    }
-    window.applyMesh2DVisibility = applyMesh2DVisibility;
-
     // ---------- Style switching ----------
     window.setMapStyle = function (styleKey) {
         window.App.currentStyle = styleKey;
@@ -827,7 +802,6 @@
         model.nodes.forEach(n => { n.lngLat = fn(n.lngLat); });
         model.links.forEach(l => { l.vertices = (l.vertices || []).map(fn); });
         model.subcatchments.forEach(s => { s.ring = s.ring.map(fn); });
-        (model.mesh2D || []).forEach(m => { m.ring = (m.ring || []).map(fn); });
     }
 
     function normalizeLocalCoords(model) {
@@ -841,7 +815,6 @@
         };
         model.nodes.forEach(n => scan(n.lngLat));
         model.subcatchments.forEach(s => s.ring.forEach(scan));
-        (model.mesh2D || []).forEach(m => (m.ring || []).forEach(scan));
         if (!isFinite(minX)) return;
 
         const center = map.getCenter();
@@ -893,13 +866,8 @@
                 nodes: model.nodes || [],
                 links: model.links || [],
                 subcatchments: model.subcatchments || [],
-                // loadState() resets mesh2D from the state it is given, so
-                // omitting this both dropped an imported [2D_CELLS] mesh and
-                // wiped whatever mesh was already loaded
-                mesh2D: model.mesh2D || [],
                 timeseries: model.timeseries || {},
                 rawSections: model.rawSections || {},
-                mesh2DIndexed: model.mesh2DIndexed || null,
                 importedLayers: model.importedLayers || []
             };
             Net.loadState(state, true);
@@ -926,10 +894,6 @@
                 if (!Net.importedLayers.some(l => l.name === layer.name)) Net.importedLayers.push(layer);
             });
             window.App.importedLayers = Net.importedLayers;
-            (model.mesh2D || []).forEach(m => {
-                if (Net.findAny(m.id)) m.id = Net.nextId('MESH2D');
-                Net.mesh2D.push(m);
-            });
             if (model.timeseries) {
                 Net.timeseries = Object.assign({}, Net.timeseries, model.timeseries);
             }
@@ -938,46 +902,13 @@
         }
         window.clearSelection && window.clearSelection();
         setTimeout(() => window.fitToNetwork(), 100);
-        setTimeout(() => window.maybeAutoLoadBellingeTif && window.maybeAutoLoadBellingeTif(), 150);
-    };
-
-    // If the loaded model sits inside the Bellinge2.tif raster extent, fetch the
-    // bundled GeoTIFF and pre-select it as the 2D mesh DTM so the DEM can be
-    // used immediately without hunting for the file on disk.
-    window.maybeAutoLoadBellingeTif = async function () {
-        try {
-            if (!Net || !Net.nodes || !Net.nodes.length) return;
-            if (window.App && window.App.mesh2DBellingeTif) return; // already loaded
-            let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
-            Net.nodes.forEach(n => {
-                if (!n.lngLat) return;
-                minLng = Math.min(minLng, n.lngLat[0]); maxLng = Math.max(maxLng, n.lngLat[0]);
-                minLat = Math.min(minLat, n.lngLat[1]); maxLat = Math.max(maxLat, n.lngLat[1]);
-            });
-            // Bellinge2.tif extent (EPSG:4326), with a small tolerance margin.
-            const inBellinge = minLng >= 10.20 && maxLng <= 10.43 && minLat >= 55.29 && maxLat <= 55.41;
-            if (!inBellinge) return;
-            const res = await fetch('./sample_models/Bellinge2.tif');
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            const buffer = await res.arrayBuffer();
-            const tif = { name: 'Bellinge2.tif', arrayBuffer: () => Promise.resolve(buffer) };
-            window.App.mesh2DBellingeTif = tif;
-            window.App.mesh2DGeoTiffFile = tif;
-            window.App.mesh2DGeoTiffName = 'Bellinge2.tif';
-            console.info('[2D Mesh] Bellinge model detected — bundled Bellinge2.tif DEM is ready for 2D mesh generation.');
-            if (window.showResultsWarning) {
-                window.showResultsWarning('Bellinge model detected — the bundled Bellinge2.tif DEM is now pre-selected for 2D mesh generation. Open "Generate 2D Mesh" and press Generate.');
-            }
-        } catch (err) {
-            console.warn('Could not auto-load bundled Bellinge2.tif:', err);
-        }
     };
 
     // WASM simulation run
     let swmmModulePromise = null;
     function getSwmmModule() {
         if (!swmmModulePromise) {
-            const factory = (typeof createModule === 'function') ? createModule : (typeof createOpenSwmm2D === 'function' ? createOpenSwmm2D : null);
+            const factory = (typeof createModule === 'function') ? createModule : null;
             if (!factory) {
                 return Promise.reject(new Error('SWMM WASM engine not found (swmm6wasm.js missing).'));
             }
@@ -1078,7 +1009,6 @@
     // One persistent worker: it fetches + compiles the engine binary once
     // (started at page load, below) and each run only re-instantiates it.
     let simWorker = null;
-    let sim2DWorker = null;
     function getSimWorker() {
         if (!simWorker) {
             simWorker = new Worker('simWorker.js?v=' + (typeof BUILD_STAMP !== 'undefined' ? BUILD_STAMP : Date.now()));
@@ -1156,10 +1086,6 @@
         if (simWorker) {
             try { simWorker.terminate(); } catch (e) { }
             simWorker = null;
-        }
-        if (sim2DWorker) {
-            try { sim2DWorker.terminate(); } catch (e) { }
-            sim2DWorker = null;
         }
         hideRunStatusModals();
         window.hideTopProgress(false);
@@ -1414,27 +1340,7 @@
             window.showResultsWarning('The network needs at least one outfall node.');
             return;
         }
-        const has2DMesh = Net.mesh2D.length > 0;
-        if (has2DMesh && (Net.units === 'US' || (Net.options && Net.options.FLOW_UNITS && ['CFS', 'GPM', 'MGD', 'IMGD', 'AFD'].includes(Net.options.FLOW_UNITS.toUpperCase())))) {
-            window.showResultsWarning('2D simulation currently requires SI units (meters). Please change project units to SI in project settings before running 2D.');
-            return;
-        }
-        const baseInpText = window.inpExporter.generateInp(Net);
-        let meshInput2D = null;
-        if (has2DMesh) {
-            if (!window.Mesh2DInp) {
-                window.showResultsWarning('The OpenSWMM 2D mesh serializer is not loaded. Reload the application and try again.');
-                return;
-            }
-            try {
-                meshInput2D = window.Mesh2DInp.buildInput(baseInpText, Net.mesh2D, map);
-            } catch (error) {
-                window.showResultsWarning('Cannot prepare the 2D model: ' + error.message);
-                return;
-            }
-        }
-
-        const inpText = meshInput2D ? meshInput2D.inp : baseInpText;
+        const inpText = window.inpExporter.generateInp(Net);
         btnRun.disabled = true;
         btnRun.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg> Running…';
         
@@ -1449,47 +1355,27 @@
 
         try {
             let result;
-            if (has2DMesh) {
-                if (runStatusModal) runStatusModal.classList.remove('hidden');
-                updateRunStatusUI(5, 0, '00:00');
-                result = await run2DSimulationInWorker(inpText, meshInput2D.triangleIds, meshInput2D.meshFile);
-                updateRunStatusUI(100, 0, '00:00');
-                apply2DResults(result);
-                window.App.outData = null;
-                window.App.lastRunReport = result.report || '';
-                // Display full 2D results panel with animation timeline
-                if (window.display2DResults) {
-                    window.display2DResults(result);
-                } else {
-                    const continuity = result.diagnostics && result.diagnostics.massBalance
-                        ? result.diagnostics.massBalance.continuityError
-                        : null;
-                    const suffix = Number.isFinite(continuity) ? ` Continuity error: ${(continuity * 100).toFixed(3)}%.` : '';
-                    window.showResultsWarning(`OpenSWMM 1D-2D simulation complete: ${meshInput2D.triangleCount} cells, ${result.frames.length} result frames.${suffix}`);
-                }
-            } else {
-                try {
-                    // Preferred: run in a worker so the UI stays interactive
-                    result = await runSimulationInWorker(inpText, targetDuration);
-                } catch (workerErr) {
-                    console.warn('Simulation worker unavailable, running on main thread:', workerErr);
-                    result = await runSimulationOnMainThread(inpText);
-                }
-
-                const { rpt, outBuffer } = result;
-
-                if (outBuffer && window.SWMMOutParser) {
-                    const outParser = new window.SWMMOutParser(outBuffer);
-                    outParser.parse();
-                    window.App.outData = outParser;
-                } else {
-                    window.App.outData = null;
-                }
-
-                window.App.lastRunReport = rpt;
-                console.log(rpt);
-                window.displayResults(rpt, window.App.outData);
+            try {
+                // Preferred: run in a worker so the UI stays interactive
+                result = await runSimulationInWorker(inpText, targetDuration);
+            } catch (workerErr) {
+                console.warn('Simulation worker unavailable, running on main thread:', workerErr);
+                result = await runSimulationOnMainThread(inpText);
             }
+
+            const { rpt, outBuffer } = result;
+
+            if (outBuffer && window.SWMMOutParser) {
+                const outParser = new window.SWMMOutParser(outBuffer);
+                outParser.parse();
+                window.App.outData = outParser;
+            } else {
+                window.App.outData = null;
+            }
+
+            window.App.lastRunReport = rpt;
+            console.log(rpt);
+            window.displayResults(rpt, window.App.outData);
 
             // Save actual duration for subsequent runs
             window.App.lastSimDuration = Date.now() - simStartTime;

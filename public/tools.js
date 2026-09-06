@@ -41,7 +41,7 @@
     const INTERACTIVE_LAYERS = [
         'swmm-nodes-layer', 'swmm-links-hit', 'swmm-links-layer',
         'swmm-3d-nodes', 'swmm-3d-outfalls', 'swmm-3d-conduits', 'swmm-3d-links-other',
-        'swmm-subcatchments-fill', 'swmm-2d-mesh-fill'
+        'swmm-subcatchments-fill'
     ];
 
     const Tools = {
@@ -132,18 +132,6 @@
                         const capPct = (capacity * 100).toFixed(1);
                         html += `<tr class="${isNearFull ? 'rp-row-warn' : ''}"><td class="rp-label">Capacity</td><td class="rp-value">${capPct}</td><td class="rp-unit">%</td></tr>`;
                     }
-                    html += `</table>`;
-                    hasData = true;
-                }
-            } else if (ts && feat.source === 'swmm-2d-mesh' && ts.nodes && ts.nodes[elId]) {
-                // 2-D mesh cell results
-                const data = ts.nodes[elId];
-                if (data.depth && data.depth[step] !== undefined) {
-                    html += `<div class="rp-header"><span class="rp-id">${elId}</span><span class="rp-type">2D CELL</span></div>`;
-                    html += `<table class="rp-table">`;
-                    html += `<tr><td class="rp-label">Water Depth</td><td class="rp-value">${data.depth[step].toFixed(3)}</td><td class="rp-unit">${depthU}</td></tr>`;
-                    if (data.head && data.head[step] !== undefined)
-                        html += `<tr><td class="rp-label">Hyd. Head</td><td class="rp-value">${data.head[step].toFixed(3)}</td><td class="rp-unit">${headU}</td></tr>`;
                     html += `</table>`;
                     hasData = true;
                 }

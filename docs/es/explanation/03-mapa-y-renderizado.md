@@ -15,7 +15,6 @@ Fuentes y capas (fuente → ids de capa):
 | Fuente | Capas | Propósito |
 |---|---|---|
 | `draft` | `draft-line/fill/points` | Geometría fantasma mientras se dibuja |
-| `swmm-2d-mesh` | `swmm-2d-mesh-fill`, `swmm-2d-mesh-line` | Celdas de la malla 2D (relleno coloreado por resultados) |
 | `swmm-subcatchments` | `swmm-subcatchments-fill`, `swmm-subcatchments-line` (discontinua) | Áreas de drenaje |
 | `swmm-links` | `swmm-links-hit` (invisible 14 px), `swmm-links-layer`, `swmm-links-arrows` | Enlaces + flechas de flujo |
 | `swmm-nodes` | `swmm-nodes-layer` (círculo, `promoteId:'id'`), `swmm-nodes-labels` | Nodos + etiquetas |
@@ -34,4 +33,3 @@ Fuentes y capas (fuente → ids de capa):
 - **Street View:** `street_view_overlay.js` (pegman + overlay), requiere `GOOGLE_MAPS_API_KEY`.
 - **Búsqueda OSM:** `#osm-search` geocodifica vía OpenStreetMap.
 - **Deslizador de tiempo:** `AnimationUI` (`ui.js:1086-1152`) — `setRange(maxSteps)`, `updateDisplay()` (llama a `ResultStyling.applyToMapForStep`, `Tools.updateHoverPopup`, `ProfilePlot.update`, `StreetViewOverlay.scheduleRedraw`), `play()` (bucle rAF a 500 ms/velocidad).
-- **Overlays 2D:** isolíneas/bandas/flechas GeoJSON (`mesh2dRender.js`) y una capa custom Gouraud WebGL2 (`meshGlLayer.js`) — ver el subsistema de malla 2D y WebGPU.
