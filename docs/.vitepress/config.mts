@@ -5,6 +5,9 @@ export default defineConfig({
   description: "1D hydraulic modeling and simulation in the browser",
   base: "/docs/",
   ignoreDeadLinks: true,
+  markdown: {
+    math: true
+  },
   themeConfig: {
     nav: [
       { text: 'Home', link: '/' },
