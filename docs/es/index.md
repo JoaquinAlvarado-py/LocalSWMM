@@ -1,6 +1,6 @@
 # Documentación de LocalSWMM
 
-Local SWMM es una aplicación web para modelado y simulación hidráulica 1D+2D de redes de alcantarillado pluvial y sanitario. El motor (HydroCouple OpenSWMM, compilado a WebAssembly) corre completamente en el navegador.
+Local SWMM es una aplicación web para modelado y simulación hidráulica 1D de redes de alcantarillado pluvial y sanitario. El motor (HydroCouple OpenSWMM, compilado a WebAssembly) corre completamente en el navegador.
 
 Esta documentación está organizada con [Diátaxis](https://diataxis.fr/), que divide la documentación según la necesidad del usuario en cuatro cuadrantes:
 
@@ -9,7 +9,7 @@ Esta documentación está organizada con [Diátaxis](https://diataxis.fr/), que 
 | [Tutoriales](tutorials/) | aprender | Quieres aprender a construir y simular redes, paso a paso, desde cero. |
 | [Guías de cómo hacer](how-to/) | hacer | Quieres completar una tarea concreta: ejecutar la app, configurarla, compilar desde fuente, desplegar, resolver un problema. |
 | [Referencia](reference/) | conocer | Necesitas un dato exacto: formatos de datos, opciones del motor, glosario. |
-| [Explicación](explanation/) | comprender | Quieres entender *cómo y por qué* el motor calcula lo que calcula: arquitectura, hidráulica 1D, acoplamiento 2D, modificaciones del motor. |
+| [Explicación](explanation/) | comprender | Quieres entender *cómo y por qué* el motor calcula lo que calcula: arquitectura, hidráulica 1D, modificaciones del motor. |
 
 ## Orientación
 

@@ -78,7 +78,7 @@ Reporte de texto del motor / archivos binarios de resultados.
 
 ## Corrida (Run)
 
-Una ejecución completa de un modelo de simulación (1D+2D) con ciclo de vida: encolada → corriendo → terminada (o fallida). Se identifica por un ID y es lo que el usuario dispara con Run.
+Una ejecución completa de un modelo de simulación (1D) con ciclo de vida: encolada → corriendo → terminada (o fallida). Se identifica por un ID y es lo que el usuario dispara con Run.
 _Evitar_: job, run, simulación (la simulación es el fenómeno modelado; la corrida es la ejecución).
 
 ## Progreso de corrida (Run progress)

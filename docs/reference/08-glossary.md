@@ -78,7 +78,7 @@ Engine text report / binary results files.
 
 ## Run (Corrida)
 
-A complete execution of a simulation model (1D+2D) with lifecycle: queued → running → finished (or failed). It is identified by an ID and is what the user triggers with Run.
+A complete execution of a simulation model (1D) with lifecycle: queued → running → finished (or failed). It is identified by an ID and is what the user triggers with Run.
 _Avoid_: job, run, simulation (the simulation is the modeled phenomenon; the run is the execution).
 
 ## Run progress (Progreso de corrida)
