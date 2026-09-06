@@ -2,6 +2,13 @@
   "name": "swmm-3d-web-ui",
   "private": true,
   "scripts": {
-    "test:3d": "node --test scripts/test-network3d.mjs"
+    "test:3d": "node --test scripts/test-network3d.mjs",
+    "docs:build": "vitepress build docs",
+    "docs:dev": "vitepress dev docs",
+    "docs:preview": "vitepress preview docs",
+    "build": "vitepress build docs"
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.4"
   }
 }
