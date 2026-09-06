@@ -15,5 +15,6 @@ build/
 public/webgpu/fixtures/
 
 # VitePress build artifacts
+.vitepress/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
