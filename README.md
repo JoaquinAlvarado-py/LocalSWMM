@@ -33,13 +33,13 @@ Follow these steps if you want to start the application on your computer instead
    ```
 3. Navigate to the project directory:
    ```bash
-   cd SWMM_3D_Web_UI
+   cd LocalSWMM
    ```
 4. Start the local web server:
    ```bash
    python server.py
    ```
-5. Open your web browser and go to `http://localhost:8000`.
+5. Open your web browser and open the given localhost address by the web server.
 
 ## User Interface Overview
 
