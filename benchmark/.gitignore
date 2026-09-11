@@ -1,0 +1,5 @@
+models/ 
+out/ 
+*.out 
+*.rpt 
+*.log
