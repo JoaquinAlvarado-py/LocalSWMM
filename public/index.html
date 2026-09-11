@@ -19,7 +19,7 @@
     <!-- Mapbox GL JS CSS -->
     <link href="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.css" rel="stylesheet" crossorigin="anonymous" />
     <!-- Local Stylesheet -->
-    <link rel="stylesheet" href="styles.css?v=4">
+    <link rel="stylesheet" href="styles.css?v=5">
     <!-- Warm the HTTP cache for the simulation engine binary (fetched by simWorker.js) -->
     <link rel="preload" href="swmm6wasm.wasm?v=dev" as="fetch" type="application/wasm" crossorigin="anonymous">
 </head>
@@ -242,6 +242,18 @@
                                 <button id="btn-toggle-hoverstats" class="ms-switch toggled" title="Toggle object hover status popups"></button>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Uploaded Layers / GIS-CAD manager (collapsed by default) -->
+                <div class="ms-section" data-ms-expanded="false">
+                    <button class="ms-section-header" type="button">
+                        <svg class="ms-chevron" viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>
+                        <span>Uploaded Layers (GIS / CAD)</span>
+                    </button>
+                    <div class="ms-section-body ms-collapsed">
+                        <p class="ms-hint" id="uploaded-layers-empty">No CAD or shapefile overlays yet — import them via Load / Import.</p>
+                        <div id="uploaded-layers-list"></div>
                     </div>
                 </div>
 
@@ -574,7 +586,8 @@
                 </h2>
                 <div class="opt-tabs">
                     <button type="button" class="opt-tab-btn active" id="opt-tab-btn-gen" data-tab="gen">General &amp; Hydraulics</button>
-                    <button type="button" class="opt-tab-btn" id="opt-tab-btn-fv" data-tab="fv">Advanced FV Options</button>
+                    <!-- FV options hidden until the Finite Volume solver ships (feature flag: remove `hidden` to re-enable) -->
+                    <button type="button" class="opt-tab-btn" id="opt-tab-btn-fv" data-tab="fv" hidden>Advanced FV Options</button>
                 </div>
             </div>
             
@@ -592,7 +605,8 @@
                                     <option value="KINWAVE">Kinematic Wave</option>
                                     <option value="DYNWAVE">Dynamic Wave</option>
                                     <option value="STEADY">Steady</option>
-                                    <option value="FV">Finite Volume (FV)</option>
+                                    <!-- hidden (still settable programmatically for models that already use FV) -->
+                                    <option value="FV" hidden>Finite Volume (FV)</option>
                                 </select>
                             </div>
                             <div class="opt-field">
@@ -668,7 +682,7 @@
                             </div>
                             <div class="opt-field">
                                 <label for="opt-minimum-step">Minimum Step (sec)</label>
-                                <input type="number" id="opt-minimum-step" class="tb-input" step="any" placeholder="0.5">
+                                <input type="text" id="opt-minimum-step" class="tb-input" inputmode="decimal" placeholder="0.5" title="Decimal separator: dot (e.g. 0.5)">
                             </div>
                         </div>
                     </div>
@@ -830,7 +844,8 @@
                 <strong>UTM / Projected (EPSG code)</strong>
             </label>
             <div id="utm-options" class="modal-indent hidden">
-                <input type="text" id="epsg-code-input" value="EPSG:32719" placeholder="e.g. EPSG:32719">
+                <select id="epsg-select" class="tb-select" style="width:100%;"></select>
+                <input type="text" id="epsg-code-input" value="EPSG:32719" placeholder="e.g. EPSG:32719" class="hidden" style="margin-top:6px;">
                 <small>Coordinates will be reprojected to the web map.</small>
             </div>
             <label class="modal-radio">
@@ -940,26 +955,26 @@
 
     <!-- Application -->
     <script src="inpParser.js?v=14"></script>
-    <script src="inpExporter.js?v=14"></script>
+    <script src="inpExporter.js?v=15"></script>
     <script src="network.js?v=14"></script>
     <script src="swmmOutParser.js?v=14"></script>
     <script src="street_view_overlay.js?v=14"></script>
     <script src="swmm6wasm.js?v=14"></script>
-    <script src="results.js?v=16"></script>
-    <script src="importers.js?v=14"></script>
-    <script src="app.js?v=15"></script>
+    <script src="results.js?v=17"></script>
+    <script src="importers.js?v=15"></script>
+    <script src="app.js?v=16"></script>
     <script src="network3D.js?v=19"></script>
     <script src="tools.js?v=14"></script>
     <script src="profile.js?v=14"></script>
     <script src="nodeSchematic.js?v=1"></script>
     <script src="plot.js?v=14"></script>
-    <script src="layerTree.js?v=15"></script>
+    <script src="layerTree.js?v=16"></script>
     <script src="landcover.js?v=14"></script>
     <script src="curves.js?v=14"></script>
     <script src="lid.js?v=14"></script>
     <script src="quality.js?v=14"></script>
     <script src="aquifer.js?v=14"></script>
     <script src="snowpack.js?v=14"></script>
-    <script src="ui.js?v=14"></script>
+    <script src="ui.js?v=15"></script>
 </body>
 </html>

@@ -123,7 +123,7 @@ class InpExporter {
         if (opt.andersonAccel) emitOpt('ANDERSON_ACCEL', opt.andersonAccel);
         if (opt.threads) emitOpt('THREADS', opt.threads);
         if (opt.surchargeMethod) emitOpt('SURCHARGE_METHOD', opt.surchargeMethod);
-        if (opt.minimumStep) emitOpt('MINIMUM_STEP', opt.minimumStep);
+        if (opt.minimumStep) emitOpt('MINIMUM_STEP', String(opt.minimumStep).replace(',', '.'));
         if (opt.courantFactor) emitOpt('COURANT_FACTOR', opt.courantFactor);
         // engine options pass through unchanged
         for (const [key, value] of Object.entries(raw)) {

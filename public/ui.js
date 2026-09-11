@@ -160,7 +160,8 @@
         setVal('opt-surcharge-method', opt.surchargeMethod);
         setVal('opt-infiltration', opt.infiltration);
         setVal('opt-routing-step', opt.routingStep);
-        setVal('opt-minimum-step', opt.minimumStep);
+        // plain-text field: always show dot decimals regardless of OS locale
+        setVal('opt-minimum-step', opt.minimumStep != null ? String(opt.minimumStep).replace(',', '.') : '');
         setVal('opt-inertial-damping', opt.inertialDamping);
         setVal('opt-courant-factor', opt.courantFactor);
 
@@ -242,9 +243,21 @@
         saveField('opt-surcharge-method', 'surchargeMethod');
         saveField('opt-infiltration', 'infiltration');
         saveField('opt-routing-step', 'routingStep');
-        saveField('opt-minimum-step', 'minimumStep');
         saveField('opt-inertial-damping', 'inertialDamping');
         saveField('opt-courant-factor', 'courantFactor');
+
+        // Minimum Step: normalize comma decimals to dots (SWMM/engine expects 0.5)
+        const minStepEl = document.getElementById('opt-minimum-step');
+        if (minStepEl) {
+            const minStepVal = minStepEl.value.trim().replace(',', '.');
+            if (minStepVal !== '' && (isNaN(Number(minStepVal)) || Number(minStepVal) <= 0)) {
+                alert('Minimum Step must be a positive number — use a dot as the decimal separator (e.g. 0.5).');
+                minStepEl.focus();
+                return;
+            }
+            minStepEl.value = minStepVal;
+            saveField('opt-minimum-step', 'minimumStep');
+        }
 
         delete Net.options.rdiiDecay;
         
@@ -375,6 +388,9 @@
             palette.classList.add('collapsed');
             reopenLeft.classList.remove('hidden');
         }
+        // collapse the grid column so the map actually widens, not just hides
+        const appGrid = document.getElementById('app-grid');
+        if (appGrid) appGrid.classList.toggle('palette-collapsed', !visible);
         setTimeout(() => { if (window.map && typeof window.map.resize === 'function') window.map.resize(); }, 50);
     }
     btnCollapseLeft.addEventListener('click', () => setLeftPalette(false));
@@ -491,6 +507,21 @@
         });
     }
 
+    // Transient status toast (bottom center) — for notices that must not
+    // disturb whatever the Results/Report panel is currently showing.
+    window.showToast = function (msg, ms = 2800) {
+        let toast = document.getElementById('app-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'app-toast';
+            document.body.appendChild(toast);
+        }
+        toast.textContent = msg;
+        toast.classList.add('visible');
+        clearTimeout(toast._timer);
+        toast._timer = setTimeout(() => toast.classList.remove('visible'), ms);
+    };
+
     const btnLock = document.getElementById('btn-lock-network');
     const lockText = document.getElementById('lock-text');
     if (btnLock) {
@@ -499,8 +530,10 @@
             if (window.App) window.App.isLocked = isLocked;
             btnLock.classList.toggle('active', isLocked);
             if (lockText) lockText.textContent = isLocked ? 'Locked' : 'Lock';
-            if (window.showResultsWarning) {
-                window.showResultsWarning(isLocked ? 'Project locked: Node movement disabled.' : 'Project unlocked: Node movement enabled.');
+            // notify without touching the Results panel (showResultsWarning
+            // replaces the results dashboard)
+            if (window.showToast) {
+                window.showToast(isLocked ? 'Project locked: Node movement disabled.' : 'Project unlocked: Node movement enabled.');
             }
         });
     }

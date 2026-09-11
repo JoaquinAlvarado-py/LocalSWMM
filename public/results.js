@@ -607,7 +607,25 @@
     window.showResultsWarning = function (msg) {
         parkCategorySelect();
         const container = document.getElementById('results-content');
-        container.innerHTML = `<div class="results-warning">${esc(msg)}</div>`;
+        // When simulation results are on screen, do NOT wipe them — show a
+        // transient banner above the dashboard instead. (Clicking e.g. Lock
+        // used to erase the whole results view.)
+        if (window.App && window.App.outData && container && container.childElementCount) {
+            const body = document.getElementById('results-body');
+            let banner = document.getElementById('results-banner');
+            if (!banner) {
+                banner = document.createElement('div');
+                banner.id = 'results-banner';
+                banner.className = 'results-warning';
+                body.insertBefore(banner, container);
+            }
+            banner.textContent = msg;
+            banner.classList.remove('hidden');
+            clearTimeout(banner._timer);
+            banner._timer = setTimeout(() => banner.classList.add('hidden'), 6000);
+        } else {
+            container.innerHTML = `<div class="results-warning">${esc(msg)}</div>`;
+        }
         if (window.openResultsPanel) window.openResultsPanel();
     };
 
@@ -735,6 +753,8 @@
         if (sparkObserver) sparkObserver.disconnect();
         const select = parkCategorySelect();
         if (select) select.classList.add('hidden');
+        const banner = document.getElementById('results-banner');
+        if (banner) banner.classList.add('hidden');
         const container = document.getElementById('results-content');
         if (container) container.innerHTML = '';
         const hint = document.getElementById('results-hint');

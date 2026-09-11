@@ -371,6 +371,7 @@
         // Master plan overlay
         if (window.App.masterPlan && !map.getSource('master-plan')) {
             addMasterPlanLayers(window.App.masterPlan);
+            applyMasterPlanPaint();
         }
         (window.App.importedLayers || []).forEach(addConstraintLayer);
 
@@ -453,10 +454,14 @@
     function addConstraintLayer(layer) {
         if (!layer || !layer.name || !layer.geojson || map.getSource('constraint-' + layer.name)) return;
         var id = 'constraint-' + layer.name;
+        var st = layer.style || {};
+        var color = st.color || '#6b7280';
+        var op = (st.opacity === undefined || st.opacity === null) ? 1 : Number(st.opacity);
+        var vis = st.visible === false ? 'none' : 'visible';
         map.addSource(id, { type: 'geojson', data: layer.geojson });
-        map.addLayer({ id: id + '-line', type: 'line', source: id, paint: { 'line-color': '#6b7280', 'line-width': 1.5, 'line-opacity': 0.65 } }, 'swmm-subcatchments-fill');
-        map.addLayer({ id: id + '-fill', type: 'fill', source: id, filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#9ca3af', 'fill-opacity': 0.08 } }, 'swmm-subcatchments-fill');
-        map.addLayer({ id: id + '-point', type: 'circle', source: id, filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-color': '#6b7280', 'circle-radius': 3, 'circle-opacity': 0.75 } }, 'swmm-subcatchments-fill');
+        map.addLayer({ id: id + '-line', type: 'line', source: id, layout: { visibility: vis }, paint: { 'line-color': color, 'line-width': 1.5, 'line-opacity': 0.65 * op } }, 'swmm-subcatchments-fill');
+        map.addLayer({ id: id + '-fill', type: 'fill', source: id, layout: { visibility: vis }, filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': color, 'fill-opacity': 0.08 * op } }, 'swmm-subcatchments-fill');
+        map.addLayer({ id: id + '-point', type: 'circle', source: id, layout: { visibility: vis }, filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-color': color, 'circle-radius': 3, 'circle-opacity': 0.75 * op } }, 'swmm-subcatchments-fill');
     }
     window.addConstraintLayer = addConstraintLayer;
 
@@ -467,6 +472,98 @@
         });
         if (map.getSource('master-plan')) map.removeSource('master-plan');
         if (geojson) addMasterPlanLayers(geojson);
+        if (window.LayerTree && window.LayerTree.refresh) window.LayerTree.refresh();
+    };
+
+    // ---------- Uploaded overlay layer management (dim / hide / recolor) ----------
+    function overlayDefaults(style) {
+        style = style || {};
+        return {
+            visible: style.visible !== false,
+            opacity: (style.opacity === undefined || style.opacity === null) ? 1 : Number(style.opacity),
+            color: style.color || '#6b7280',
+        };
+    }
+
+    function applyMasterPlanPaint() {
+        var st = overlayDefaults(window.App.masterPlanStyle);
+        var vis = st.visible ? 'visible' : 'none';
+        if (map.getLayer('master-plan-line')) {
+            map.setLayoutProperty('master-plan-line', 'visibility', vis);
+            map.setPaintProperty('master-plan-line', 'line-color', st.color);
+            map.setPaintProperty('master-plan-line', 'line-opacity', 0.7 * st.opacity);
+        }
+        if (map.getLayer('master-plan-fill')) {
+            map.setLayoutProperty('master-plan-fill', 'visibility', vis);
+            map.setPaintProperty('master-plan-fill', 'fill-color', st.color);
+            map.setPaintProperty('master-plan-fill', 'fill-opacity', 0.15 * st.opacity);
+        }
+        if (map.getLayer('master-plan-points')) {
+            map.setLayoutProperty('master-plan-points', 'visibility', vis);
+            map.setPaintProperty('master-plan-points', 'circle-color', st.color);
+            map.setPaintProperty('master-plan-points', 'circle-opacity', 0.7 * st.opacity);
+        }
+    }
+
+    function persistImportedLayers() {
+        if (window.Net) {
+            window.Net.importedLayers = window.App.importedLayers || [];
+            window.Net.commit();
+        }
+    }
+
+    window.updateOverlayLayer = function (name, patch) {
+        var layer = (window.App.importedLayers || []).find(l => l.name === name);
+        if (!layer) return;
+        layer.style = Object.assign(overlayDefaults(layer.style), patch);
+        var id = 'constraint-' + name;
+        var st = overlayDefaults(layer.style);
+        var vis = st.visible ? 'visible' : 'none';
+        if (map.getLayer(id + '-line')) {
+            map.setLayoutProperty(id + '-line', 'visibility', vis);
+            map.setPaintProperty(id + '-line', 'line-color', st.color);
+            map.setPaintProperty(id + '-line', 'line-opacity', 0.65 * st.opacity);
+        }
+        if (map.getLayer(id + '-fill')) {
+            map.setLayoutProperty(id + '-fill', 'visibility', vis);
+            map.setPaintProperty(id + '-fill', 'fill-color', st.color);
+            map.setPaintProperty(id + '-fill', 'fill-opacity', 0.08 * st.opacity);
+        }
+        if (map.getLayer(id + '-point')) {
+            map.setLayoutProperty(id + '-point', 'visibility', vis);
+            map.setPaintProperty(id + '-point', 'circle-color', st.color);
+            map.setPaintProperty(id + '-point', 'circle-opacity', 0.75 * st.opacity);
+        }
+        persistImportedLayers();
+    };
+
+    window.removeOverlayLayer = function (name) {
+        window.App.importedLayers = (window.App.importedLayers || []).filter(l => l.name !== name);
+        var id = 'constraint-' + name;
+        [id + '-line', id + '-fill', id + '-point'].forEach(l => { if (map.getLayer(l)) map.removeLayer(l); });
+        if (map.getSource(id)) map.removeSource(id);
+        persistImportedLayers();
+        if (window.LayerTree && window.LayerTree.refresh) window.LayerTree.refresh();
+    };
+
+    window.zoomToOverlayLayer = function (name) {
+        var layer = (window.App.importedLayers || []).find(l => l.name === name);
+        if (layer && window.Importers && window.Importers.fitToGeoJSON) window.Importers.fitToGeoJSON(layer.geojson);
+    };
+
+    window.updateMasterPlanStyle = function (patch) {
+        window.App.masterPlanStyle = Object.assign(overlayDefaults(window.App.masterPlanStyle), patch);
+        applyMasterPlanPaint();
+    };
+
+    window.zoomToMasterPlan = function () {
+        if (window.App.masterPlan && window.Importers && window.Importers.fitToGeoJSON) {
+            window.Importers.fitToGeoJSON(window.App.masterPlan);
+        }
+    };
+
+    window.removeMasterPlan = function () {
+        window.setMasterPlan(null);
     };
 
     // ---------- 3D extras (terrain + buildings) ----------
@@ -774,6 +871,8 @@
 
     window.openProjectionModal = function (model) {
         pendingImportModel = model;
+        // preselect the UTM zone under the current map view
+        if (window.EpsgSuggest) window.EpsgSuggest();
         projectionModal.classList.remove('hidden');
     };
 

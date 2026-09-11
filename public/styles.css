@@ -86,6 +86,17 @@ html, body {
     grid-template-columns: var(--palette-w) 1fr 0;
 }
 
+/* When the left tool palette is hidden the grid column must collapse too,
+   otherwise the map keeps a dead 46px strip (mapbox re-fits via trackResize,
+   ui.js also calls map.resize()). */
+#app-grid.palette-collapsed {
+    grid-template-columns: 0 1fr var(--panel-w);
+}
+
+#app-grid.palette-collapsed.panel-collapsed {
+    grid-template-columns: 0 1fr 0;
+}
+
 /* TOOLBAR */
 #toolbar {
     grid-area: toolbar;
@@ -1570,6 +1581,95 @@ html, body {
     margin-bottom: 10px;
     font-weight: 500;
 }
+
+/* Transient toast for status notices that must not disturb panel content */
+#app-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 44px;
+    transform: translate(-50%, 12px);
+    background: #1e293b;
+    color: #f1f5f9;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.35);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    z-index: 3000;
+    max-width: 70vw;
+}
+
+#app-toast.visible {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+/* Overlay-layer manager rows (Map Settings → Uploaded Layers) */
+.ov-layer-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.ov-layer-row:last-child { border-bottom: none; }
+
+.ov-layer-row input[type="color"] {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 1px solid var(--border-dark);
+    border-radius: 4px;
+    background: transparent;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+
+.ov-layer-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.ov-layer-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dark);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ov-layer-meta {
+    font-size: 9px;
+    color: var(--text-light);
+}
+
+.ov-layer-row input[type="range"] {
+    flex: 0 0 52px;
+    width: 52px;
+    height: 4px;
+    accent-color: var(--accent);
+}
+
+.ov-layer-btn {
+    background: transparent;
+    border: none;
+    color: #64748b;
+    cursor: pointer;
+    padding: 2px;
+    font-size: 11px;
+    line-height: 1;
+    flex: 0 0 auto;
+}
+
+.ov-layer-btn:hover { color: var(--accent); }
+.ov-layer-btn.danger:hover { color: #d32f2f; }
+
+.ov-layer-row .ms-switch { flex: 0 0 auto; }
 
 body.hide-warnings .results-warning {
     display: none !important;

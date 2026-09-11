@@ -10,6 +10,76 @@
     const importasModal = document.getElementById('importas-modal');
     const importasInfo = document.getElementById('importas-info');
 
+    // ---------- EPSG dropdown (projection modal) ----------
+    // Fills #epsg-select with WGS84/UTM zones + common national grids and
+    // keeps the free-text #epsg-code-input in sync (handlers in app.js and
+    // below read the input's value, so both import paths stay unchanged).
+    (function initEpsgSelect() {
+        const sel = document.getElementById('epsg-select');
+        const input = document.getElementById('epsg-code-input');
+        if (!sel || !input) return;
+
+        const addGroup = (label, entries) => {
+            const og = document.createElement('optgroup');
+            og.label = label;
+            entries.forEach(([code, label2]) => {
+                const o = document.createElement('option');
+                o.value = code;
+                o.textContent = label2 ? `${label2} (${code})` : code;
+                og.appendChild(o);
+            });
+            sel.appendChild(og);
+        };
+        const zoneEntries = (base, hemi) => Array.from({ length: 60 }, (_, i) => {
+            const z = i + 1;
+            return ['EPSG:' + (base + z), `WGS 84 / UTM zone ${z}${hemi}`];
+        });
+        addGroup('WGS 84 / UTM — northern hemisphere', zoneEntries(32600, 'N'));
+        addGroup('WGS 84 / UTM — southern hemisphere', zoneEntries(32700, 'S'));
+        addGroup('Other common projected systems', [
+            ['EPSG:25832', 'ETRS89 / UTM 32N'],
+            ['EPSG:25833', 'ETRS89 / UTM 33N'],
+            ['EPSG:3116', 'MAGNA-SIRGAS / Colombia'],
+            ['EPSG:2193', 'NZGD2000 / New Zealand'],
+            ['EPSG:27700', 'OSGB 1936 / British National Grid'],
+            ['EPSG:2154', 'RGF93 / Lambert-93 (France)'],
+            ['EPSG:25830', 'ETRS89 / UTM 30N (Spain)'],
+            ['EPSG:32636', 'WGS 84 / UTM 36N (Egypt/Saudi)'],
+        ]);
+        const custom = document.createElement('option');
+        custom.value = 'custom';
+        custom.textContent = 'Custom EPSG code…';
+        sel.appendChild(custom);
+
+        sel.addEventListener('change', () => {
+            if (sel.value === 'custom') {
+                input.classList.remove('hidden');
+                input.focus();
+            } else {
+                input.classList.add('hidden');
+                input.value = sel.value;
+            }
+        });
+    })();
+
+    // Suggest the UTM zone under the current map view; call when the
+    // projection modal opens (before the user picks "UTM / Projected").
+    window.EpsgSuggest = function () {
+        const sel = document.getElementById('epsg-select');
+        const input = document.getElementById('epsg-code-input');
+        if (!sel || !input || typeof map === 'undefined' || !map.getCenter) return;
+        const c = map.getCenter();
+        let lng = c.lng;
+        while (lng < -180) lng += 360;
+        while (lng > 180) lng -= 360;
+        const zone = Math.min(60, Math.max(1, Math.floor((lng + 180) / 6) + 1));
+        const code = 'EPSG:' + ((c.lat >= 0 ? 32600 : 32700) + zone);
+        if (!sel.querySelector(`option[value="${code}"]`)) return;
+        sel.value = code;
+        input.value = code;
+        input.classList.add('hidden');
+    };
+
     function openImportAsModal(geojson, name) {
         pendingImport = { geojson, name };
         const counts = countGeoms(geojson);
@@ -42,6 +112,7 @@
                 window.Net.commit();
             }
             if (window.addConstraintLayer) window.addConstraintLayer(layer);
+            if (window.LayerTree && window.LayerTree.refresh) window.LayerTree.refresh();
             fitToGeoJSON(pendingImport.geojson);
         } else {
             importGeoJSONAsNetwork(pendingImport.geojson);
@@ -331,6 +402,8 @@
         // Build a lightweight adapter object that transformModelCoords in app.js
         // can't consume directly, so we do the projection here after modal confirm.
         const modal = document.getElementById('projection-modal');
+        // preselect the UTM zone under the current map view
+        if (window.EpsgSuggest) window.EpsgSuggest();
         modal.classList.remove('hidden');
 
         const btnConfirm = document.getElementById('btn-confirm-proj');
