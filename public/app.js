@@ -1177,43 +1177,65 @@
     }
 
     function hideRunStatusModals() {
-        if (runStatusModal) runStatusModal.classList.add('hidden');
+        if (runStatusModal) {
+            runStatusModal.classList.add('hidden');
+            const banner = runStatusModal.querySelector('.computing-text');
+            if (banner) banner.textContent = 'Computing ...';
+        }
         if (runStatusMinimized) runStatusMinimized.classList.add('hidden');
     }
 
     let simProgressTimer = null;
 
-    function parseSimDurationInDays(inpText) {
-        let startDateStr = '01/01/2000', startTimeStr = '00:00:00';
-        let endDateStr = '01/02/2000', endTimeStr = '00:00:00';
+    function formatDaysHrsMin(daysFraction) {
+        const d = Math.max(0, daysFraction || 0);
+        const days = Math.floor(d);
+        const remHoursFrac = (d - days) * 24;
+        const hours = Math.floor(remHoursFrac);
+        const minutes = Math.floor((remHoursFrac - hours) * 60);
+        const hrsMinStr = String(hours).padStart(2, '0') + ':' + String(minutes).padStart(2, '0');
+        return { days, hrsMinStr };
+    }
 
-        const lines = (inpText || '').split(/\r?\n/);
+    function parseSimDurationInDays(inpText) {
+        const opt = {};
         let inOptions = false;
-        for (let line of lines) {
-            let clean = line.replace(/;.*$/, '').trim();
-            if (clean.startsWith('[') && clean.endsWith(']')) {
-                inOptions = (clean.toUpperCase() === '[OPTIONS]');
+        for (let line of String(inpText || '').split(/\r?\n/)) {
+            line = line.replace(/;.*$/, '').trim();
+            if (!line) continue;
+            if (line.startsWith('[') && line.endsWith(']')) {
+                inOptions = (line.toUpperCase() === '[OPTIONS]');
                 continue;
             }
-            if (inOptions && clean) {
-                const parts = clean.split(/\s+/);
-                const key = (parts[0] || '').toUpperCase();
-                const val = parts.slice(1).join(' ');
-                if (key === 'START_DATE') startDateStr = val;
-                if (key === 'START_TIME') startTimeStr = val;
-                if (key === 'END_DATE') endDateStr = val;
-                if (key === 'END_TIME') endTimeStr = val;
+            if (inOptions) {
+                const parts = line.split(/\s+/);
+                opt[parts[0].toUpperCase()] = parts.slice(1).join(' ');
             }
         }
-
-        try {
-            const startMs = Date.parse(`${startDateStr} ${startTimeStr}`);
-            const endMs = Date.parse(`${endDateStr} ${endTimeStr}`);
-            if (!isNaN(startMs) && !isNaN(endMs) && endMs > startMs) {
-                return (endMs - startMs) / (1000 * 60 * 60 * 24);
+        const toMs = (d) => {
+            if (!d) return null;
+            const p = String(d).split(/[/-]/).map(Number);
+            if (p.length !== 3 || p.some(isNaN)) return null;
+            if (p[0] > 1000) return Date.UTC(p[0], p[1] - 1, p[2]);
+            return Date.UTC(p[2], p[0] - 1, p[1]);
+        };
+        const toSec = (t, dflt) => {
+            if (t === undefined || t === '') return dflt;
+            if (String(t).includes(':')) {
+                const p = String(t).split(':').map(Number);
+                if (p.some(isNaN)) return dflt;
+                return (p[0] || 0) * 3600 + (p[1] || 0) * 60 + (p[2] || 0);
             }
-        } catch (e) { }
-        return 1.0;
+            const v = Number(t);
+            return isNaN(v) ? dflt : v;
+        };
+        const startMs = toMs(opt.START_DATE);
+        if (startMs === null) return 1.0;
+        const endMs = toMs(opt.END_DATE) ?? startMs;
+        const dfltEndTime = (endMs === startMs) ? 86400 : 0;
+        const durSec = ((endMs + toSec(opt.END_TIME, dfltEndTime) * 1000)
+            - (startMs + toSec(opt.START_TIME, 0) * 1000)) / 1000;
+        return durSec > 0 ? durSec / 86400 : 1.0;
     }
 
     function stopSimulationWorker() {
@@ -1316,39 +1338,61 @@
             }
 
             // Show Run Status Modal
+            const bannerText = runStatusModal ? runStatusModal.querySelector('.computing-text') : null;
+            if (bannerText) bannerText.textContent = 'Computing ...';
             updateRunStatusUI(0, 0, '00:00');
             if (runStatusModal) runStatusModal.classList.remove('hidden');
 
             const totalDays = parseSimDurationInDays(inpText);
             const simStartTime = Date.now();
+            let realProgress = null;   // { fraction, elapsedDays, totalDays, phase, at }
 
             if (simProgressTimer) clearInterval(simProgressTimer);
 
             simProgressTimer = setInterval(() => {
                 const elapsed = Date.now() - simStartTime;
-                let frac = 0;
-                if (elapsed <= targetDurationMs) {
+                let frac = null;
+                let currDays = 0;
+
+                // Prefer the engine's actual simulated time from worker chunks.
+                if (realProgress) {
+                    frac = Math.min(0.999, realProgress.fraction);
+                    currDays = (typeof realProgress.elapsedDays === 'number')
+                        ? realProgress.elapsedDays
+                        : (frac * totalDays);
+                } else if (elapsed <= targetDurationMs) {
                     frac = (elapsed / targetDurationMs) * 0.95;
+                    currDays = frac * totalDays;
                 } else {
                     const extra = elapsed - targetDurationMs;
                     frac = 0.95 + 0.04 * (1 - Math.exp(-extra / 8000));
+                    currDays = frac * totalDays;
                 }
 
-                let percent = Math.min(99, Math.floor(frac * 100));
-                let currDaysFrac = Math.min(1.0, frac) * totalDays;
-                let days = Math.floor(currDaysFrac);
-                let remHoursFrac = (currDaysFrac - days) * 24;
-                let hours = Math.floor(remHoursFrac);
-                let minutes = Math.floor((remHoursFrac - hours) * 60);
-                let hrsMinStr = String(hours).padStart(2, '0') + ':' + String(minutes).padStart(2, '0');
+                let percent = (realProgress && realProgress.phase === 'report')
+                    ? 99
+                    : Math.min(99, Math.floor(frac * 100));
 
+                const { days, hrsMinStr } = formatDaysHrsMin(currDays);
                 updateRunStatusUI(percent, days, hrsMinStr);
             }, 60);
 
             worker.onmessage = (ev) => {
                 const msg = ev.data || {};
                 if (msg.type === 'progress') {
-                    // Ignore background worker progress if timer is running smooth
+                    // engine-reported simulated time (fraction of total duration)
+                    if (typeof msg.fraction === 'number' && isFinite(msg.fraction)) {
+                        realProgress = {
+                            fraction: msg.fraction,
+                            elapsedDays: msg.elapsedDays,
+                            totalDays: msg.totalDays || totalDays,
+                            phase: msg.phase || null,
+                            at: Date.now()
+                        };
+                        if (msg.phase === 'report' && bannerText) {
+                            bannerText.textContent = 'Writing report ...';
+                        }
+                    }
                 } else if (msg.type === 'log') {
                     console.log('SWMM:', msg.text);
                 } else if (msg.type === 'err') {
@@ -1359,7 +1403,9 @@
                     }
                 } else if (msg.type === 'done') {
                     if (simProgressTimer) { clearInterval(simProgressTimer); simProgressTimer = null; }
-                    updateRunStatusUI(100, Math.floor(totalDays), '23:59');
+                    const effectiveTotalDays = (realProgress && realProgress.totalDays) ? realProgress.totalDays : totalDays;
+                    const { days: finalDays, hrsMinStr: finalHrsMin } = formatDaysHrsMin(effectiveTotalDays);
+                    updateRunStatusUI(100, finalDays, finalHrsMin);
                     setTimeout(() => hideRunStatusModals(), 250);
                     resolve({ rpt: msg.rpt, outBuffer: msg.outBuffer });
                 } else if (msg.type === 'error') {

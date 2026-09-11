@@ -45,6 +45,16 @@ async function evalInPage(cdp, sessionId, expression) {
     if (r.exceptionDetails) throw new Error('Page exception: ' + (r.exceptionDetails.exception?.description || r.exceptionDetails.text));
     return r.result ? r.result.value : undefined;
 }
+// poll a page expression until it returns non-null or timeout
+async function waitForExpr(cdp, sessionId, expression, timeoutMs) {
+    const t0 = Date.now();
+    while (Date.now() - t0 < timeoutMs) {
+        const v = await evalInPage(cdp, sessionId, expression);
+        if (v !== null && v !== undefined) return v;
+        await sleep(250);
+    }
+    return null;
+}
 
 const consoleErrors = [];
 let server = null, chrome = null, cdp = null;
@@ -232,6 +242,31 @@ try {
     }))()`);
     assert('ProfilePlot API present', prof.hasPlot, prof);
     assert('profile modal in DOM', prof.modalPresent, prof);
+
+    console.log('11) real simulation progress from engine');
+    await evalInPage(cdp, sessionId, `(() => {
+        // tiny 2h DYNWAVE model, 30s routing step → ~241 steps
+        const inp = ${JSON.stringify(readFileSync(join(ROOT, 'benchmark', 'lib', 'mini-smoke.inp'), 'utf8'))};
+        window.__progMsgs = [];
+        const w = new Worker('simWorker.js?v=smoke');
+        w.onmessage = ev => {
+            const m = ev.data || {};
+            if (m.type === 'progress') window.__progMsgs.push(m.fraction);
+            if (m.type === 'done') { window.__simDone = true; window.__simRptLen = (m.rpt || '').length; }
+            if (m.type === 'error') window.__simErr = m.message;
+        };
+        w.onerror = e => { window.__simErr = 'worker-load: ' + (e.message || e.type); };
+        w.postMessage({ type: 'run', inpText: inp });
+    })()`);
+    const simResult = await waitForExpr(cdp, sessionId, `(() => (window.__simDone || window.__simErr) ? {
+        done: !!window.__simDone, err: window.__simErr || null,
+        progMsgs: (window.__progMsgs||[]).length,
+        maxFrac: (window.__progMsgs||[]).length ? Math.max(...window.__progMsgs) : null,
+        rptLen: window.__simRptLen || 0 } : null)()`, 60000);
+    assert('simulation completed', simResult && simResult.done, simResult);
+    assert('progress messages received', simResult && simResult.progMsgs >= 1, simResult);
+    assert('progress reflects real simulated time (reaches ~1.0)', simResult && simResult.maxFrac !== null && simResult.maxFrac > 0.9, simResult);
+    assert('report produced', simResult && simResult.rptLen > 100, simResult);
 
     console.log(failures === 0 ? '\nSMOKE PASS' : `\n${failures} FAILURE(S)`);
     process.exitCode = failures === 0 ? 0 : 1;

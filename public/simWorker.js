@@ -71,6 +71,50 @@ async function createEngine() {
 
 let busy = false;
 
+// Total simulated duration in days, parsed from [OPTIONS] (0 = unknown).
+// Mirrors the engine's date handling: mm/dd/yyyy (or mm-dd-yyyy), both
+// separators accepted.
+function parseSimDurationDays(inpText) {
+    const opt = {};
+    let inOptions = false;
+    for (let line of String(inpText).split(/\r?\n/)) {
+        line = line.replace(/;.*$/, '').trim();
+        if (!line) continue;
+        if (line.startsWith('[') && line.endsWith(']')) {
+            inOptions = line.toUpperCase() === '[OPTIONS]';
+            continue;
+        }
+        if (inOptions) {
+            const parts = line.split(/\s+/);
+            opt[parts[0].toUpperCase()] = parts.slice(1).join(' ');
+        }
+    }
+    const toMs = (d) => {
+        if (!d) return null;
+        const p = String(d).split(/[/-]/).map(Number);
+        if (p.length !== 3 || p.some(isNaN)) return null;
+        if (p[0] > 1000) return Date.UTC(p[0], p[1] - 1, p[2]);
+        return Date.UTC(p[2], p[0] - 1, p[1]);
+    };
+    const toSec = (t, dflt) => {
+        if (t === undefined || t === '') return dflt;
+        if (String(t).includes(':')) {
+            const p = String(t).split(':').map(Number);
+            if (p.some(isNaN)) return dflt;
+            return (p[0] || 0) * 3600 + (p[1] || 0) * 60 + (p[2] || 0);
+        }
+        const v = Number(t);
+        return isNaN(v) ? dflt : v;
+    };
+    const startMs = toMs(opt.START_DATE);
+    if (startMs === null) return 0;
+    const endMs = toMs(opt.END_DATE) ?? startMs;
+    const dfltEndTime = (endMs === startMs) ? 86400 : 0;
+    const durSec = ((endMs + toSec(opt.END_TIME, dfltEndTime) * 1000)
+        - (startMs + toSec(opt.START_TIME, 0) * 1000)) / 1000;
+    return durSec > 0 ? durSec / 86400 : 0;
+}
+
 // When this script is re-executed as an Emscripten pthread worker
 // (globalThis.name === 'em-pthread'), the glue's own message handler must not
 // be clobbered: it is how the runtime distributes SharedArrayBuffer work.
@@ -85,11 +129,10 @@ if (globalThis.name !== 'em-pthread') {
     busy = true;
 
     try {
-        // No progress ticker here: the engine runs as a single blocking
-        // stride()/callMain and reports nothing incremental, and app.js drives
-        // the UI progress bar from its own timer while explicitly ignoring any
-        // 'progress' message from this worker. So we post only
-        // ready/log/err/done/error.
+        // Real progress: the run advances in stride chunks and posts
+        // { type: 'progress', fraction, elapsedDays } ~10x/second, so the UI
+        // can show the engine's actual simulated time. The app still keeps a
+        // wall-clock estimate as fallback for the pre-first-chunk gap.
         const Module = await createEngine();
         Module.FS.writeFile('/in.inp', msg.inpText);
 
@@ -122,7 +165,63 @@ if (globalThis.name !== 'em-pthread') {
                 initialize(engine);
                 start(engine, 1);
                 const elapsedPtr = Module._malloc(8);
-                stride(engine, 10000000, elapsedPtr);
+
+                // Real progress: advance the routing in chunks so we can report
+                // the engine's actual simulated time instead of a wall-clock guess.
+                const totalDays = parseSimDurationDays(msg.inpText);
+                const CHUNK_STEPS = 250;
+                let lastElapsed = -1;
+                let lastPost = 0, lastFrac = -1;
+                while (true) {
+                    const strideErr = stride(engine, CHUNK_STEPS, elapsedPtr);
+                    if (strideErr !== 0) break;
+                    const elapsedDays = Module.getValue(elapsedPtr, 'double');
+
+                    // SWMM sets elapsed to 0.0 when the simulation completes.
+                    if (elapsedDays === 0 || (lastElapsed >= 0 && elapsedDays < lastElapsed)) {
+                        if (totalDays > 0) {
+                            self.postMessage({
+                                type: 'progress',
+                                fraction: 1.0,
+                                elapsedDays: totalDays,
+                                totalDays,
+                                phase: 'report'
+                            });
+                        }
+                        break;
+                    }
+                    if (elapsedDays === lastElapsed) {
+                        // Stalled
+                        break;
+                    }
+                    lastElapsed = elapsedDays;
+                    if (totalDays > 0) {
+                        const frac = Math.min(1, elapsedDays / totalDays);
+                        const now = Date.now();
+                        // post on time throttle OR meaningful fraction advance,
+                        // so short/fast runs still produce visible progress
+                        if (now - lastPost > 100 || frac - lastFrac > 0.02) {
+                            lastPost = now;
+                            lastFrac = frac;
+                            self.postMessage({
+                                type: 'progress',
+                                fraction: frac,
+                                elapsedDays,
+                                totalDays
+                            });
+                        }
+                    }
+                    if (totalDays > 0 && elapsedDays >= totalDays - 1e-9) {
+                        self.postMessage({
+                            type: 'progress',
+                            fraction: 1.0,
+                            elapsedDays: totalDays,
+                            totalDays,
+                            phase: 'report'
+                        });
+                        break;
+                    }
+                }
                 if (typeof Module._free === 'function') Module._free(elapsedPtr);
                 end(engine);
                 report(engine);
