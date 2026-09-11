@@ -126,6 +126,8 @@
             getLayer: () => null,
             setLayoutProperty: () => dummyMap,
             setPaintProperty: () => dummyMap,
+            getLayoutProperty: () => null,
+            getPaintProperty: () => null,
             setFeatureState: () => dummyMap,
             doubleClickZoom: { enable: () => { }, disable: () => { } },
             dragPan: { enable: () => { }, disable: () => { } },
@@ -237,6 +239,80 @@
     const resultOr = (base) => ['case',
         ['!=', ['feature-state', 'resultColor'], null], ['feature-state', 'resultColor'],
         base];
+
+    // ---------- User network layer styling (color + dim) ----------
+    // Persisted per browser; wraps the default expressions so result-driven
+    // coloring and selection highlights keep working on top.
+    const NETWORK_STYLE_DEFAULTS = {
+        nodes: { color: '#1565c0', dim: 1 },
+        links: { color: '#455a64', dim: 1 },
+        subs: { color: '#66bb6a', dim: 1 },
+        labels: { color: '#1f2933', dim: 1 },
+    };
+    // node/link base colors are type-matched; when the user picks a color we
+    // use it as the base but results still win via resultColor feature-state.
+    const NETWORK_STYLE_META = {
+        nodes: { defaultColor: NODE_COLORS.JUNCTION },
+        links: { defaultColor: LINK_COLORS.CONDUIT },
+        subs: { defaultColor: '#66bb6a' },
+        labels: { defaultColor: '#1f2933' },
+    };
+
+    function networkStyleState() {
+        let st = {};
+        try { st = JSON.parse(localStorage.getItem('swmm-network-style') || '{}'); } catch (e) { }
+        const out = {};
+        Object.keys(NETWORK_STYLE_DEFAULTS).forEach(k => {
+            const cur = st[k] || {};
+            const dflt = NETWORK_STYLE_DEFAULTS[k];
+            out[k] = {
+                color: cur.color || dflt.color,
+                dim: (cur.dim === undefined || cur.dim === null) ? dflt.dim : Number(cur.dim),
+            };
+        });
+        return out;
+    }
+    window.App.networkStyle = networkStyleState();
+
+    function applyNetworkStyleToMap() {
+        if (!map) return;
+        const st = window.App.networkStyle || networkStyleState();
+
+        if (map.getLayer('swmm-nodes-layer')) {
+            const userColor = st.nodes.color && st.nodes.color !== NETWORK_STYLE_META.nodes.defaultColor
+                ? st.nodes.color : nodeColorExpr;
+            map.setPaintProperty('swmm-nodes-layer', 'circle-color', resultOr(userColor));
+            map.setPaintProperty('swmm-nodes-layer', 'circle-opacity', st.nodes.dim);
+        }
+        if (map.getLayer('swmm-links-layer')) {
+            const userColor = st.links.color && st.links.color !== NETWORK_STYLE_META.links.defaultColor
+                ? st.links.color : linkColorExpr;
+            map.setPaintProperty('swmm-links-layer', 'line-color', resultOr(userColor));
+            map.setPaintProperty('swmm-links-layer', 'line-opacity', st.links.dim);
+        }
+        if (map.getLayer('swmm-subcatchments-fill')) {
+            map.setPaintProperty('swmm-subcatchments-fill', 'fill-color', st.subs.color);
+            map.setPaintProperty('swmm-subcatchments-fill', 'fill-opacity',
+                ['*', st.subs.dim, selectedCase(0.55, 0.45, 0.3)]);
+        }
+        if (map.getLayer('swmm-subcatchments-line')) {
+            map.setPaintProperty('swmm-subcatchments-line', 'line-color', st.subs.color);
+            map.setPaintProperty('swmm-subcatchments-line', 'line-opacity', st.subs.dim);
+        }
+        if (map.getLayer('swmm-nodes-labels')) {
+            map.setPaintProperty('swmm-nodes-labels', 'text-color', st.labels.color);
+            map.setPaintProperty('swmm-nodes-labels', 'text-opacity', st.labels.dim);
+        }
+    }
+    window.applyNetworkStyleToMap = applyNetworkStyleToMap;
+
+    window.updateNetworkLayerStyle = function (key, patch) {
+        if (!NETWORK_STYLE_DEFAULTS[key]) return;
+        const st = window.App.networkStyle;
+        st[key] = Object.assign({}, st[key] || {}, patch);
+        try { localStorage.setItem('swmm-network-style', JSON.stringify(st)); } catch (e) { }
+        applyNetworkStyleToMap();
+    };
 
     // ---------- Network layers ----------
     function ensureNetworkLayers() {
@@ -375,6 +451,7 @@
         }
         (window.App.importedLayers || []).forEach(addConstraintLayer);
 
+        applyNetworkStyleToMap();
         applyResultStylingIfAny();
     }
 
@@ -583,51 +660,6 @@
     }
     window.apply3D = apply3D;
 
-    function toggleLandCoverLayer(visible) {
-        if (!map) return;
-        const layerId = 'mapbox-landcover-layer';
-
-        if (visible) {
-            if (!map.getLayer(layerId)) {
-                let beforeId = null;
-                const layers = map.getStyle().layers || [];
-                for (const l of layers) {
-                    if (l.id.startsWith('swmm-') || l.id.startsWith('node-') || l.id.startsWith('link-') || l.id.startsWith('subcatchment-')) {
-                        beforeId = l.id;
-                        break;
-                    }
-                }
-                map.addLayer({
-                    id: layerId,
-                    type: 'fill',
-                    source: 'composite',
-                    'source-layer': 'landuse',
-                    paint: {
-                        'fill-color': [
-                            'match', ['get', 'class'],
-                            'wood', '#006400',
-                            'agriculture', '#f0d66d',
-                            'grass', '#8fbc5a',
-                            'scrub', '#b1a46f',
-                            'park', '#72b05a',
-                            'school', '#d9c7a7',
-                            'hospital', '#e8b4b8',
-                            'industrial', '#b7a9a1',
-                            '#a8bf8c'
-                        ],
-                        'fill-opacity': 0.72,
-                        'fill-outline-color': 'rgba(70, 90, 55, 0.35)'
-                    }
-                }, beforeId);
-            } else {
-                map.setLayoutProperty(layerId, 'visibility', 'visible');
-            }
-        } else if (map.getLayer(layerId)) {
-            map.setLayoutProperty(layerId, 'visibility', 'none');
-        }
-    }
-    window.toggleLandCoverLayer = toggleLandCoverLayer;
-
     // ---------- DEM Terrain Sampling Functions ----------
     window.sampleDEMElevationAsync = async function (lngLat) {
         if (!map) return null;
@@ -637,9 +669,16 @@
         const apiKey = (apiKeyInput && apiKeyInput.value.trim()) || (window.CONFIG && window.CONFIG.OPENTOPOGRAPHY_API_KEY) || '';
 
         // Try OpenTopography API if selected
-        if (demSource !== 'MAPBOX' && window.LandCoverModule) {
+        if (demSource !== 'MAPBOX') {
             try {
-                const url = window.LandCoverModule.getOpenTopographyPointUrl(lngLat[1], lngLat[0], demSource, apiKey);
+                const params = new URLSearchParams({
+                    demtype: demSource,
+                    latitude: lngLat[1].toFixed(6),
+                    longitude: lngLat[0].toFixed(6),
+                    outputFormat: 'JSON'
+                });
+                if (apiKey) params.append('API_Key', apiKey);
+                const url = 'https://portal.opentopography.org/API/pointElevation?' + params.toString();
                 const res = await fetch(url);
                 if (res.ok) {
                     const data = await res.json();

@@ -19,7 +19,7 @@
     <!-- Mapbox GL JS CSS -->
     <link href="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.css" rel="stylesheet" crossorigin="anonymous" />
     <!-- Local Stylesheet -->
-    <link rel="stylesheet" href="styles.css?v=5">
+    <link rel="stylesheet" href="styles.css?v=6">
     <!-- Warm the HTTP cache for the simulation engine binary (fetched by simWorker.js) -->
     <link rel="preload" href="swmm6wasm.wasm?v=dev" as="fetch" type="application/wasm" crossorigin="anonymous">
 </head>
@@ -204,23 +204,33 @@
                         <span>Network Layers</span>
                     </button>
                     <div class="ms-section-body ms-collapsed">
-                        <div class="ms-toggle-list">
-                            <div class="ms-toggle-row">
-                                <span class="ms-toggle-label">Nodes</span>
-                                <button id="btn-toggle-nodes" class="ms-switch toggled" title="Toggle Nodes"></button>
-                            </div>
-                            <div class="ms-toggle-row">
-                                <span class="ms-toggle-label">Links</span>
-                                <button id="btn-toggle-links" class="ms-switch toggled" title="Toggle Links"></button>
-                            </div>
-                            <div class="ms-toggle-row">
-                                <span class="ms-toggle-label">Subcatchments</span>
-                                <button id="btn-toggle-subcatchments" class="ms-switch toggled" title="Toggle Subcatchments"></button>
-                            </div>
-                            <div class="ms-toggle-row">
-                                <span class="ms-toggle-label">Labels</span>
-                                <button id="btn-toggle-labels" class="ms-switch toggled" title="Toggle Labels"></button>
-                            </div>
+                        <!-- styleable layers: visibility + color + dim -->
+                        <div class="ov-layer-row">
+                            <button id="btn-toggle-nodes" class="ms-switch toggled" title="Toggle Nodes"></button>
+                            <input type="color" id="style-nodes-color" value="#1565c0" title="Node color (replaces type colors while set)">
+                            <div class="ov-layer-info"><div class="ov-layer-name">Nodes</div></div>
+                            <input type="range" id="style-nodes-dim" min="0.1" max="1" step="0.05" value="1" title="Opacity (dim)">
+                        </div>
+                        <div class="ov-layer-row">
+                            <button id="btn-toggle-links" class="ms-switch toggled" title="Toggle Links"></button>
+                            <input type="color" id="style-links-color" value="#455a64" title="Link color (replaces type colors while set)">
+                            <div class="ov-layer-info"><div class="ov-layer-name">Links</div></div>
+                            <input type="range" id="style-links-dim" min="0.1" max="1" step="0.05" value="1" title="Opacity (dim)">
+                        </div>
+                        <div class="ov-layer-row">
+                            <button id="btn-toggle-subcatchments" class="ms-switch toggled" title="Toggle Subcatchments"></button>
+                            <input type="color" id="style-subs-color" value="#66bb6a" title="Subcatchment color">
+                            <div class="ov-layer-info"><div class="ov-layer-name">Subcatchments</div></div>
+                            <input type="range" id="style-subs-dim" min="0.1" max="1" step="0.05" value="1" title="Opacity (dim)">
+                        </div>
+                        <div class="ov-layer-row">
+                            <button id="btn-toggle-labels" class="ms-switch toggled" title="Toggle Labels"></button>
+                            <input type="color" id="style-labels-color" value="#1f2933" title="Label color">
+                            <div class="ov-layer-info"><div class="ov-layer-name">Labels</div></div>
+                            <input type="range" id="style-labels-dim" min="0.1" max="1" step="0.05" value="1" title="Opacity (dim)">
+                        </div>
+                        <!-- display-only toggles (color/dim not applicable) -->
+                        <div class="ms-toggle-list" style="margin-top:6px;">
                             <div class="ms-toggle-row">
                                 <span class="ms-toggle-label">3D View</span>
                                 <button id="btn-toggle-3d" class="ms-switch" title="Toggle 3D terrain &amp; buildings"></button>
@@ -232,10 +242,6 @@
                             <div class="ms-toggle-row">
                                 <span class="ms-toggle-label">Warnings</span>
                                 <button id="btn-toggle-warnings" class="ms-switch toggled" title="Toggle Warnings"></button>
-                            </div>
-                            <div class="ms-toggle-row">
-                                <span class="ms-toggle-label">Land Cover</span>
-                                <button id="btn-toggle-landcover" class="ms-switch" title="Toggle Land Cover"></button>
                             </div>
                             <div class="ms-toggle-row">
                                 <span class="ms-toggle-label">Hover Info Cards</span>
@@ -960,21 +966,20 @@
     <script src="swmmOutParser.js?v=14"></script>
     <script src="street_view_overlay.js?v=14"></script>
     <script src="swmm6wasm.js?v=14"></script>
-    <script src="results.js?v=17"></script>
+    <script src="results.js?v=18"></script>
     <script src="importers.js?v=15"></script>
-    <script src="app.js?v=16"></script>
+    <script src="app.js?v=17"></script>
     <script src="network3D.js?v=19"></script>
     <script src="tools.js?v=14"></script>
-    <script src="profile.js?v=14"></script>
+    <script src="profile.js?v=15"></script>
     <script src="nodeSchematic.js?v=1"></script>
     <script src="plot.js?v=14"></script>
     <script src="layerTree.js?v=16"></script>
-    <script src="landcover.js?v=14"></script>
     <script src="curves.js?v=14"></script>
     <script src="lid.js?v=14"></script>
     <script src="quality.js?v=14"></script>
     <script src="aquifer.js?v=14"></script>
     <script src="snowpack.js?v=14"></script>
-    <script src="ui.js?v=15"></script>
+    <script src="ui.js?v=16"></script>
 </body>
 </html>

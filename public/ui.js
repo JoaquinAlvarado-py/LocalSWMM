@@ -477,6 +477,26 @@
         if (window.applySubcatchmentsVisibility) window.applySubcatchmentsVisibility();
     });
 
+    // Network layer color / dim controls (persist via app.js)
+    ['nodes', 'links', 'subs', 'labels'].forEach((key) => {
+        const colorEl = document.getElementById('style-' + key + '-color');
+        const dimEl = document.getElementById('style-' + key + '-dim');
+        if (colorEl) {
+            const saved = App.networkStyle && App.networkStyle[key];
+            if (saved && saved.color) colorEl.value = saved.color;
+            colorEl.addEventListener('input', () => {
+                if (window.updateNetworkLayerStyle) window.updateNetworkLayerStyle(key, { color: colorEl.value });
+            });
+        }
+        if (dimEl) {
+            const saved = App.networkStyle && App.networkStyle[key];
+            if (saved && saved.dim !== undefined) dimEl.value = saved.dim;
+            dimEl.addEventListener('input', () => {
+                if (window.updateNetworkLayerStyle) window.updateNetworkLayerStyle(key, { dim: Number(dimEl.value) });
+            });
+        }
+    });
+
     const btnLabels = document.getElementById('btn-toggle-labels');
     btnLabels.addEventListener('click', () => {
         App.labelsVisible = !App.labelsVisible;
@@ -497,15 +517,6 @@
         btnWarnings.classList.toggle('toggled', App.warningsVisible);
         document.body.classList.toggle('hide-warnings', !App.warningsVisible);
     });
-
-    const btnLandCover = document.getElementById('btn-toggle-landcover');
-    if (btnLandCover) {
-        btnLandCover.addEventListener('click', () => {
-            App.landCoverVisible = !App.landCoverVisible;
-            btnLandCover.classList.toggle('toggled', App.landCoverVisible);
-            if (window.toggleLandCoverLayer) window.toggleLandCoverLayer(App.landCoverVisible);
-        });
-    }
 
     // Transient status toast (bottom center) — for notices that must not
     // disturb whatever the Results/Report panel is currently showing.
@@ -877,21 +888,6 @@
             { key: 'width', label: 'Width', unit: U('m', 'ft'), type: 'number' },
             { key: 'slope', label: '% Slope', unit: '%', type: 'number', step: 0.1 },
             { key: 'imperv', label: '% Imperv', unit: '%', type: 'number' },
-            { key: 'landCoverClass', label: 'VITO Land Cover (10m)', type: 'select', options: [
-                '0 - Custom / None',
-                '10 - Tree cover',
-                '20 - Shrubland',
-                '30 - Grassland',
-                '40 - Cropland',
-                '50 - Herbaceous wetland',
-                '60 - Mangroves',
-                '70 - Moss and lichen',
-                '80 - Bare/sparse vegetation',
-                '90 - Built-up (pavement)',
-                '90 - Built-up (obstacle)',
-                '95 - Permanent water',
-                '100 - Snow and ice'
-            ] },
             { key: 'nImperv', label: 'N-Imperv', type: 'number', step: 0.001 },
             { key: 'nPerv', label: 'N-Perv', type: 'number', step: 0.001 },
             { key: 'dstoreImperv', label: 'Dstore-Imperv', unit: U('mm', 'in'), type: 'number', step: 0.01 },
@@ -995,12 +991,6 @@
             </div>`;
         }
 
-        if (type === 'SUBCATCHMENT') {
-            html += `<div class="prop-actions" style="margin-top:6px;margin-bottom:10px;">
-                <button class="tb-btn" id="prop-detect-landcover" style="width:100%;font-size:11px;" title="Sample land cover grid cells across this subcatchment polygon and compute weighted parameters">Sample Land Cover & Compute % Imperv</button>
-            </div>`;
-        }
-
         if (type === 'RAINGAGE') {
             html += `<div class="prop-actions" style="margin-top:6px;margin-bottom:10px;">
                 <button class="tb-btn tb-btn-run" id="prop-edit-raindata" style="width:100%;font-size:11px;">🌧️ Edit Rain Data / Time Series</button>
@@ -1021,15 +1011,6 @@
                 if (input.dataset.bool === '1') value = value === 'true';
                 else if (input.type === 'number') value = parseFloat(value) || 0;
                 Net.updateProps(el.id, { [key]: value });
-                if (key === 'landCoverClass' && el.type === 'SUBCATCHMENT' && window.LandCoverModule) {
-                    const code = parseInt(value, 10);
-                    const isObstacle = value.includes('obstacle');
-                    if (code > 0) {
-                        window.LandCoverModule.applyToSubcatchment(el, code, { builtUpMode: isObstacle ? 'OBSTACLE' : 'PAVEMENT' });
-                        Net.updateProps(el.id, { nPerv: el.props.nPerv, nImperv: el.props.nImperv, landCoverClass: value });
-                        renderPropsPanel();
-                    }
-                }
                 // manual length edit disables auto length
                 if (key === 'length' && el.type === 'CONDUIT') {
                     Net.updateProps(el.id, { autoLength: false });
@@ -1041,29 +1022,6 @@
                 }
             });
         });
-
-        const btnDetectLandcover = document.getElementById('prop-detect-landcover');
-        if (btnDetectLandcover && el.type === 'SUBCATCHMENT') {
-            btnDetectLandcover.addEventListener('click', () => {
-                if (window.LandCoverModule && window.LandCoverModule.sampleSubcatchmentLandCover) {
-                    const res = window.LandCoverModule.sampleSubcatchmentLandCover(el, window.map);
-                    if (res) {
-                        Net.updateProps(el.id, {
-                            imperv: res.impervPct,
-                            nPerv: res.nPervWeighted,
-                            nImperv: res.nImpervWeighted
-                        });
-                        renderPropsPanel();
-                        const summaryStr = res.breakdown.map(b => `${b.pct}% ${b.name}`).join(', ');
-                        if (window.showResultsWarning) {
-                            window.showResultsWarning(`Detected Land Cover for ${el.id}: ${res.impervPct}% Imperv (${summaryStr}).`);
-                        }
-                    } else {
-                        alert('Land cover sampling requires a valid subcatchment polygon.');
-                    }
-                }
-            });
-        }
 
         const btnSampleDem = document.getElementById('prop-sample-dem');
         if (btnSampleDem && el.lngLat) {
