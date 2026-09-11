@@ -744,11 +744,42 @@
 
     function ensureModalVisible(modal) {
         if (!modal) return;
-        const top = modal.offsetTop;
-        if (top < 50) {
-            modal.style.top = '54px';
-            modal.style.bottom = 'auto';
+        // Clamp the whole window into the viewport so section/profile plots
+        // stay usable on small screens (drag already clamps; this also covers
+        // resized windows and user-resized sizes).
+        const margin = 8;
+        const rect = modal.getBoundingClientRect();
+        let left = rect.left, top = rect.top;
+
+        // cap size to the viewport (resize:both is not clamped by the browser)
+        const maxW = window.innerWidth - margin * 2;
+        const maxH = window.innerHeight - margin * 2;
+        if (rect.width > maxW || rect.height > maxH) {
+            modal.style.width = Math.min(rect.width, maxW) + 'px';
+            modal.style.height = Math.min(rect.height, maxH) + 'px';
         }
+
+        const clamped = modal.getBoundingClientRect();
+        left = clamped.left;
+        top = clamped.top;
+        const shiftX = Math.round(
+            (left + clamped.width > window.innerWidth - margin) ? window.innerWidth - margin - clamped.width - left :
+            (left < margin) ? margin - left : 0);
+        const shiftY = Math.round(
+            (top + clamped.height > window.innerHeight - margin) ? window.innerHeight - margin - clamped.height - top :
+            (top < 50) ? 50 - top : 0);
+        if (shiftX || shiftY) {
+            // switch to explicit left/top coordinates (drop the centering
+            // transform) expressed relative to the offset parent
+            const parent = modal.offsetParent;
+            const pr = parent ? parent.getBoundingClientRect() : { left: 0, top: 0 };
+            modal.style.right = 'auto';
+            modal.style.bottom = 'auto';
+            modal.style.transform = 'none';
+            modal.style.left = Math.round(clamped.left + shiftX - pr.left) + 'px';
+            modal.style.top = Math.round(clamped.top + shiftY - pr.top) + 'px';
+        }
+        resizeCanvas();
     }
 
     function openForNodes(nodeIds) {
@@ -1005,7 +1036,10 @@
         ro.observe(document.getElementById('profile-body') || modalEl);
 
         window.addEventListener('resize', () => {
-            if (!modalEl.classList.contains('hidden')) resizeCanvas();
+            if (!modalEl.classList.contains('hidden')) {
+                ensureModalVisible(modalEl);
+                resizeCanvas();
+            }
         });
     }
 

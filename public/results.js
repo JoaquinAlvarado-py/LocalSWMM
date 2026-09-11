@@ -706,7 +706,15 @@
                 const targetId = sectionSelect.value;
                 if (!targetId) return;
                 const targetEl = document.getElementById(targetId);
-                if (targetEl) {
+                if (!targetEl) return;
+                // scroll ONLY the report panel (scrollIntoView could also move
+                // other ancestors), leaving the sticky dropdown visible
+                const scroller = document.getElementById('report-body');
+                if (scroller && scroller.contains(targetEl)) {
+                    const top = targetEl.getBoundingClientRect().top
+                        - scroller.getBoundingClientRect().top + scroller.scrollTop - 52;
+                    scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+                } else {
                     targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }
             };

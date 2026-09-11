@@ -60,7 +60,7 @@ No hay **módulos ES, bundler ni `import`/`export`**. Cada archivo es un script 
 config.js → mapbox/proj4/shp/dxf/geotiff (CDN)
 → inpParser → inpExporter → network → swmmOutParser → street_view_overlay
 → swmm6wasm → results → importers → app → tools → profile → plot
-→ landcover → curves → lid → quality → aquifer → snowpack → ui
+→ curves → lid → quality → aquifer → snowpack → ui
 (ui.js AL FINAL — conecta cada botón)
 ```
 

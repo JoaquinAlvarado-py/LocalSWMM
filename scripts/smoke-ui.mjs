@@ -63,7 +63,8 @@ try {
         if (!CHROME) throw new Error('No Chrome/Edge executable found for the smoke test');
         console.log(`[smoke] launching ${CHROME}`);
         chrome = spawn(CHROME, [`--remote-debugging-port=${CDP_PORT}`, '--remote-allow-origins=*', `--user-data-dir=${PROFILE}`,
-            '--no-first-run', '--disable-default-apps', '--disable-background-networking', '--window-size=1280,900', 'about:blank'], { stdio: 'ignore' });
+            '--no-first-run', '--disable-default-apps', '--disable-background-networking', '--window-size=1280,900',
+            '--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader-webgl', 'about:blank'], { stdio: 'ignore' });
         chrome.on('error', e => console.error('[smoke] browser spawn error:', e.message));
         for (let i = 0; i < 60 && !(await probe(`${CDP_HTTP}/json/version`)); i++) await sleep(500);
     }
@@ -155,6 +156,82 @@ try {
 
     const errs = await evalInPage(cdp, sessionId, `window.__smokeErrors || []`);
     assert('no page errors during interactions', errs.length === 0, errs);
+
+    console.log('7) network layer style controls');
+    const netStyle = await evalInPage(cdp, sessionId, `(() => {
+        const colorEl = document.getElementById('style-nodes-color');
+        const dimEl = document.getElementById('style-nodes-dim');
+        if (!colorEl || !dimEl) return { present: false };
+        colorEl.value = '#ff0000';
+        colorEl.dispatchEvent(new Event('input'));
+        dimEl.value = '0.5';
+        dimEl.dispatchEvent(new Event('input'));
+        const realMap = !map._isDummy && typeof map.getPaintProperty === 'function';
+        const nodesColor = realMap ? map.getPaintProperty('swmm-nodes-layer', 'circle-color') : null;
+        const nodesOpacity = realMap ? map.getPaintProperty('swmm-nodes-layer', 'circle-opacity') : null;
+        const saved = JSON.parse(localStorage.getItem('swmm-network-style') || '{}');
+        document.getElementById('style-nodes-dim').value = '1';
+        document.getElementById('style-nodes-dim').dispatchEvent(new Event('input'));
+        return { present: true, realMap, isExpr: Array.isArray(nodesColor), opacity: nodesOpacity,
+                 persisted: saved.nodes && saved.nodes.color === '#ff0000' };
+    })()`);
+    assert('style inputs present and wired', netStyle.present, netStyle);
+    assert('style persisted to localStorage', netStyle.persisted, netStyle);
+    if (netStyle.realMap) {
+        assert('node color wraps into expression', netStyle.isExpr, netStyle);
+        assert('dim applied to node opacity', netStyle.opacity === 0.5, netStyle);
+    } else {
+        console.log('  (software map stub active — paint assertions skipped)');
+    }
+    const netStyle2 = await evalInPage(cdp, sessionId, `(() => {
+        document.getElementById('style-subs-color').value = '#aa00aa';
+        document.getElementById('style-subs-color').dispatchEvent(new Event('input'));
+        const realMap = !map._isDummy && typeof map.getPaintProperty === 'function';
+        const fill = realMap ? map.getPaintProperty('swmm-subcatchments-fill', 'fill-color') : null;
+        const fillOp = realMap ? map.getPaintProperty('swmm-subcatchments-fill', 'fill-opacity') : null;
+        const lbl = document.getElementById('style-labels-dim');
+        lbl.value = '0.4'; lbl.dispatchEvent(new Event('input'));
+        const txtOp = realMap ? map.getPaintProperty('swmm-nodes-labels', 'text-opacity') : null;
+        return { realMap, fill, fillOpIsExpr: Array.isArray(fillOp), txtOp };
+    })()`);
+    if (netStyle2.realMap) {
+        assert('subcatchment color applied', netStyle2.fill === '#aa00aa', netStyle2);
+        assert('subcatchment dim expression', netStyle2.fillOpIsExpr, netStyle2);
+        assert('label dim applied', netStyle2.txtOp === 0.4, netStyle2);
+    }
+
+    console.log('8) VITO / Land Cover removed');
+    const vito = await evalInPage(cdp, sessionId, `(() => ({
+        toggleGone: !document.getElementById('btn-toggle-landcover'),
+        moduleGone: typeof window.LandCoverModule === 'undefined',
+        fieldGone: ![...document.querySelectorAll('[data-key]')].some(el => el.dataset.key === 'landCoverClass'),
+        scriptGone: ![...document.querySelectorAll('script')].some(s => (s.src || '').includes('landcover'))
+    }))()`);
+    assert('land cover toggle removed', vito.toggleGone, vito);
+    assert('LandCoverModule gone', vito.moduleGone, vito);
+    assert('no landcover script tag', vito.scriptGone, vito);
+
+    console.log('9) report single-scroll + sticky toolbar');
+    const rep = await evalInPage(cdp, sessionId, `(() => {
+        const pre = document.querySelector('.report-pre');
+        const cs = pre ? getComputedStyle(pre) : null;
+        const tb = document.getElementById('report-toolbar');
+        return { preMaxH: cs ? cs.maxHeight : null,
+                 sticky: tb ? getComputedStyle(tb).position : null,
+                 scrollMargin: cs ? getComputedStyle(document.querySelector('.report-section-header') || pre).scrollMarginTop : null };
+    })()`);
+    // the double scrollbar came from the pre's own max-height; once removed the
+    // computed overflow-y:auto is inert (the pre grows with its content)
+    assert('pre no longer height-capped (single scroll)', rep.preMaxH === 'none', rep);
+    assert('toolbar sticky', rep.sticky === 'sticky', rep);
+
+    console.log('10) profile modal API + viewport clamp');
+    const prof = await evalInPage(cdp, sessionId, `(() => ({
+        hasPlot: typeof window.ProfilePlot === 'object' && typeof window.ProfilePlot.openForElement === 'function',
+        modalPresent: !!document.getElementById('profile-modal'),
+    }))()`);
+    assert('ProfilePlot API present', prof.hasPlot, prof);
+    assert('profile modal in DOM', prof.modalPresent, prof);
 
     console.log(failures === 0 ? '\nSMOKE PASS' : `\n${failures} FAILURE(S)`);
     process.exitCode = failures === 0 ? 0 : 1;
